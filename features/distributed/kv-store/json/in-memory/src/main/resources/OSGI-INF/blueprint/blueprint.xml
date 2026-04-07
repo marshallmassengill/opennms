@@ -1,0 +1,4 @@
+<blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0">
+    <bean id="inMemoryJsonStore" class="org.opennms.features.distributed.kvstore.json.inmemory.InMemoryJsonStore"/>
+    <service ref="inMemoryJsonStore" interface="org.opennms.features.distributed.kvstore.api.JsonStore"/>
+</blueprint>

@@ -55,8 +55,9 @@ public class UpgradeConfigService implements InitializingBean {
 
     @Override
     public void afterPropertiesSet() throws Exception {
-        if (!skipConfigUpgrades) {
-            new LiquibaseUpgrader(cm).runChangelog("changelog-cm/changelog-cm.xml", dataSource.getConnection());
+        if (skipConfigUpgrades || Boolean.getBoolean("opennms.readonly")) {
+            return;
         }
+        new LiquibaseUpgrader(cm).runChangelog("changelog-cm/changelog-cm.xml", dataSource.getConnection());
     }
 }

@@ -27,6 +27,8 @@ import java.util.Arrays;
 public class RoleBasedNavBarEntry extends LocationBasedNavBarEntry {
     /** comma-separated list of roles */
     private String roles;
+    private String systemProperty;
+    private String systemPropertyValue;
 
     public String getRoles() {
         return this.roles;
@@ -36,9 +38,32 @@ public class RoleBasedNavBarEntry extends LocationBasedNavBarEntry {
         this.roles = roles;
     }
 
+    public String getSystemProperty() {
+        return this.systemProperty;
+    }
+
+    public void setSystemProperty(String systemProperty) {
+        this.systemProperty = systemProperty;
+    }
+
+    public String getSystemPropertyValue() {
+        return this.systemPropertyValue;
+    }
+
+    public void setSystemPropertyValue(String systemPropertyValue) {
+        this.systemPropertyValue = systemPropertyValue;
+    }
+
     /** {@inheritDoc} */
     @Override
     public DisplayStatus evaluate(MenuContext context) {
+        if (!Strings.isNullOrEmpty(this.systemProperty)) {
+            String actual = System.getProperty(this.systemProperty, "");
+            if (!actual.equals(Strings.nullToEmpty(this.systemPropertyValue))) {
+                return DisplayStatus.NO_DISPLAY;
+            }
+        }
+
         if (!Strings.isNullOrEmpty(this.roles)) {
             boolean anyMatch = Arrays.stream(this.roles.split(",")).map(String::trim).anyMatch(context::isUserInRole);
 

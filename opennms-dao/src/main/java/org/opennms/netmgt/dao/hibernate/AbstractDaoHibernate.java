@@ -78,6 +78,10 @@ public abstract class AbstractDaoHibernate<T, K extends Serializable> extends Hi
 
     @Override
     protected void initDao() throws Exception {
+        if (Boolean.getBoolean("opennms.readonly")) {
+            LOG.info("initDao: skipping AccessLock write for {} (opennms.readonly=true)", m_lockName);
+            return;
+        }
         getHibernateTemplate().saveOrUpdate(new AccessLock(m_lockName));
     }
 

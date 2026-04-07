@@ -14,5 +14,6 @@
         <module>postgres</module>
         <module>json-shell</module>
         <module>noop</module>
+        <module>in-memory</module>
     </modules>
 </project>
