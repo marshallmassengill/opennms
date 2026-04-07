@@ -158,7 +158,7 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
     <property name="triggerGroup" value="reporting"/>
   </bean>
   <onmsgi:service interface="org.opennms.web.svclayer.SchedulerService" ref="reportSchedulerService" />
-  <bean id="schedulerFactory" class="org.springframework.scheduling.quartz.SchedulerFactoryBean">
+  <bean id="schedulerFactory" class="org.opennms.web.svclayer.support.ReadOnlyAwareSchedulerFactoryBean">
     <property name="schedulerName" value="databaseReport"/>
     <property name="dataSource" ref="dataSource"/>
     <property name="applicationContextSchedulerContextKey">
@@ -175,8 +175,8 @@ xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.sprin
         <!-- Configure ThreadPool -->
         <prop key="org.quartz.threadPool.class">org.quartz.simpl.SimpleThreadPool</prop>
         <prop key="org.quartz.threadPool.threadCount">1</prop>
-        <!-- Configure JobStore: use RAMJobStore when scheduler is disabled (read-only mode) -->
-        <prop key="org.quartz.jobStore.class">${opennms.report.scheduler.jobStoreClass:org.quartz.impl.jdbcjobstore.JobStoreCMT}</prop>
+        <!-- Configure JobStore -->
+        <prop key="org.quartz.jobStore.class">org.quartz.impl.jdbcjobstore.JobStoreCMT</prop>
         <prop key="org.quartz.jobStore.driverDelegateClass">org.quartz.impl.jdbcjobstore.PostgreSQLDelegate</prop>
         <!-- Configure Plugins -->
         <prop key="org.quartz.plugin.shutdownHook.class">org.quartz.plugins.management.ShutdownHookPlugin</prop>
