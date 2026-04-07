@@ -1,0 +1,337 @@
+= Read-Only UI Instance
+:description: Deploy a separate OpenNMS UI instance with SELECT-only database access.
+
+This guide describes how to deploy a read-only OpenNMS UI instance that connects to a shared PostgreSQL database using only `SELECT` permissions.
+A read-only instance serves the web UI for viewing nodes, alarms, events, and availability without performing any database writes.
+This is useful for providing a separate monitoring dashboard that cannot modify the underlying data.
+
+== Overview
+
+A read-only UI instance runs a minimal set of OpenNMS services — just enough to serve the web interface and compute availability.
+All data collection, polling, provisioning, and notification daemons are disabled.
+Three system-level changes ensure no database writes occur:
+
+* `opennms.readonly=true` — skips DAO lock writes, switches the KV store to in-memory, and switches the Quartz scheduler to an in-memory job store.
+* `skipConfigUpgrades=true` — prevents Liquibase from acquiring a lock on the `cm_databasechangeloglock` table.
+* `opennms.report.scheduler.enabled=false` — prevents the report scheduler from starting.
+
+== Prerequisites
+
+* A running primary OpenNMS instance with an initialized PostgreSQL database.
+* A second OpenNMS installation (same version) to serve as the read-only instance.
+Both instances must be the same version to ensure schema compatibility.
+
+== Step 1: Create a SELECT-Only Database User
+
+On the PostgreSQL server, create a user with only read access to the OpenNMS database:
+
+[source,sql]
+----
+CREATE USER opennms_ro WITH PASSWORD 'opennms_ro';
+GRANT CONNECT ON DATABASE opennms TO opennms_ro;
+GRANT USAGE ON SCHEMA public TO opennms_ro;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO opennms_ro;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO opennms_ro;
+GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO opennms_ro;
+----
+
+NOTE: If the primary instance creates new tables after these grants are applied, you must re-run `GRANT SELECT ON ALL TABLES IN SCHEMA public TO opennms_ro;` to cover the new tables, or use `ALTER DEFAULT PRIVILEGES` set by the table owner.
+
+== Step 2: Configure the Data Source
+
+Edit `$OPENNMS_HOME/etc/opennms-datasources.xml` on the read-only instance to use the read-only database user.
+All three data sources should point at the OpenNMS database with the read-only credentials:
+
+[source,xml]
+----
+<jdbc-data-source name="opennms"
+                  database-name="opennms"
+                  class-name="org.postgresql.Driver"
+                  url="jdbc:postgresql://your-db-host:5432/opennms"
+                  user-name="opennms_ro"
+                  password="opennms_ro" />
+
+<jdbc-data-source name="opennms-admin"
+                  database-name="opennms"
+                  class-name="org.postgresql.Driver"
+                  url="jdbc:postgresql://your-db-host:5432/opennms"
+                  user-name="opennms_ro"
+                  password="opennms_ro">
+  <connection-pool idleTimeout="600" minPool="0" maxPool="10" maxSize="50" />
+</jdbc-data-source>
+
+<jdbc-data-source name="opennms-monitor"
+                  database-name="opennms"
+                  class-name="org.postgresql.Driver"
+                  url="jdbc:postgresql://your-db-host:5432/opennms"
+                  user-name="opennms_ro"
+                  password="opennms_ro">
+  <connection-pool idleTimeout="600" minPool="0" maxPool="10" maxSize="50" />
+</jdbc-data-source>
+----
+
+== Step 3: Set Read-Only System Properties
+
+Edit `$OPENNMS_HOME/etc/opennms.conf` on the read-only instance and add the following properties:
+
+[source,bash]
+----
+ADDITIONAL_MANAGER_OPTIONS="${ADDITIONAL_MANAGER_OPTIONS} -Dopennms.readonly=true"
+ADDITIONAL_MANAGER_OPTIONS="${ADDITIONAL_MANAGER_OPTIONS} -DskipConfigUpgrades=true"
+ADDITIONAL_MANAGER_OPTIONS="${ADDITIONAL_MANAGER_OPTIONS} -Dopennms.report.scheduler.enabled=false"
+----
+
+These properties control the following behaviors:
+
+[cols="1,2"]
+|===
+| Property | Effect
+
+| `opennms.readonly=true`
+| Skips `accessLocks` table writes during DAO initialization, switches the JSON KV store (`kvstore_jsonb`) to an in-memory implementation, and switches the Quartz report scheduler to a RAM-based job store (no `qrtz_*` table writes).
+
+| `skipConfigUpgrades=true`
+| Skips Liquibase configuration manager migrations, preventing writes to `cm_databasechangeloglock` and `cm_databasechangelog`.
+
+| `opennms.report.scheduler.enabled=false`
+| Prevents the database report scheduler from starting.
+|===
+
+== Step 4: Disable Non-Essential Daemons
+
+Edit `$OPENNMS_HOME/etc/service-configuration.xml` on the read-only instance and add `enabled="false"` to every service *except* the following:
+
+[cols="1,2"]
+|===
+| Service | Reason to Keep
+
+| `Manager`
+| JVM bootstrap (required).
+
+| `TestLoadLibraries`
+| Library validation (required).
+
+| `Eventd`
+| Internal event bus used by the web layer and RTC.
+
+| `Rtcd`
+| Computes availability percentages for the homepage.
+
+| `JettyServer`
+| The web UI itself.
+|===
+
+All other daemons should be disabled: Alarmd, Bsmd, Ticketer, Queued, Actiond, Notifd, Scriptd, Pollerd, EnhancedLinkd, Collectd, Discovery, Vacuumd, EventTranslator, PassiveStatusd, Statsd, Provisiond, Reportd, Ackd, Telemetryd, Trapd, PerspectivePoller, Syslogd, KarafStartupMonitor.
+
+Example — changing a service from enabled to disabled:
+
+[source,xml]
+----
+<!-- Before -->
+<service>
+  <name>OpenNMS:Name=Alarmd</name>
+  ...
+</service>
+
+<!-- After -->
+<service enabled="false">
+  <name>OpenNMS:Name=Alarmd</name>
+  ...
+</service>
+----
+
+[[co-located-instances]]
+== Co-Located Instances (Same Host)
+
+If the read-only instance runs on the same host as the primary, several ports must be changed to avoid conflicts.
+When the instances run on separate hosts, the default ports can be used and this section can be skipped.
+
+=== Jetty HTTP Port
+
+Set in `$OPENNMS_HOME/etc/opennms.conf`:
+
+[source,bash]
+----
+ADDITIONAL_MANAGER_OPTIONS="${ADDITIONAL_MANAGER_OPTIONS} -Dorg.opennms.netmgt.jetty.port=8981"
+----
+
+=== RMI/JMX Port
+
+Set in `$OPENNMS_HOME/etc/opennms.conf`:
+
+[source,bash]
+----
+ADDITIONAL_MANAGER_OPTIONS="${ADDITIONAL_MANAGER_OPTIONS} -Drmi.server.port=1100"
+----
+
+Also update the JMX URL in `$OPENNMS_HOME/bin/opennms`:
+
+[source,bash]
+----
+JMX_URL="service:jmx:rmi:///jndi/rmi://127.0.0.1:1100/jmxrmi"
+----
+
+=== Eventd TCP/UDP Port
+
+Edit `$OPENNMS_HOME/etc/eventd-configuration.xml` and change ports 5817 to a different value (e.g., 5818):
+
+[source,xml]
+----
+<EventdConfiguration xmlns="http://xmlns.opennms.org/xsd/config/eventd"
+    TCPAddress="127.0.0.1" TCPPort="5818"
+    UDPAddress="127.0.0.1" UDPPort="5818"
+    ... />
+----
+
+=== Karaf SSH Port
+
+Edit `$OPENNMS_HOME/etc/org.apache.karaf.shell.cfg`:
+
+[source,properties]
+----
+sshPort=8201
+----
+
+=== RTC Client URL
+
+When co-located, the Rtcd daemon posts availability data to the web UI via HTTP.
+The default URL uses port 8980, which belongs to the primary instance.
+Edit `$OPENNMS_HOME/etc/opennms.properties` to use the read-only instance's Jetty port:
+
+[source,properties]
+----
+opennms.rtc-client.http-post.base-url = http://localhost:8981/opennms/rtc/post
+----
+
+=== Port Summary
+
+[cols="1,1,1"]
+|===
+| Resource | Primary (default) | Read-Only (example)
+
+| Jetty HTTP
+| 8980
+| 8981
+
+| RMI/JMX
+| 1099
+| 1100
+
+| Eventd TCP/UDP
+| 5817
+| 5818
+
+| Karaf SSH
+| 8101
+| 8201
+|===
+
+== Step 5: Start the Instance
+
+Do *not* run `bin/install` on the read-only instance — the database schema is managed by the primary.
+
+[source,bash]
+----
+$OPENNMS_HOME/bin/opennms start
+----
+
+The web UI will be available at `http://your-host:8980/opennms` (or the custom Jetty port if configured).
+
+== Verification
+
+=== Confirm Read-Only Mode in Logs
+
+Check `$OPENNMS_HOME/logs/eventd.log` for messages confirming read-only mode is active:
+
+[source]
+----
+INFO  o.o.n.d.h.AbstractDaoHibernate: initDao: skipping AccessLock write for NODE_ACCESS (opennms.readonly=true)
+----
+
+Check `$OPENNMS_HOME/logs/eventd.log` for the in-memory JSON store registration:
+
+[source]
+----
+DEBUG  o.o.c.s.s.DefaultServiceRegistry: Registered InMemoryJsonStore@... as instance of [interface org.opennms.features.distributed.kvstore.api.JsonStore]
+----
+
+=== Confirm Zero Database Writes
+
+Enable PostgreSQL statement logging to verify no write operations are attempted:
+
+[source,sql]
+----
+ALTER SYSTEM SET log_statement = 'mod';
+SELECT pg_reload_conf();
+----
+
+This logs all INSERT, UPDATE, DELETE, and SELECT ... FOR UPDATE statements.
+Monitor the PostgreSQL log for any statements from the `opennms_ro` user — there should be none.
+
+To disable statement logging after verification:
+
+[source,sql]
+----
+ALTER SYSTEM SET log_statement = 'none';
+SELECT pg_reload_conf();
+----
+
+== Testing on a Development System
+
+To test the read-only instance locally against a development build:
+
+. Build and assemble OpenNMS:
++
+[source,bash]
+----
+./compile.pl -DskipTests
+./assemble.pl -p dir -DskipTests
+----
+
+. Set up the primary instance at `target/opennms-<version>/` with a normal database user and run `bin/install -dis` to initialize the schema.
+
+. Copy the assembled directory to create the read-only instance:
++
+[source,bash]
+----
+cp -a target/opennms-<version> target/opennms-readonly
+----
+
+. Update all hardcoded paths in the copied instance's scripts and configuration files to point to the new directory.
+
+. Apply the configuration changes described in Steps 1 through 5, including the co-located port changes.
+
+. Start the primary instance first, wait for it to be fully running, then start the read-only instance.
+
+. Verify with PostgreSQL statement logging (`log_statement = 'mod'`) that the read-only instance produces zero write-related log entries.
+
+== Limitations
+
+* *No alarm acknowledgment or memo editing.* Write operations through the REST API will fail with permission errors.
+The existing `ROLE_READONLY` Spring Security role can be assigned to all users on the read-only instance to hide write-action UI elements.
+
+* *Ephemeral KV store.* The in-memory JSON store does not persist data across restarts.
+Graph resource ID lists and configuration cache are rebuilt on each startup.
+
+* *No scheduled reports.* The report scheduler is disabled; users cannot schedule or run database reports from the read-only instance.
+
+* *Configuration changes on the primary require a restart.* Since the read-only instance caches configuration in memory, changes made on the primary (e.g., new surveillance categories, threshold definitions) will not be reflected until the read-only instance is restarted.
+
+== System Properties Reference
+
+[cols="1,1,2"]
+|===
+| Property | Default | Description
+
+| `opennms.readonly`
+| `false`
+| Master toggle for read-only mode. Affects DAO initialization, KV store backend, and Quartz job store.
+
+| `skipConfigUpgrades`
+| `false`
+| Skips Liquibase configuration manager migrations at startup.
+
+| `opennms.report.scheduler.enabled`
+| `true`
+| Controls whether the database report scheduler starts.
+|===
