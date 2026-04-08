@@ -21,4 +21,12 @@
          while the monitor is executed in this pool. -->
     <bean id="pollerExecutor" class="java.util.concurrent.Executors" factory-method="newCachedThreadPool"/>
 
+    <!-- Ad-hoc poll service: on-demand, side-effect-free polling -->
+    <onmsgi:reference id="monitoredServiceDao" interface="org.opennms.netmgt.dao.api.MonitoredServiceDao"/>
+    <onmsgi:reference id="pollerConfig" interface="org.opennms.netmgt.config.PollerConfig"/>
+    <onmsgi:reference id="sessionUtils" interface="org.opennms.netmgt.dao.api.SessionUtils"/>
+
+    <bean id="adhocPollService" class="org.opennms.netmgt.poller.client.rpc.AdhocPollServiceImpl"/>
+    <onmsgi:service interface="org.opennms.netmgt.poller.AdhocPollService" ref="adhocPollService"/>
+
 </beans>
