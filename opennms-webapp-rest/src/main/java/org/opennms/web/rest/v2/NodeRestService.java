@@ -25,8 +25,12 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
+import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
@@ -34,7 +38,6 @@ import javax.ws.rs.PUT;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
-import javax.ws.rs.Consumes;
 import javax.ws.rs.container.ResourceContext;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
@@ -53,6 +56,9 @@ import org.opennms.core.criteria.restrictions.Restrictions;
 import org.opennms.netmgt.dao.api.MonitoringLocationDao;
 import org.opennms.netmgt.dao.api.NodeDao;
 import org.opennms.netmgt.events.api.EventProxy;
+import org.opennms.netmgt.poller.AdhocPollException;
+import org.opennms.netmgt.poller.AdhocPollResult;
+import org.opennms.netmgt.poller.AdhocPollService;
 import org.opennms.netmgt.model.OnmsMetaData;
 import org.opennms.netmgt.model.OnmsMetaDataList;
 import org.opennms.netmgt.model.OnmsNode;
@@ -60,12 +66,14 @@ import org.opennms.netmgt.model.OnmsNodeList;
 import org.opennms.netmgt.model.events.EventUtils;
 import org.opennms.netmgt.model.monitoringLocations.OnmsMonitoringLocation;
 import org.opennms.netmgt.xml.event.Event;
+import org.opennms.web.api.Authentication;
 import org.opennms.web.api.RestUtils;
 import org.opennms.web.rest.support.Aliases;
 import org.opennms.web.rest.support.CriteriaBehavior;
 import org.opennms.web.rest.support.CriteriaBehaviors;
 import org.opennms.web.rest.support.MultivaluedMapImpl;
 import org.opennms.web.rest.support.RedirectHelper;
+import org.opennms.web.rest.support.SecurityHelper;
 import org.opennms.web.rest.support.SearchProperties;
 import org.opennms.web.rest.support.SearchProperty;
 import org.slf4j.Logger;
@@ -98,6 +106,9 @@ public class NodeRestService extends AbstractDaoRestService<OnmsNode,SearchBean,
     @Autowired
     @Qualifier("eventProxy")
     private EventProxy m_eventProxy;
+
+    @Autowired(required = false)
+    private AdhocPollService m_adhocPollService;
 
     @Override
     protected NodeDao getDao() {
@@ -286,6 +297,82 @@ public class NodeRestService extends AbstractDaoRestService<OnmsNode,SearchBean,
         final Event e = EventUtils.createNodeRescanEvent("ReST", node.getId());
         sendEvent(e);
         return Response.ok().build();
+    }
+
+    private static final long POLL_TIMEOUT_SECONDS = 30;
+
+    /**
+     * Execute an ad-hoc, side-effect-free poll for a service on a node.
+     *
+     * <p>Returns the full {@link AdhocPollResult} including status, response time,
+     * reason, monitor class, and package name. The poll does not trigger state
+     * transitions, events, or outage changes.</p>
+     *
+     * @param securityContext the security context for RBAC checks
+     * @param nodeCriteria node ID or foreignSource:foreignId
+     * @param serviceName service name (e.g., "ICMP", "HTTP")
+     * @param request optional request body with updateStatus/suppressNotifications flags
+     * @return the poll result
+     */
+    @POST
+    @Path("{nodeCriteria}/services/{serviceName}/poll")
+    @Consumes({MediaType.APPLICATION_JSON, MediaType.APPLICATION_XML})
+    @Produces({MediaType.APPLICATION_JSON, MediaType.APPLICATION_XML})
+    @Operation(summary = "Execute an ad-hoc poll for a service on a node",
+               description = "Triggers an on-demand, side-effect-free poll and returns the full diagnostic result.",
+               operationId = "NodeRestServicePOSTPollService")
+    public Response pollService(@Context final SecurityContext securityContext,
+                                @PathParam("nodeCriteria") final String nodeCriteria,
+                                @PathParam("serviceName") final String serviceName,
+                                AdhocPollRequest request) {
+
+        if (m_adhocPollService == null) {
+            throw getException(Status.SERVICE_UNAVAILABLE, "Ad-hoc poll service is not available.");
+        }
+
+        SecurityHelper.assertUserReadCredentials(securityContext);
+
+        if (request == null) {
+            request = new AdhocPollRequest();
+        }
+
+        if (request.isUpdateStatus()) {
+            if (!securityContext.isUserInRole(Authentication.ROLE_ADMIN)) {
+                throw getException(Status.FORBIDDEN,
+                        "ROLE_ADMIN is required to use updateStatus=true.");
+            }
+            LOG.info("Ad-hoc poll with updateStatus=true requested by {} for node {} service {} — " +
+                     "updateStatus is accepted but not yet implemented.",
+                     securityContext.getUserPrincipal().getName(), nodeCriteria, serviceName);
+        }
+
+        final OnmsNode node = m_dao.get(nodeCriteria);
+        if (node == null) {
+            throw getException(Status.NOT_FOUND, "Node {} was not found.", nodeCriteria);
+        }
+
+        try {
+            final AdhocPollResult result = m_adhocPollService
+                    .poll(node.getId(), serviceName)
+                    .get(POLL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            return Response.ok(result).build();
+        } catch (AdhocPollException e) {
+            throw getException(Status.NOT_FOUND, e.getMessage());
+        } catch (TimeoutException e) {
+            throw getException(Status.GATEWAY_TIMEOUT,
+                    "Ad-hoc poll for service {} on node {} timed out after {} seconds.",
+                    serviceName, nodeCriteria, String.valueOf(POLL_TIMEOUT_SECONDS));
+        } catch (ExecutionException e) {
+            final Throwable cause = e.getCause();
+            if (cause instanceof AdhocPollException) {
+                throw getException(Status.NOT_FOUND, cause.getMessage());
+            }
+            throw getException(Status.INTERNAL_SERVER_ERROR,
+                    "Ad-hoc poll failed: {}", cause != null ? cause.getMessage() : e.getMessage());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw getException(Status.INTERNAL_SERVER_ERROR, "Ad-hoc poll was interrupted.");
+        }
     }
 
     @GET
