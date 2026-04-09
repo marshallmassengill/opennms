@@ -217,7 +217,10 @@ function doDelete() {
          <li class="list-inline-item"><a href="admin/deleteService" onClick="return doDelete()">Delete</a></li>
        </sec:authorize>
 
-
+         <li class="list-inline-item">
+           <button type="button" class="btn btn-secondary btn-sm" id="adhocPollBtn"
+                   title="Execute an on-demand poll and display the result">Poll Now</button>
+         </li>
 
       </ul>
 
@@ -305,6 +308,33 @@ function doDelete() {
               </c:choose>
             </table>
             </div>
+
+            <!-- Ad-hoc poll result panel (hidden until Poll Now is clicked) -->
+            <div class="card" id="adhocPollPanel" style="display:none;">
+              <div class="card-header">
+                <span>Ad-Hoc Poll Result</span>
+              </div>
+              <div class="card-body">
+                <div id="adhocPollOptions" class="mb-3">
+                  <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="checkbox" id="updateStatusCheck" disabled>
+                    <label class="form-check-label" for="updateStatusCheck">
+                      Update monitoring status <span class="badge badge-secondary">Coming soon</span>
+                    </label>
+                  </div>
+                  <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="checkbox" id="suppressNotifCheck" disabled>
+                    <label class="form-check-label" for="suppressNotifCheck">
+                      Suppress notifications <span class="badge badge-secondary">Coming soon</span>
+                    </label>
+                  </div>
+                </div>
+                <div id="adhocPollResult">
+                  <!-- Populated by JavaScript -->
+                </div>
+              </div>
+            </div>
+
             <!-- collection info box -->
             <div class="card">
             <div class="card-header">
@@ -542,5 +572,69 @@ function doDelete() {
             <jsp:include page="/outage/serviceOutages-box.htm" flush="false" />
       </div> <!-- content-right -->
 </div>
+
+<script type="text/javascript">
+$(function() {
+    $('#adhocPollBtn').click(function() {
+        var nodeId = '${service.ipInterface.node.id}';
+        var serviceName = '${fn:escapeXml(service.serviceName)}';
+        var btn = $(this);
+        var panel = $('#adhocPollPanel');
+        var resultDiv = $('#adhocPollResult');
+
+        btn.prop('disabled', true).text('Polling...');
+        panel.show();
+        resultDiv.html('<p class="text-muted">Executing poll...</p>');
+
+        $.ajax({
+            type: 'POST',
+            url: 'api/v2/nodes/' + encodeURIComponent(nodeId) + '/services/' + encodeURIComponent(serviceName) + '/poll',
+            contentType: 'application/json',
+            data: JSON.stringify({
+                updateStatus: $('#updateStatusCheck').is(':checked'),
+                suppressNotifications: $('#suppressNotifCheck').is(':checked')
+            }),
+            success: function(data) {
+                var ps = data['poll-status'] || data.pollStatus || {};
+                var statusCode = ps.code;
+                var statusName = ps.name || 'Unknown';
+                var reason = ps.reason || '';
+                var responseTime = ps['response-time'];
+                var monitorClass = data['monitor-class'] || data.monitorClassName || '';
+                var pkgName = data['package'] || data.packageName || '';
+                var ipAddress = data['ip-address'] || data.ipAddress || '';
+
+                var statusClass = (statusCode === 1) ? 'text-success' : 'text-danger';
+                var html = '<table class="table table-sm mb-0">';
+                html += '<tr><th>Status</th><td class="' + statusClass + '"><strong>' + $('<span>').text(statusName).html() + '</strong></td></tr>';
+                if (responseTime != null) {
+                    html += '<tr><th>Response Time</th><td>' + parseFloat(responseTime).toFixed(2) + ' ms</td></tr>';
+                }
+                if (reason) {
+                    html += '<tr><th>Reason</th><td><code>' + $('<span>').text(reason).html() + '</code></td></tr>';
+                }
+                html += '<tr><th>IP Address</th><td>' + $('<span>').text(ipAddress).html() + '</td></tr>';
+                html += '<tr><th>Monitor</th><td><small>' + $('<span>').text(monitorClass).html() + '</small></td></tr>';
+                html += '<tr><th>Package</th><td>' + $('<span>').text(pkgName).html() + '</td></tr>';
+                html += '</table>';
+                resultDiv.html(html);
+            },
+            error: function(xhr) {
+                var msg = xhr.responseText || 'Unknown error';
+                if (xhr.status === 429) {
+                    var retryAfter = xhr.getResponseHeader('Retry-After');
+                    msg = 'Rate limit exceeded. Try again in ' + (retryAfter || '?') + ' seconds.';
+                } else if (xhr.status === 404) {
+                    msg = 'Service or polling configuration not found: ' + msg;
+                }
+                resultDiv.html('<div class="alert alert-danger mb-0">' + $('<span>').text(msg).html() + '</div>');
+            },
+            complete: function() {
+                btn.prop('disabled', false).text('Poll Now');
+            }
+        });
+    });
+});
+</script>
 
 <jsp:include page="/includes/bootstrap-footer.jsp" flush="false" />
