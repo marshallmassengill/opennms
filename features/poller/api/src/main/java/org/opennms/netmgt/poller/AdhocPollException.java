@@ -61,4 +61,22 @@ public class AdhocPollException extends RuntimeException {
             super(String.format("No monitor class configured for service '%s'", serviceName));
         }
     }
+
+    /**
+     * Thrown when a rate limit is exceeded (global concurrency, per-service
+     * cooldown, or per-user rate limit).
+     */
+    public static class RateLimitExceeded extends AdhocPollException {
+        private final long retryAfterSeconds;
+
+        public RateLimitExceeded(String message, long retryAfterSeconds) {
+            super(message);
+            this.retryAfterSeconds = retryAfterSeconds;
+        }
+
+        /** Suggested number of seconds the caller should wait before retrying. */
+        public long getRetryAfterSeconds() {
+            return retryAfterSeconds;
+        }
+    }
 }

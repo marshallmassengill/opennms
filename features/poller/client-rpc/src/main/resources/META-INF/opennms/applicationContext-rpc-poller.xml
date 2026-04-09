@@ -26,7 +26,13 @@
     <onmsgi:reference id="pollerConfig" interface="org.opennms.netmgt.config.PollerConfig"/>
     <onmsgi:reference id="sessionUtils" interface="org.opennms.netmgt.dao.api.SessionUtils"/>
 
-    <bean id="adhocPollService" class="org.opennms.netmgt.poller.client.rpc.AdhocPollServiceImpl"/>
-    <onmsgi:service interface="org.opennms.netmgt.poller.AdhocPollService" ref="adhocPollService"/>
+    <bean id="adhocPollServiceImpl" class="org.opennms.netmgt.poller.client.rpc.AdhocPollServiceImpl"/>
+
+    <bean id="rateLimitedAdhocPollService" class="org.opennms.netmgt.poller.client.rpc.RateLimitedAdhocPollServiceImpl">
+        <constructor-arg ref="adhocPollServiceImpl"/>
+    </bean>
+    <!-- Expose both interfaces: AdhocPollService for general use, RateLimitedAdhocPollService for REST -->
+    <onmsgi:service interface="org.opennms.netmgt.poller.AdhocPollService" ref="rateLimitedAdhocPollService"/>
+    <onmsgi:service interface="org.opennms.netmgt.poller.RateLimitedAdhocPollService" ref="rateLimitedAdhocPollService"/>
 
 </beans>

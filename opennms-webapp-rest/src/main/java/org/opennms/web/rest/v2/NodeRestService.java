@@ -58,7 +58,7 @@ import org.opennms.netmgt.dao.api.NodeDao;
 import org.opennms.netmgt.events.api.EventProxy;
 import org.opennms.netmgt.poller.AdhocPollException;
 import org.opennms.netmgt.poller.AdhocPollResult;
-import org.opennms.netmgt.poller.AdhocPollService;
+import org.opennms.netmgt.poller.RateLimitedAdhocPollService;
 import org.opennms.netmgt.model.OnmsMetaData;
 import org.opennms.netmgt.model.OnmsMetaDataList;
 import org.opennms.netmgt.model.OnmsNode;
@@ -108,7 +108,7 @@ public class NodeRestService extends AbstractDaoRestService<OnmsNode,SearchBean,
     private EventProxy m_eventProxy;
 
     @Autowired(required = false)
-    private AdhocPollService m_adhocPollService;
+    private RateLimitedAdhocPollService m_adhocPollService;
 
     @Override
     protected NodeDao getDao() {
@@ -351,11 +351,20 @@ public class NodeRestService extends AbstractDaoRestService<OnmsNode,SearchBean,
             throw getException(Status.NOT_FOUND, "Node {} was not found.", nodeCriteria);
         }
 
+        final String username = securityContext.getUserPrincipal().getName();
+
         try {
             final AdhocPollResult result = m_adhocPollService
-                    .poll(node.getId(), serviceName)
+                    .poll(node.getId(), serviceName, username)
                     .get(POLL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             return Response.ok(result).build();
+        } catch (AdhocPollException.RateLimitExceeded e) {
+            // 429 Too Many Requests with Retry-After header
+            return Response.status(429)
+                    .header("Retry-After", e.getRetryAfterSeconds())
+                    .entity(e.getMessage())
+                    .type(javax.ws.rs.core.MediaType.TEXT_PLAIN)
+                    .build();
         } catch (AdhocPollException e) {
             throw getException(Status.NOT_FOUND, e.getMessage());
         } catch (TimeoutException e) {
@@ -364,6 +373,14 @@ public class NodeRestService extends AbstractDaoRestService<OnmsNode,SearchBean,
                     serviceName, nodeCriteria, String.valueOf(POLL_TIMEOUT_SECONDS));
         } catch (ExecutionException e) {
             final Throwable cause = e.getCause();
+            if (cause instanceof AdhocPollException.RateLimitExceeded) {
+                final AdhocPollException.RateLimitExceeded rle = (AdhocPollException.RateLimitExceeded) cause;
+                return Response.status(429)
+                        .header("Retry-After", rle.getRetryAfterSeconds())
+                        .entity(rle.getMessage())
+                        .type(javax.ws.rs.core.MediaType.TEXT_PLAIN)
+                        .build();
+            }
             if (cause instanceof AdhocPollException) {
                 throw getException(Status.NOT_FOUND, cause.getMessage());
             }
