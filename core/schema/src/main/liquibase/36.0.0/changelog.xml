@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+
+    <!-- Service-level notification silencing -->
+    <changeSet author="mmassengill" id="36.0.0-service-silences-table">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="service_silences"/>
+            </not>
+        </preConditions>
+
+        <createTable tableName="service_silences">
+            <column name="id" type="integer">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="ifserviceid" type="integer">
+                <constraints nullable="false"/>
+            </column>
+            <column name="start_time" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="end_time" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_by" type="varchar(128)"/>
+        </createTable>
+
+        <createSequence sequenceName="service_silences_nxtid" startValue="1" incrementBy="1"/>
+
+        <addForeignKeyConstraint
+                baseTableName="service_silences" baseColumnNames="ifserviceid"
+                referencedTableName="ifservices" referencedColumnNames="id"
+                constraintName="fk_service_silences_ifserviceid"
+                onDelete="CASCADE"/>
+
+        <createIndex tableName="service_silences" indexName="idx_service_silences_ifserviceid">
+            <column name="ifserviceid"/>
+        </createIndex>
+
+        <createIndex tableName="service_silences" indexName="idx_service_silences_end_time">
+            <column name="end_time"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

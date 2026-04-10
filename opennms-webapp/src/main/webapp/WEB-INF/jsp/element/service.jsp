@@ -221,6 +221,10 @@ function doDelete() {
            <button type="button" class="btn btn-secondary btn-sm" id="adhocPollBtn"
                    title="Execute an on-demand poll and display the result">Poll Now</button>
          </li>
+         <li class="list-inline-item">
+           <button type="button" class="btn btn-warning btn-sm" id="silenceBtn"
+                   title="Silence notifications for this service">Silence</button>
+         </li>
 
       </ul>
 
@@ -332,6 +336,35 @@ function doDelete() {
                 <div id="adhocPollResult">
                   <!-- Populated by JavaScript -->
                 </div>
+              </div>
+            </div>
+
+            <!-- Active silence banner (hidden until checked) -->
+            <div class="alert alert-warning" id="silenceBanner" style="display:none;">
+              <strong>Notifications silenced</strong> until <span id="silenceEndTime"></span>
+              <button type="button" class="btn btn-sm btn-outline-dark ml-2" id="cancelSilenceBtn">Cancel</button>
+            </div>
+
+            <!-- Silence panel (hidden until Silence button is clicked) -->
+            <div class="card" id="silencePanel" style="display:none;">
+              <div class="card-header">
+                <span>Silence Notifications</span>
+              </div>
+              <div class="card-body">
+                <div class="form-group">
+                  <label for="silenceDuration">Duration</label>
+                  <select class="form-control form-control-sm" id="silenceDuration" style="width:auto;">
+                    <option value="900000">15 minutes</option>
+                    <option value="1800000" selected>30 minutes</option>
+                    <option value="3600000">1 hour</option>
+                    <option value="7200000">2 hours</option>
+                    <option value="14400000">4 hours</option>
+                    <option value="28800000">8 hours</option>
+                  </select>
+                </div>
+                <button type="button" class="btn btn-warning btn-sm" id="confirmSilenceBtn">Confirm Silence</button>
+                <button type="button" class="btn btn-secondary btn-sm ml-1" id="cancelSilencePanelBtn">Cancel</button>
+                <div id="silenceResult" class="mt-2"></div>
               </div>
             </div>
 
@@ -631,6 +664,80 @@ $(function() {
             },
             complete: function() {
                 btn.prop('disabled', false).text('Poll Now');
+            }
+        });
+    });
+
+    // --- Silence functionality ---
+    var silenceBaseUrl = 'api/v2/nodes/' + encodeURIComponent('${service.ipInterface.node.id}')
+                       + '/services/' + encodeURIComponent('${fn:escapeXml(service.serviceName)}') + '/silence';
+
+    function checkSilenceStatus() {
+        $.ajax({
+            type: 'GET',
+            url: silenceBaseUrl,
+            dataType: 'json',
+            success: function(data) {
+                var endTime = data['end-time'] || data.endTime;
+                if (endTime) {
+                    $('#silenceEndTime').text(new Date(endTime).toLocaleString());
+                    $('#silenceBanner').show();
+                    $('#silenceBtn').text('Silenced').prop('disabled', true);
+                }
+            },
+            error: function() {
+                $('#silenceBanner').hide();
+                $('#silenceBtn').text('Silence').prop('disabled', false);
+            }
+        });
+    }
+
+    // Check on page load
+    checkSilenceStatus();
+
+    $('#silenceBtn').click(function() {
+        $('#silencePanel').toggle();
+    });
+
+    $('#cancelSilencePanelBtn').click(function() {
+        $('#silencePanel').hide();
+    });
+
+    $('#confirmSilenceBtn').click(function() {
+        var duration = parseInt($('#silenceDuration').val());
+        var btn = $(this);
+        btn.prop('disabled', true).text('Silencing...');
+
+        $.ajax({
+            type: 'POST',
+            url: silenceBaseUrl,
+            contentType: 'application/json',
+            data: JSON.stringify({ duration: duration }),
+            success: function() {
+                $('#silencePanel').hide();
+                $('#silenceResult').empty();
+                checkSilenceStatus();
+            },
+            error: function(xhr) {
+                var msg = xhr.responseText || 'Failed to create silence';
+                $('#silenceResult').html('<div class="alert alert-danger">' + $('<span>').text(msg).html() + '</div>');
+            },
+            complete: function() {
+                btn.prop('disabled', false).text('Confirm Silence');
+            }
+        });
+    });
+
+    $('#cancelSilenceBtn').click(function() {
+        $.ajax({
+            type: 'DELETE',
+            url: silenceBaseUrl,
+            success: function() {
+                $('#silenceBanner').hide();
+                $('#silenceBtn').text('Silence').prop('disabled', false);
+            },
+            error: function(xhr) {
+                alert('Failed to cancel silence: ' + (xhr.responseText || 'Unknown error'));
             }
         });
     });

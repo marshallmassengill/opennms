@@ -118,6 +118,9 @@ public final class BroadcastEventProcessor implements EventListener {
     @Autowired
     private EntityScopeProvider m_entityScopeProvider;
 
+    @Autowired(required = false)
+    private org.opennms.netmgt.poller.ServiceSilenceService m_serviceSilenceService;
+
     /**
      * <p>Constructor for BroadcastEventProcessor.</p>
      */
@@ -521,6 +524,18 @@ public final class BroadcastEventProcessor implements EventListener {
         } catch (Throwable e) {
             continueNotice = true;
             LOG.error("Not able to get notify status for service {} on interface/node {}/{}. Continuing notice... {}", service, ipAddr, nodeID, e.getMessage());
+        }
+
+        // Check for service-level notification silence
+        if (continueNotice && m_serviceSilenceService != null) {
+            try {
+                if (m_serviceSilenceService.isSilenced(nodeID, ipAddr, service)) {
+                    LOG.info("Service {} on interface/node {}/{} is silenced, suppressing notification.", service, ipAddr, nodeID);
+                    return false;
+                }
+            } catch (Throwable e) {
+                LOG.warn("Error checking silence status for service {} on {}/{}. Continuing notice.", service, ipAddr, nodeID, e);
+            }
         }
 
         // in case of a error we will return false

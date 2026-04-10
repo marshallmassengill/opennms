@@ -59,7 +59,9 @@ import org.opennms.netmgt.events.api.EventProxy;
 import org.opennms.netmgt.poller.AdhocPollException;
 import org.opennms.netmgt.poller.AdhocPollResult;
 import org.opennms.netmgt.poller.RateLimitedAdhocPollService;
+import org.opennms.netmgt.poller.ServiceSilenceService;
 import org.opennms.netmgt.model.OnmsMetaData;
+import org.opennms.netmgt.model.OnmsServiceSilence;
 import org.opennms.netmgt.model.OnmsMetaDataList;
 import org.opennms.netmgt.model.OnmsNode;
 import org.opennms.netmgt.model.OnmsNodeList;
@@ -109,6 +111,9 @@ public class NodeRestService extends AbstractDaoRestService<OnmsNode,SearchBean,
 
     @Autowired(required = false)
     private RateLimitedAdhocPollService m_adhocPollService;
+
+    @Autowired(required = false)
+    private ServiceSilenceService m_serviceSilenceService;
 
     @Override
     protected NodeDao getDao() {
@@ -390,6 +395,87 @@ public class NodeRestService extends AbstractDaoRestService<OnmsNode,SearchBean,
             Thread.currentThread().interrupt();
             throw getException(Status.INTERNAL_SERVER_ERROR, "Ad-hoc poll was interrupted.");
         }
+    }
+
+    @POST
+    @Path("{nodeCriteria}/services/{serviceName}/silence")
+    @Consumes({MediaType.APPLICATION_JSON, MediaType.APPLICATION_XML})
+    @Produces({MediaType.APPLICATION_JSON, MediaType.APPLICATION_XML})
+    @Operation(summary = "Silence notifications for a service",
+               description = "Creates a time-bounded notification silence. Events and alarms are still created.",
+               operationId = "NodeRestServicePOSTSilenceService")
+    public Response silenceService(@Context final SecurityContext securityContext,
+                                   @PathParam("nodeCriteria") final String nodeCriteria,
+                                   @PathParam("serviceName") final String serviceName,
+                                   ServiceSilenceRequest request) {
+
+        if (m_serviceSilenceService == null) {
+            throw getException(Status.SERVICE_UNAVAILABLE, "Service silence service is not available.");
+        }
+        SecurityHelper.assertUserEditCredentials(securityContext, securityContext.getUserPrincipal().getName());
+
+        final OnmsNode node = m_dao.get(nodeCriteria);
+        if (node == null) {
+            throw getException(Status.NOT_FOUND, "Node {} was not found.", nodeCriteria);
+        }
+        if (request == null || request.getDuration() == null || request.getDuration() <= 0) {
+            throw getException(Status.BAD_REQUEST, "A positive duration (in milliseconds) is required.");
+        }
+
+        final String username = securityContext.getUserPrincipal().getName();
+        try {
+            final OnmsServiceSilence silence = m_serviceSilenceService.silence(
+                    node.getId(), serviceName, request.getDuration(), username);
+            return Response.status(Status.CREATED).entity(silence).build();
+        } catch (IllegalArgumentException e) {
+            throw getException(Status.NOT_FOUND, e.getMessage());
+        }
+    }
+
+    @DELETE
+    @Path("{nodeCriteria}/services/{serviceName}/silence")
+    @Operation(summary = "Cancel a service notification silence",
+               operationId = "NodeRestServiceDELETESilenceService")
+    public Response cancelSilence(@Context final SecurityContext securityContext,
+                                  @PathParam("nodeCriteria") final String nodeCriteria,
+                                  @PathParam("serviceName") final String serviceName) {
+
+        if (m_serviceSilenceService == null) {
+            throw getException(Status.SERVICE_UNAVAILABLE, "Service silence service is not available.");
+        }
+        SecurityHelper.assertUserEditCredentials(securityContext, securityContext.getUserPrincipal().getName());
+
+        final OnmsNode node = m_dao.get(nodeCriteria);
+        if (node == null) {
+            throw getException(Status.NOT_FOUND, "Node {} was not found.", nodeCriteria);
+        }
+
+        m_serviceSilenceService.cancel(node.getId(), serviceName);
+        return Response.noContent().build();
+    }
+
+    @GET
+    @Path("{nodeCriteria}/services/{serviceName}/silence")
+    @Produces({MediaType.APPLICATION_JSON, MediaType.APPLICATION_XML})
+    @Operation(summary = "Get active silence for a service",
+               operationId = "NodeRestServiceGETSilenceService")
+    public Response getSilence(@PathParam("nodeCriteria") final String nodeCriteria,
+                               @PathParam("serviceName") final String serviceName) {
+
+        if (m_serviceSilenceService == null) {
+            throw getException(Status.SERVICE_UNAVAILABLE, "Service silence service is not available.");
+        }
+
+        final OnmsNode node = m_dao.get(nodeCriteria);
+        if (node == null) {
+            throw getException(Status.NOT_FOUND, "Node {} was not found.", nodeCriteria);
+        }
+
+        final OnmsServiceSilence silence = m_serviceSilenceService.getActiveSilence(node.getId(), serviceName);
+        if (silence == null) {
+            return Response.status(Status.NOT_FOUND).entity("No active silence for this service.").type(MediaType.TEXT_PLAIN).build();
+        }
+        return Response.ok(silence).build();
     }
 
     @GET

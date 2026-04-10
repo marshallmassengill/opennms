@@ -181,6 +181,11 @@
     </bean>
     <onmsgi:service interface="org.opennms.netmgt.dao.api.MonitoredServiceDao" ref="monitoredServiceDao" />
 
+    <bean id="serviceSilenceDao" class="org.opennms.netmgt.dao.hibernate.ServiceSilenceDaoHibernate">
+        <property name="sessionFactory" ref="sessionFactory" />
+    </bean>
+    <onmsgi:service interface="org.opennms.netmgt.dao.api.ServiceSilenceDao" ref="serviceSilenceDao" />
+
     <bean id="minionDao" class="org.opennms.netmgt.dao.hibernate.MinionDaoHibernate">
         <property name="sessionFactory" ref="sessionFactory" />
     </bean>

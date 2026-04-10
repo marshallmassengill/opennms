@@ -35,4 +35,10 @@
     <onmsgi:service interface="org.opennms.netmgt.poller.AdhocPollService" ref="rateLimitedAdhocPollService"/>
     <onmsgi:service interface="org.opennms.netmgt.poller.RateLimitedAdhocPollService" ref="rateLimitedAdhocPollService"/>
 
+    <!-- Service silence: per-service notification suppression -->
+    <onmsgi:reference id="serviceSilenceDao" interface="org.opennms.netmgt.dao.api.ServiceSilenceDao"/>
+
+    <bean id="serviceSilenceService" class="org.opennms.netmgt.poller.client.rpc.ServiceSilenceServiceImpl"/>
+    <onmsgi:service interface="org.opennms.netmgt.poller.ServiceSilenceService" ref="serviceSilenceService"/>
+
 </beans>
