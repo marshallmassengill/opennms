@@ -41,6 +41,14 @@ public class AuthScope implements Scope {
 
     public static final String CONTEXT = "auth";
 
+    /**
+     * Per-thread re-entrancy guard. Set while resolving an
+     * {@code ${auth:foo}} placeholder so that a re-entrant resolution
+     * (which would happen if an auth definition itself contained
+     * {@code ${auth:bar}}) returns empty rather than recursing forever.
+     */
+    private static final ThreadLocal<Boolean> RESOLVING = ThreadLocal.withInitial(() -> Boolean.FALSE);
+
     private final TokenProvider tokenProvider;
 
     public AuthScope(final TokenProvider tokenProvider) {
@@ -52,8 +60,24 @@ public class AuthScope implements Scope {
         if (!CONTEXT.equals(contextKey.context)) {
             return Optional.empty();
         }
-        return tokenProvider.getToken(contextKey.key)
-                .map(token -> new ScopeValue(ScopeName.GLOBAL, token));
+        if (RESOLVING.get()) {
+            // Re-entrant lookup. Auth definitions cannot reference other
+            // auth definitions; treat as unresolved so the metadata DSL
+            // applies its empty-on-miss fallback.
+            return Optional.empty();
+        }
+        // Pass the scope of the in-flight interpolation pass down to the
+        // provider so the auth definition's own ${node:...} or
+        // ${requisition:...} placeholders resolve against the calling
+        // context (e.g. the node being collected against).
+        final Scope callingScope = Interpolator.currentCallingScope().orElse(null);
+        RESOLVING.set(Boolean.TRUE);
+        try {
+            return tokenProvider.getToken(contextKey.key, callingScope)
+                    .map(token -> new ScopeValue(ScopeName.GLOBAL, token));
+        } finally {
+            RESOLVING.set(Boolean.FALSE);
+        }
     }
 
     @Override

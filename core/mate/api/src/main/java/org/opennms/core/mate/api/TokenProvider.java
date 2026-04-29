@@ -49,6 +49,28 @@ public interface TokenProvider {
     Optional<String> getToken(String authName);
 
     /**
+     * Variant that lets the auth definition's own fields (URL, basic-auth
+     * username/password, content body, header values) resolve against
+     * the {@code callingScope}. This is what the {@code AuthScope}
+     * pipeline uses so that {@code ${node:...}} or
+     * {@code ${requisition:...}} placeholders inside an auth definition
+     * pick up the per-node context of the request that triggered the
+     * lookup.
+     *
+     * <p>Cache identity widens to include a fingerprint of the resolved
+     * fields, so two requests that resolve to different URLs (or
+     * different credentials) get distinct cache entries -- typical
+     * "one logical auth, many regional endpoints" deployments end up
+     * with one cache entry per distinct endpoint, not one per node.</p>
+     *
+     * <p>Default implementation ignores {@code callingScope} and falls
+     * through to {@link #getToken(String)}.</p>
+     */
+    default Optional<String> getToken(final String authName, final Scope callingScope) {
+        return getToken(authName);
+    }
+
+    /**
      * Result of a successful reverse-lookup invalidation: identifies the
      * auth that owned the matched token and surfaces the matched token text
      * itself, so callers performing in-place header rewrites can substitute

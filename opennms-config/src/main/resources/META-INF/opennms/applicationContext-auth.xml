@@ -14,8 +14,18 @@
       ${auth:...} placeholder falls through" rather than failing at startup.
     -->
 
+    <!--
+      EntityScopeProvider is wired via setter, not constructor: in
+      production EntityScopeProviderImpl autowires the TokenProvider
+      service to back the AuthScope, and TokenProvider depends back on
+      TokenCache+TokenAcquirer, closing a cycle. Setter injection lets
+      Spring build TokenAcquirer first (without a provider) and inject
+      the provider once the rest of the chain has been constructed.
+    -->
     <bean id="authTokenAcquirer"
-          class="org.opennms.netmgt.config.auth.TokenAcquirer"/>
+          class="org.opennms.netmgt.config.auth.TokenAcquirer">
+        <property name="entityScopeProvider" ref="entityScopeProvider"/>
+    </bean>
 
     <bean id="authTokenCache"
           class="org.opennms.netmgt.config.auth.TokenCache">

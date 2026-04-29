@@ -100,15 +100,46 @@ public class Interpolator {
         }
     }
 
+    /**
+     * Per-thread stack of the {@link Scope} currently driving an
+     * interpolation pass. Updated by {@link #interpolate(String, Scope)}
+     * and queried by {@link AuthScope} so that an auth definition can
+     * resolve {@code ${node:...}}, {@code ${requisition:...}}, etc.
+     * against the same context the caller used. The stack handles
+     * legitimate nesting (e.g. a recursive interpolator pass on a
+     * fall-through default).
+     */
+    private static final ThreadLocal<java.util.Deque<Scope>> CALLING_SCOPE_STACK =
+            ThreadLocal.withInitial(java.util.ArrayDeque::new);
+
+    /**
+     * Returns the {@link Scope} of the interpolation call that is
+     * currently in flight on this thread, or empty if no interpolation
+     * is in progress (which is the typical case from any code that is
+     * not itself a {@link Scope} implementation reacting to a lookup).
+     */
+    public static Optional<Scope> currentCallingScope() {
+        final java.util.Deque<Scope> stack = CALLING_SCOPE_STACK.get();
+        return stack.isEmpty() ? Optional.empty() : Optional.of(stack.peek());
+    }
+
     public static Result interpolate(final String raw, final Scope scope) {
         if (raw == null) {
             return new Result(null, List.of());
         }
 
-        final ImmutableList.Builder<ResultPart> parts = ImmutableList.builder();
-        final String output = interpolateRecursive(raw, parts, scope, 1);
-
-        return new Result(output, parts.build());
+        final java.util.Deque<Scope> stack = CALLING_SCOPE_STACK.get();
+        stack.push(scope);
+        try {
+            final ImmutableList.Builder<ResultPart> parts = ImmutableList.builder();
+            final String output = interpolateRecursive(raw, parts, scope, 1);
+            return new Result(output, parts.build());
+        } finally {
+            stack.pop();
+            if (stack.isEmpty()) {
+                CALLING_SCOPE_STACK.remove();
+            }
+        }
     }
 
     private static String interpolateRecursive(final String input, final ImmutableList.Builder<ResultPart> parts, final Scope scope, final int depth) {

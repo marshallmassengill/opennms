@@ -54,6 +54,11 @@ public class TokenCacheTest {
 
         @Override
         public CachedToken acquire(final Auth auth) {
+            return acquire(auth, null);
+        }
+
+        @Override
+        public CachedToken acquire(final Auth auth, final org.opennms.core.mate.api.Scope callerScope) {
             calls.incrementAndGet();
             return new CachedToken(tokenValue + "-" + calls.get(), expiresAt);
         }
@@ -187,6 +192,77 @@ public class TokenCacheTest {
         assertEquals("a", evicted.get().getAuthName());
         assertFalse(cache.isCached("a"));
         assertTrue(cache.isCached("b"));
+    }
+
+    @Test
+    public void differentResolvedScopesProduceDistinctCacheEntries() throws IOException {
+        // Same auth definition, but two callers pass different scopes that
+        // resolve a placeholder in the URL to different values. The cache
+        // must give them DIFFERENT entries (each its own acquire call) --
+        // this is the per-region / per-tenant case.
+        final CountingAcquirer acquirer = new CountingAcquirer("tok", null);
+        final TokenCache cache = new TokenCache(acquirer);
+
+        final Auth tmplAuth = new Auth();
+        tmplAuth.setName("regional");
+        tmplAuth.setUrl("https://${node:area}.example.com/auth");
+
+        final org.opennms.core.mate.api.Scope west = singleValue(
+                org.opennms.core.mate.api.Scope.ScopeName.NODE, "node", "area", "west");
+        final org.opennms.core.mate.api.Scope east = singleValue(
+                org.opennms.core.mate.api.Scope.ScopeName.NODE, "node", "area", "east");
+
+        final String tokWest1 = cache.getToken(tmplAuth, west);
+        final String tokWest2 = cache.getToken(tmplAuth, west);
+        final String tokEast = cache.getToken(tmplAuth, east);
+
+        // Same resolved URL -> same cache entry (one acquire shared)
+        assertEquals(tokWest1, tokWest2);
+        // Different resolved URL -> different entry (separate acquire)
+        assertEquals("east and west should not share a cache entry", false, tokWest1.equals(tokEast));
+        assertEquals("only two distinct acquires across three reads", 2, acquirer.calls.get());
+    }
+
+    @Test
+    public void invalidateRemovesAllVariantsOfAuthName() throws IOException {
+        // invalidate(authName) should drop every fingerprint variant for
+        // that name, not just the one currently being used by the caller.
+        final CountingAcquirer acquirer = new CountingAcquirer("tok", null);
+        final TokenCache cache = new TokenCache(acquirer);
+
+        final Auth tmplAuth = new Auth();
+        tmplAuth.setName("regional");
+        tmplAuth.setUrl("https://${node:area}.example.com/auth");
+
+        final org.opennms.core.mate.api.Scope west = singleValue(
+                org.opennms.core.mate.api.Scope.ScopeName.NODE, "node", "area", "west");
+        final org.opennms.core.mate.api.Scope east = singleValue(
+                org.opennms.core.mate.api.Scope.ScopeName.NODE, "node", "area", "east");
+
+        cache.getToken(tmplAuth, west);
+        cache.getToken(tmplAuth, east);
+        assertTrue(cache.isCached("regional"));
+
+        cache.invalidate("regional");
+        assertFalse(cache.isCached("regional"));
+    }
+
+    private static org.opennms.core.mate.api.Scope singleValue(
+            final org.opennms.core.mate.api.Scope.ScopeName scopeName,
+            final String context, final String key, final String value) {
+        return new org.opennms.core.mate.api.Scope() {
+            @Override
+            public java.util.Optional<ScopeValue> get(final org.opennms.core.mate.api.ContextKey k) {
+                if (context.equals(k.getContext()) && key.equals(k.getKey())) {
+                    return java.util.Optional.of(new ScopeValue(scopeName, value));
+                }
+                return java.util.Optional.empty();
+            }
+            @Override
+            public java.util.Set<org.opennms.core.mate.api.ContextKey> keys() {
+                return java.util.Set.of();
+            }
+        };
     }
 
     @Test

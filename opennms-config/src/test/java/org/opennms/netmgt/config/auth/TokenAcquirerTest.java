@@ -40,6 +40,11 @@ import org.junit.Test;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
+import org.opennms.core.mate.api.EmptyScope;
+import org.opennms.core.mate.api.EntityScopeProvider;
+import org.opennms.core.mate.api.Scope;
+import org.opennms.core.mate.api.Scope.ScopeName;
+
 /**
  * Tests {@link TokenAcquirer} against an embedded {@link HttpServer}.
  * Each test installs its own handler so the auth-response shape can vary.
@@ -235,6 +240,103 @@ public class TokenAcquirerTest {
         final IOException ex = assertThrows(IOException.class,
                 () -> new TokenAcquirer().acquire(auth));
         assertTrue(ex.getMessage().contains("jsonpath"));
+    }
+
+    @Test
+    public void interpolatesScvPlaceholdersInBasicAuthAndContent() throws IOException {
+        // EntityScopeProvider that resolves "scv:cc:user" -> "real-user" and
+        // "scv:cc:pass" -> "real-pass"; everything else returns empty.
+        final EntityScopeProvider scopeProvider = new EntityScopeProvider() {
+            @Override
+            public Scope getScopeForScv() {
+                return new Scope() {
+                    @Override
+                    public java.util.Optional<ScopeValue> get(final org.opennms.core.mate.api.ContextKey k) {
+                        if ("scv".equals(k.getContext()) && "cc:user".equals(k.getKey())) {
+                            return java.util.Optional.of(new ScopeValue(ScopeName.GLOBAL, "real-user"));
+                        }
+                        if ("scv".equals(k.getContext()) && "cc:pass".equals(k.getKey())) {
+                            return java.util.Optional.of(new ScopeValue(ScopeName.GLOBAL, "real-pass"));
+                        }
+                        return java.util.Optional.empty();
+                    }
+                    @Override
+                    public java.util.Set<org.opennms.core.mate.api.ContextKey> keys() {
+                        return java.util.Set.of();
+                    }
+                };
+            }
+            @Override public Scope getScopeForEnv() { return EmptyScope.EMPTY; }
+            @Override public Scope getScopeForNode(final Integer nodeId) { return EmptyScope.EMPTY; }
+            @Override public Scope getScopeForInterface(final Integer nodeId, final String ipAddress) { return EmptyScope.EMPTY; }
+            @Override public Scope getScopeForInterfaceByIfIndex(final Integer nodeId, final int ifIndex) { return EmptyScope.EMPTY; }
+            @Override public Scope getScopeForInterfaceByIfName(final Integer nodeId, final String ifName) { return EmptyScope.EMPTY; }
+            @Override public Scope getScopeForService(final Integer nodeId, final java.net.InetAddress ipAddress, final String serviceName) { return EmptyScope.EMPTY; }
+        };
+
+        // Capture the headers and body the server sees so we can verify
+        // that the values arrived already interpolated (not as ${scv:...}
+        // template text).
+        final AtomicReference<String> authHeader = new AtomicReference<>();
+        final AtomicReference<String> body = new AtomicReference<>();
+        install("/scv-auth", exchange -> {
+            authHeader.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            body.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            try { writeJson(exchange, 200, "{\"Token\":\"ok\"}"); }
+            catch (IOException e) { throw new RuntimeException(e); }
+        });
+
+        final Auth auth = new Auth();
+        auth.setName("scv-test");
+        auth.setUrl(urlFor("/scv-auth"));
+        auth.setMethod("POST");
+        auth.setBasicAuth(new BasicAuth("${scv:cc:user}", "${scv:cc:pass}"));
+        final Content content = new Content();
+        content.setType("application/json");
+        content.setData("{\"u\":\"${scv:cc:user}\"}");
+        auth.setContent(content);
+        final TokenFrom tf = new TokenFrom();
+        tf.setJsonpath("Token");
+        auth.setTokenFrom(tf);
+
+        new TokenAcquirer(10_000, 30_000, scopeProvider).acquire(auth);
+
+        // Authorization header should be Basic base64(real-user:real-pass)
+        // not Basic base64(${scv:cc:user}:${scv:cc:pass}).
+        final String expected = "Basic " + java.util.Base64.getEncoder().encodeToString(
+                "real-user:real-pass".getBytes(StandardCharsets.UTF_8));
+        assertEquals(expected, authHeader.get());
+
+        // Body must also have been interpolated.
+        assertEquals("{\"u\":\"real-user\"}", body.get());
+    }
+
+    @Test
+    public void leavesValuesUntouchedWhenNoScopeProviderConfigured() throws IOException {
+        // Pre-fix behaviour for the test path: no provider injected,
+        // strings flow through verbatim. Pinning this so we can adjust
+        // safely if we later swap the default.
+        final AtomicReference<String> body = new AtomicReference<>();
+        install("/no-scope", exchange -> {
+            body.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            try { writeJson(exchange, 200, "{\"Token\":\"ok\"}"); }
+            catch (IOException e) { throw new RuntimeException(e); }
+        });
+
+        final Auth auth = new Auth();
+        auth.setName("no-scope");
+        auth.setUrl(urlFor("/no-scope"));
+        auth.setMethod("POST");
+        final Content content = new Content();
+        content.setType("application/json");
+        content.setData("{\"u\":\"${scv:cc:user}\"}");
+        auth.setContent(content);
+        final TokenFrom tf = new TokenFrom();
+        tf.setJsonpath("Token");
+        auth.setTokenFrom(tf);
+
+        new TokenAcquirer().acquire(auth);
+        assertEquals("{\"u\":\"${scv:cc:user}\"}", body.get());
     }
 
     @Test

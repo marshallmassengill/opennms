@@ -38,6 +38,11 @@ import org.apache.http.client.methods.HttpPut;
 import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.util.EntityUtils;
+import org.opennms.core.mate.api.EntityScopeProvider;
+import org.opennms.core.mate.api.EmptyScope;
+import org.opennms.core.mate.api.FallbackScope;
+import org.opennms.core.mate.api.Interpolator;
+import org.opennms.core.mate.api.Scope;
 import org.opennms.core.web.HttpClientWrapper;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -64,24 +69,147 @@ public class TokenAcquirer {
 
     private final int connectTimeoutMs;
     private final int socketTimeoutMs;
+    private volatile EntityScopeProvider entityScopeProvider;
 
     public TokenAcquirer() {
-        this(DEFAULT_CONNECT_TIMEOUT_MS, DEFAULT_SOCKET_TIMEOUT_MS);
+        this(DEFAULT_CONNECT_TIMEOUT_MS, DEFAULT_SOCKET_TIMEOUT_MS, null);
     }
 
     public TokenAcquirer(final int connectTimeoutMs, final int socketTimeoutMs) {
+        this(connectTimeoutMs, socketTimeoutMs, null);
+    }
+
+    public TokenAcquirer(final int connectTimeoutMs, final int socketTimeoutMs,
+                         final EntityScopeProvider entityScopeProvider) {
         this.connectTimeoutMs = connectTimeoutMs;
         this.socketTimeoutMs = socketTimeoutMs;
+        this.entityScopeProvider = entityScopeProvider;
+    }
+
+    /**
+     * Setter injection point for {@link EntityScopeProvider}. Used by
+     * Spring instead of the constructor in production wiring because of a
+     * cycle: the production {@code EntityScopeProviderImpl} autowires a
+     * {@link org.opennms.core.mate.api.TokenProvider}, which depends on
+     * {@code TokenCache}, which depends on {@code TokenAcquirer} -- closing
+     * the loop. Setter injection lets Spring break the cycle by constructing
+     * {@code TokenAcquirer} first (no provider) and wiring the provider
+     * after the rest of the chain is built.
+     */
+    public void setEntityScopeProvider(final EntityScopeProvider entityScopeProvider) {
+        this.entityScopeProvider = entityScopeProvider;
+    }
+
+    /**
+     * Resolves any {@code ${scv:...}}, {@code ${env:...}} placeholders in
+     * the given string. If a {@code callerScope} is supplied (typically
+     * the per-node scope of the in-flight collection), node-scoped
+     * placeholders like {@code ${node:label}} or {@code ${requisition:...}}
+     * are also resolved. {@code ${auth:...}} self-references inside an
+     * auth definition are guarded against by {@link AuthScope}'s
+     * re-entrancy check, not by excluding it from the chain.
+     */
+    String interpolate(final String text, final Scope callerScope) {
+        if (text == null) {
+            return text;
+        }
+        if (entityScopeProvider == null && callerScope == null) {
+            return text;
+        }
+        final Scope chain = buildScope(callerScope);
+        return Interpolator.interpolate(text, chain).output;
+    }
+
+    /** Backwards-compat single-argument variant -- no caller scope. */
+    String interpolate(final String text) {
+        return interpolate(text, null);
+    }
+
+    private Scope buildScope(final Scope callerScope) {
+        final Scope scv = entityScopeProvider != null
+                ? firstNonNull(entityScopeProvider.getScopeForScv(), EmptyScope.EMPTY)
+                : EmptyScope.EMPTY;
+        final Scope env = entityScopeProvider != null
+                ? firstNonNull(entityScopeProvider.getScopeForEnv(), EmptyScope.EMPTY)
+                : EmptyScope.EMPTY;
+        if (callerScope == null) {
+            return new FallbackScope(scv, env);
+        }
+        return new FallbackScope(scv, env, callerScope);
+    }
+
+    private static Scope firstNonNull(final Scope a, final Scope b) {
+        return a != null ? a : b;
+    }
+
+    /**
+     * Computes a cache fingerprint from the resolved auth definition.
+     * Two auth definitions that resolve to the same URL, credentials,
+     * and content body produce the same fingerprint -- which is what
+     * lets {@code N} nodes pointing at the same regional endpoint share
+     * one cached token.
+     *
+     * <p>Headers are included only by name+value; {@link Auth} attributes
+     * that affect token identity (URL, basic-auth, content) are also
+     * folded in. Everything else (timeouts, SSL flags, token-from
+     * config) is excluded -- those don't change the resulting token.</p>
+     */
+    public String fingerprint(final Auth auth, final Scope callerScope) {
+        final StringBuilder sb = new StringBuilder();
+        sb.append(interpolate(auth.getUrl(), callerScope)).append('\0');
+        sb.append(auth.getMethod() == null ? "" : auth.getMethod()).append('\0');
+        if (auth.getBasicAuth() != null) {
+            sb.append(interpolate(auth.getBasicAuth().getUsername(), callerScope)).append('\0');
+            sb.append(interpolate(auth.getBasicAuth().getPassword(), callerScope)).append('\0');
+        } else {
+            sb.append('\0').append('\0');
+        }
+        if (auth.getHeaders() != null) {
+            for (final org.opennms.netmgt.config.auth.Header h : auth.getHeaders()) {
+                sb.append(h.getName() == null ? "" : h.getName()).append('=');
+                sb.append(interpolate(h.getValue(), callerScope)).append('\0');
+            }
+        }
+        if (auth.getContent() != null) {
+            sb.append(auth.getContent().getType() == null ? "" : auth.getContent().getType()).append('\0');
+            sb.append(interpolate(auth.getContent().getData(), callerScope));
+        }
+        return Integer.toHexString(sb.toString().hashCode());
     }
 
     /**
      * Executes the auth call described by {@code auth} and returns the
-     * resulting cached token.
+     * resulting cached token. Per-node placeholders inside {@code auth}
+     * are not resolved on this path. This is the legacy override point;
+     * subclasses (notably test fakes) override this method to short-circuit
+     * acquisition without standing up an HTTP server.
+     */
+    public CachedToken acquire(final Auth auth) throws IOException {
+        return acquireInternal(auth, null);
+    }
+
+    /**
+     * Executes the auth call described by {@code auth}, resolving
+     * placeholders against {@code callerScope} (in addition to SCV and
+     * env), and returns the resulting cached token.
+     *
+     * <p>When {@code callerScope} is {@code null} this delegates to
+     * {@link #acquire(Auth)} so subclasses that override the legacy
+     * single-argument variant keep working unchanged. When a scope is
+     * present, the full implementation (with per-node placeholder
+     * resolution) is used regardless of any subclass override.</p>
      *
      * @throws IOException on network errors, non-2xx status, or token
      *                     extraction failure
      */
-    public CachedToken acquire(final Auth auth) throws IOException {
+    public CachedToken acquire(final Auth auth, final Scope callerScope) throws IOException {
+        if (callerScope == null) {
+            return acquire(auth);
+        }
+        return acquireInternal(auth, callerScope);
+    }
+
+    private CachedToken acquireInternal(final Auth auth, final Scope callerScope) throws IOException {
         if (auth.getUrl() == null || auth.getUrl().isEmpty()) {
             throw new IOException("auth definition '" + auth.getName() + "' has no <url>");
         }
@@ -89,7 +217,7 @@ public class TokenAcquirer {
             throw new IOException("auth definition '" + auth.getName() + "' has no <token-from>");
         }
 
-        final HttpRequestBase request = buildRequest(auth);
+        final HttpRequestBase request = buildRequest(auth, callerScope);
         try (HttpClientWrapper client = configureClient(auth);
              CloseableHttpResponse response = client.execute(request)) {
             final int status = response.getStatusLine().getStatusCode();
@@ -124,36 +252,37 @@ public class TokenAcquirer {
         return wrapper;
     }
 
-    private HttpRequestBase buildRequest(final Auth auth) throws IOException {
+    private HttpRequestBase buildRequest(final Auth auth, final Scope callerScope) throws IOException {
         final String method = auth.getMethod();
+        final String url = interpolate(auth.getUrl(), callerScope);
         final HttpRequestBase request;
         if ("GET".equalsIgnoreCase(method)) {
-            request = new HttpGet(auth.getUrl());
+            request = new HttpGet(url);
         } else if ("POST".equalsIgnoreCase(method)) {
-            request = new HttpPost(auth.getUrl());
+            request = new HttpPost(url);
         } else if ("PUT".equalsIgnoreCase(method)) {
-            request = new HttpPut(auth.getUrl());
+            request = new HttpPut(url);
         } else {
             throw new IOException("unsupported HTTP method '" + method
                     + "' in auth definition '" + auth.getName() + "'");
         }
 
         if (auth.getBasicAuth() != null) {
-            final String userPass = auth.getBasicAuth().getUsername() + ":"
-                    + auth.getBasicAuth().getPassword();
+            final String userPass = interpolate(auth.getBasicAuth().getUsername(), callerScope) + ":"
+                    + interpolate(auth.getBasicAuth().getPassword(), callerScope);
             final String encoded = Base64.getEncoder()
                     .encodeToString(userPass.getBytes(StandardCharsets.UTF_8));
             request.setHeader("Authorization", "Basic " + encoded);
         }
 
         for (final org.opennms.netmgt.config.auth.Header h : auth.getHeaders()) {
-            request.setHeader(h.getName(), h.getValue());
+            request.setHeader(h.getName(), interpolate(h.getValue(), callerScope));
         }
 
         if (auth.getContent() != null && request instanceof HttpEntityEnclosingRequestBase) {
             final org.opennms.netmgt.config.auth.Content c = auth.getContent();
             final StringEntity entity = new StringEntity(
-                    c.getData() == null ? "" : c.getData(),
+                    c.getData() == null ? "" : interpolate(c.getData(), callerScope),
                     StandardCharsets.UTF_8);
             if (c.getType() != null && !c.getType().isEmpty()) {
                 entity.setContentType(c.getType());

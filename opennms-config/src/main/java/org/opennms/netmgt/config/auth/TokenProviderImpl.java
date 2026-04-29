@@ -27,6 +27,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
 
+import org.opennms.core.mate.api.Scope;
 import org.opennms.core.mate.api.TokenProvider;
 import org.opennms.netmgt.config.AuthConfigFactory;
 import org.slf4j.Logger;
@@ -92,6 +93,11 @@ public class TokenProviderImpl implements TokenProvider {
 
     @Override
     public Optional<String> getToken(final String authName) {
+        return getToken(authName, null);
+    }
+
+    @Override
+    public Optional<String> getToken(final String authName, final Scope callingScope) {
         if (authName == null || authName.isEmpty()) {
             return Optional.empty();
         }
@@ -101,7 +107,7 @@ public class TokenProviderImpl implements TokenProvider {
         }
         return factory.getAuth(authName).map(auth -> {
             try {
-                return tokenCache.getToken(auth);
+                return tokenCache.getToken(auth, callingScope);
             } catch (final IOException e) {
                 throw new RuntimeException(
                         "failed to acquire token for auth '" + authName + "'", e);
