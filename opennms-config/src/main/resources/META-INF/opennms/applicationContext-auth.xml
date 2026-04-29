@@ -34,4 +34,18 @@
     -->
     <onmsgi:service interface="org.opennms.core.mate.api.TokenProvider"
                     ref="authTokenProvider"/>
+
+    <!--
+      Reload listener: reacts to a reloadDaemonConfig event with
+      daemonName=AuthConfig by re-reading auth-configuration.xml and
+      flushing the token cache.
+
+      Self-registers with EventIpcManager via Spring's ContextRefreshedEvent
+      once eventDaemonContext has finished building. daoContext is built
+      before eventDaemonContext, so we cannot grab the manager up-front.
+    -->
+    <bean id="authConfigReloadListener"
+          class="org.opennms.netmgt.config.auth.AuthConfigReloadListener">
+        <constructor-arg ref="authTokenCache"/>
+    </bean>
 </beans>
