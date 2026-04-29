@@ -25,7 +25,9 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -97,6 +99,28 @@ public class TokenCache {
         if (authName != null) {
             cache.remove(authName);
         }
+    }
+
+    /**
+     * Reverse-lookup invalidation: scans the cache for an entry whose token
+     * value matches {@code tokenValue}, removes it if found, and returns the
+     * auth name it belonged to. Used by HTTP retry paths that observe a 401
+     * on a request and need to figure out which auth's token to invalidate
+     * without having the auth name on hand.
+     *
+     * <p>Safe to call with a null or empty value (returns empty).</p>
+     */
+    public Optional<String> invalidateByTokenValue(final String tokenValue) {
+        if (tokenValue == null || tokenValue.isEmpty()) {
+            return Optional.empty();
+        }
+        for (final Map.Entry<String, CachedToken> entry : cache.entrySet()) {
+            if (tokenValue.equals(entry.getValue().getValue())) {
+                cache.remove(entry.getKey(), entry.getValue());
+                return Optional.of(entry.getKey());
+            }
+        }
+        return Optional.empty();
     }
 
     /** Drops every cached token. Useful on configuration reload. */

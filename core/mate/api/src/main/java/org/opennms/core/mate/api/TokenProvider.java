@@ -47,4 +47,17 @@ public interface TokenProvider {
      * an empty token that will produce a confusing 401 downstream.</p>
      */
     Optional<String> getToken(String authName);
+
+    /**
+     * Reverse-lookup invalidation: if any cached token currently matches
+     * {@code tokenValue}, drop it and return the auth name it belonged to.
+     *
+     * <p>Used by HTTP retry paths that observe a 401 on a downstream
+     * request and need to invalidate the right auth without having the
+     * auth name on hand. Default implementation returns empty -- providers
+     * that have no notion of a cache override this.</p>
+     */
+    default Optional<String> invalidateByTokenValue(String tokenValue) {
+        return Optional.empty();
+    }
 }

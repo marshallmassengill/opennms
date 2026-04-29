@@ -42,6 +42,7 @@ import org.joda.time.format.DateTimeFormatter;
 import org.opennms.netmgt.collection.api.CollectionAgent;
 import org.opennms.netmgt.collection.support.builder.CollectionSetBuilder;
 import org.opennms.netmgt.collection.support.builder.Resource;
+import org.opennms.protocols.http.AuthFailureException;
 import org.opennms.protocols.xml.collector.AbstractXmlCollectionHandler;
 import org.opennms.protocols.xml.collector.UrlFactory;
 import org.opennms.protocols.xml.config.Request;
@@ -155,7 +156,8 @@ public abstract class AbstractJsonCollectionHandler extends AbstractXmlCollectio
     }
 
     /**
-     * Gets the JSON object.
+     * Gets the JSON object. On a 401/403 response, attempts to refresh any
+     * dynamic-auth tokens in the request headers and retries the call once.
      *
      * @param urlString the URL string
      * @param request the request
@@ -163,6 +165,19 @@ public abstract class AbstractJsonCollectionHandler extends AbstractXmlCollectio
      * @throws Exception the exception
      */
     protected JSONObject getJSONObject(String urlString, Request request) throws Exception {
+        try {
+            return getJSONObjectOnce(urlString, request);
+        } catch (AuthFailureException afe) {
+            if (refreshAuthTokensInRequest(request)) {
+                LOG.info("Auth call returned {} for {}; refreshed dynamic-auth token and retrying once",
+                        afe.getStatusCode(), urlString);
+                return getJSONObjectOnce(urlString, request);
+            }
+            throw afe;
+        }
+    }
+
+    private JSONObject getJSONObjectOnce(String urlString, Request request) throws Exception {
         InputStream is = null;
         URLConnection c = null;
         try {

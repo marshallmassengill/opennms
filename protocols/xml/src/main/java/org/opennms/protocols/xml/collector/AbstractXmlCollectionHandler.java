@@ -38,6 +38,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import javax.xml.namespace.NamespaceContext;
 import javax.xml.parsers.DocumentBuilder;
@@ -60,6 +61,7 @@ import org.joda.time.format.DateTimeFormatter;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Entities.EscapeMode;
 import org.jsoup.parser.Parser;
+import org.opennms.core.mate.api.TokenProvider;
 import org.opennms.core.spring.BeanUtils;
 import org.opennms.features.distributed.kvstore.api.BlobStore;
 import org.opennms.netmgt.collection.api.CollectionAgent;
@@ -74,6 +76,7 @@ import org.opennms.netmgt.dao.api.NodeDao;
 import org.opennms.netmgt.dao.api.ResourceStorageDao;
 import org.opennms.netmgt.model.OnmsNode;
 import org.opennms.netmgt.rrd.RrdRepository;
+import org.opennms.protocols.http.AuthFailureException;
 import org.opennms.protocols.xml.config.Content;
 import org.opennms.protocols.xml.config.Header;
 import org.opennms.protocols.xml.config.Parameter;
@@ -448,7 +451,9 @@ public abstract class AbstractXmlCollectionHandler implements XmlCollectionHandl
     }
 
     /**
-     * Gets the XML document.
+     * Gets the XML document. On a 401/403 response from the URL, attempts to
+     * refresh any dynamic-auth tokens that were used in the request and
+     * retries the call once.
      *
      * @param urlString the URL string
      * @param request the request
@@ -456,18 +461,94 @@ public abstract class AbstractXmlCollectionHandler implements XmlCollectionHandl
      * @throws Exception the exception
      */
     protected Document getXmlDocument(String urlString, Request request) throws Exception {
+        try {
+            return getXmlDocumentOnce(urlString, request);
+        } catch (AuthFailureException afe) {
+            if (refreshAuthTokensInRequest(request)) {
+                LOG.info("Auth call returned {} for {}; refreshed dynamic-auth token and retrying once",
+                        afe.getStatusCode(), urlString);
+                return getXmlDocumentOnce(urlString, request);
+            }
+            throw afe;
+        }
+    }
+
+    private Document getXmlDocumentOnce(String urlString, Request request) throws Exception {
         InputStream is = null;
         URLConnection c = null;
         try {
             URL url = UrlFactory.getUrl(urlString, request);
             c = url.openConnection();
             is = c.getInputStream();
-            final Document doc = getXmlDocument(is, request);
-            return doc;
+            return getXmlDocument(is, request);
         } finally {
             IOUtils.closeQuietly(is);
             UrlFactory.disconnect(c);
         }
+    }
+
+    /**
+     * Holds the TokenProvider once we've successfully looked it up. May
+     * remain null on a Minion or in test contexts where the provider isn't
+     * registered.
+     */
+    private volatile TokenProvider m_tokenProvider;
+
+    /**
+     * Resolves the {@link TokenProvider} from Spring on first call and caches
+     * the result. Returns null when the provider isn't registered, e.g. on a
+     * Minion or when dynamic-auth isn't configured. Tests can override.
+     */
+    protected synchronized TokenProvider getTokenProvider() {
+        if (m_tokenProvider == null) {
+            try {
+                m_tokenProvider = BeanUtils.getBean("daoContext", "authTokenProvider", TokenProvider.class);
+            } catch (Throwable t) {
+                LOG.debug("Dynamic-auth TokenProvider unavailable in this context; cannot retry on auth failure", t);
+            }
+        }
+        return m_tokenProvider;
+    }
+
+    /** Test-only injection point. */
+    void setTokenProviderForTest(final TokenProvider provider) {
+        this.m_tokenProvider = provider;
+    }
+
+    /**
+     * If a {@link TokenProvider} is reachable in the current Spring context,
+     * scan the request's headers for any value that matches a currently-cached
+     * dynamic-auth token. For every match, invalidate the cache entry, fetch a
+     * fresh token, and overwrite the header value in place. Returns true when
+     * at least one header was refreshed and a retry is therefore worthwhile.
+     *
+     * <p>On a Minion (where the auth runtime is not present), or when no header
+     * happens to carry a known token, returns false and the caller should
+     * propagate the original {@link AuthFailureException}.</p>
+     */
+    protected boolean refreshAuthTokensInRequest(final Request request) {
+        if (request == null || request.getHeaders() == null || request.getHeaders().isEmpty()) {
+            return false;
+        }
+        final TokenProvider provider = getTokenProvider();
+        if (provider == null) {
+            return false;
+        }
+        boolean any = false;
+        for (Header h : request.getHeaders()) {
+            if (h.getValue() == null || h.getValue().isEmpty()) {
+                continue;
+            }
+            final Optional<String> authName = provider.invalidateByTokenValue(h.getValue());
+            if (authName.isPresent()) {
+                final Optional<String> fresh = provider.getToken(authName.get());
+                if (fresh.isPresent()) {
+                    h.setValue(fresh.get());
+                    any = true;
+                }
+            }
+        }
+        return any;
     }
 
     /**

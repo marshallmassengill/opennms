@@ -185,7 +185,19 @@ public class HttpUrlConnection extends URLConnection {
 
             // Get Response
             CloseableHttpResponse response = m_clientWrapper.execute(request);
+            final int status = response.getStatusLine().getStatusCode();
+            if (status == 401 || status == 403) {
+                // Drain the body so the connection can be reused, then throw a
+                // typed exception that auth-aware callers can recognize.
+                try { org.apache.http.util.EntityUtils.consumeQuietly(response.getEntity()); } catch (Throwable ignored) {}
+                try { response.close(); } catch (Throwable ignored) {}
+                throw new AuthFailureException(
+                        "auth failure: " + m_url + " returned status " + status,
+                        status);
+            }
             return response.getEntity().getContent();
+        } catch (AuthFailureException e) {
+            throw e;
         } catch (Exception e) {
             throw new IOException("Can't retrieve " + m_url.getPath() + " from " + m_url.getHost() + " because " + e.getMessage(), e);
         }
