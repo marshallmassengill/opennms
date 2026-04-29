@@ -45,6 +45,7 @@ import org.opennms.core.mate.api.EmptyScope;
 import org.opennms.core.mate.api.FallbackScope;
 import org.opennms.core.mate.api.Interpolator;
 import org.opennms.core.mate.api.Scope;
+import org.opennms.core.web.EmptyKeyRelaxedTrustProvider;
 import org.opennms.core.web.HttpClientWrapper;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -63,6 +64,19 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * wrapper.</p>
  */
 public class TokenAcquirer {
+
+    static {
+        // Make the EmptyKeyRelaxedTrustSSLContext algorithm available
+        // to JSSE so configureClient() can request relaxed-trust
+        // SSLContext when an auth definition opts in via
+        // disable-ssl-verification="true". HttpClientWrapper.useRelaxedSSL
+        // looks up the algorithm by name and fails with
+        // NoSuchAlgorithmException if the provider was never added.
+        // Other components (HttpCollector, PageSequenceMonitor, ...)
+        // also register this provider; java.security.Security tolerates
+        // duplicate adds and returns -1 for the second.
+        java.security.Security.addProvider(new EmptyKeyRelaxedTrustProvider());
+    }
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
