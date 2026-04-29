@@ -87,6 +87,10 @@ public class TokenProviderImpl implements TokenProvider {
             throw new RuntimeException("failed to load auth-configuration.xml", e);
         } catch (final IllegalStateException e) {
             // Race or test scenario where init() has not yet completed.
+            // Tokens silently fail to resolve until next call; surface
+            // at debug so an operator chasing a "${auth:foo} resolved
+            // to empty" report can see this happened.
+            LOG.debug("AuthConfigFactory not yet initialised; ${{auth:...}} will resolve as empty until init() completes", e);
             return null;
         }
     }

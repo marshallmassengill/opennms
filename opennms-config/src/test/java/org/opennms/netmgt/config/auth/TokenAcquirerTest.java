@@ -312,10 +312,15 @@ public class TokenAcquirerTest {
     }
 
     @Test
-    public void leavesValuesUntouchedWhenNoScopeProviderConfigured() throws IOException {
-        // Pre-fix behaviour for the test path: no provider injected,
-        // strings flow through verbatim. Pinning this so we can adjust
-        // safely if we later swap the default.
+    public void unresolvedPlaceholdersResolveToEmptyWhenNoScopeProviderConfigured() throws IOException {
+        // When the auth runtime has no entityScopeProvider wired
+        // (the test path), unresolved metadata DSL placeholders fall
+        // through to empty per the documented empty-on-miss
+        // semantics. Crucially, the literal template text does NOT
+        // hit the wire -- the previous behavior of passing
+        // "${scv:cc:user}" through verbatim would have leaked
+        // configuration syntax to whatever auth server we hit, and
+        // is something we now actively guard against.
         final AtomicReference<String> body = new AtomicReference<>();
         install("/no-scope", exchange -> {
             body.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
@@ -336,7 +341,7 @@ public class TokenAcquirerTest {
         auth.setTokenFrom(tf);
 
         new TokenAcquirer().acquire(auth);
-        assertEquals("{\"u\":\"${scv:cc:user}\"}", body.get());
+        assertEquals("{\"u\":\"\"}", body.get());
     }
 
     @Test

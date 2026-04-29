@@ -451,24 +451,33 @@ public class HttpCollector extends AbstractRemoteServiceCollector {
             method = buildPostMethod(uri, collectorAgent);
         }
 
+        applyConfiguredHeaders(method, url);
+        return method;
+    }
+
+    /**
+     * Applies configured headers from the {@link Url} (virtual-host
+     * plus any explicit {@code <header>} entries) to the outgoing
+     * HTTP request. Package-private so a focused test can drive this
+     * without standing up the full collection pipeline.
+     *
+     * <p>Header values are metadata-DSL-resolved by the time they get
+     * here (see {@link #getRuntimeAttributes}'s {@code pleaseInterpolate}
+     * wrap), so a value like {@code "Bearer ${auth:my-auth}"} arrives
+     * as the resolved token text.</p>
+     */
+    static void applyConfiguredHeaders(final HttpRequestBase method, final Url url) {
         if (url.getVirtualHost().isPresent()) {
             final String virtualHost = url.getVirtualHost().get();
             if (!virtualHost.trim().isEmpty()) {
                 method.setHeader(HTTP.TARGET_HOST, virtualHost);
             }
         }
-
-        // Configured per-URL request headers. Values are already
-        // metadata-DSL-resolved by the time we get here (see
-        // HttpCollector.getRuntimeAttributes' pleaseInterpolate wrap),
-        // so a value like "Bearer ${auth:my-auth}" arrives as the
-        // resolved token text.
         for (final org.opennms.netmgt.config.httpdatacollection.Header h : url.getHeaders()) {
             if (h.getName() != null && !h.getName().isEmpty()) {
                 method.setHeader(h.getName(), h.getValue());
             }
         }
-        return method;
     }
 
     private static HttpPost buildPostMethod(final URI uri, final HttpCollectorAgent collectorAgent) {

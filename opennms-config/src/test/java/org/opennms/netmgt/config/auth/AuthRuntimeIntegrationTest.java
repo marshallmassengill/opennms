@@ -70,7 +70,7 @@ public class AuthRuntimeIntegrationTest {
         // fresh one.
         server.createContext("/auth", exchange -> {
             final int n = acquireCount.incrementAndGet();
-            writeJson(exchange, 200, "{\"Token\":\"jwt-" + n + "\"}");
+            writeJson(exchange, 200, "{\"Token\":\"jwt-fixture-token-" + n + "\"}");
         });
         server.start();
     }
@@ -127,12 +127,12 @@ public class AuthRuntimeIntegrationTest {
 
         final Optional<String> first = provider.getToken("catalyst");
         assertTrue(first.isPresent());
-        assertEquals("jwt-1", first.get());
+        assertEquals("jwt-fixture-token-1", first.get());
         assertEquals(1, acquireCount.get());
 
         // Repeated calls hit the cache, not the server.
         for (int i = 0; i < 5; i++) {
-            assertEquals("jwt-1", provider.getToken("catalyst").orElseThrow());
+            assertEquals("jwt-fixture-token-1", provider.getToken("catalyst").orElseThrow());
         }
         assertEquals("acquire should have been called once total", 1, acquireCount.get());
     }
@@ -150,7 +150,7 @@ public class AuthRuntimeIntegrationTest {
         final TokenProviderImpl provider = buildProvider(configXml("catalyst", null));
 
         final String first = provider.getToken("catalyst").orElseThrow();
-        assertEquals("jwt-1", first);
+        assertEquals("jwt-fixture-token-1", first);
         assertEquals(1, acquireCount.get());
 
         // Reverse-lookup invalidate using only the value, simulating the
@@ -161,7 +161,7 @@ public class AuthRuntimeIntegrationTest {
         assertEquals(first, evicted.get().getMatchedTokenValue());
 
         final String second = provider.getToken("catalyst").orElseThrow();
-        assertEquals("jwt-2", second);
+        assertEquals("jwt-fixture-token-2", second);
         assertNotEquals(first, second);
         assertEquals(2, acquireCount.get());
     }
@@ -245,7 +245,7 @@ public class AuthRuntimeIntegrationTest {
         final TokenProviderImpl provider = buildProvider(configXml("api", null));
 
         final String t1 = provider.getToken("api").orElseThrow();
-        assertEquals("jwt-1", t1);
+        assertEquals("jwt-fixture-token-1", t1);
 
         // Simulate the downstream 401 by invoking invalidateByTokenValue
         // with the value that was attached to the request.
@@ -255,7 +255,7 @@ public class AuthRuntimeIntegrationTest {
 
         // The retry path now fetches a fresh token by name.
         final String t2 = provider.getToken("api").orElseThrow();
-        assertEquals("jwt-2", t2);
+        assertEquals("jwt-fixture-token-2", t2);
         assertEquals(2, acquireCount.get());
     }
 

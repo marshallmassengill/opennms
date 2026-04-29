@@ -37,6 +37,13 @@ import javax.xml.bind.annotation.XmlRootElement;
  * authentication endpoint and how to extract that token from the response.
  * Once defined, the resulting token is referenced from elsewhere via the
  * {@code ${auth:<name>}} metadata DSL placeholder.
+ *
+ * <p><b>Treat as immutable post-load.</b> The auth runtime computes a
+ * fingerprint from this object's fields to key the token cache; if a
+ * caller mutates header values, basic-auth credentials, etc. after
+ * the {@link AuthConfiguration} is loaded, the fingerprint shifts and
+ * the cache silently forks, leaving the previously-cached token
+ * orphaned. Setters are public for JAXB binding only.</p>
  */
 @XmlRootElement(name = "auth")
 @XmlAccessorType(XmlAccessType.FIELD)

@@ -61,9 +61,11 @@ public class AuthScope implements Scope {
             return Optional.empty();
         }
         if (RESOLVING.get()) {
-            // Re-entrant lookup. Auth definitions cannot reference other
-            // auth definitions; treat as unresolved so the metadata DSL
-            // applies its empty-on-miss fallback.
+            // Re-entrant lookup. Auth definitions cannot reference
+            // other auth definitions; treat as unresolved so the
+            // metadata DSL produces an empty substitution (or the
+            // configured literal default if one was provided via the
+            // ${auth:foo|"bar"} form).
             return Optional.empty();
         }
         // Pass the scope of the in-flight interpolation pass down to the
@@ -76,7 +78,10 @@ public class AuthScope implements Scope {
             return tokenProvider.getToken(contextKey.key, callingScope)
                     .map(token -> new ScopeValue(ScopeName.GLOBAL, token));
         } finally {
-            RESOLVING.set(Boolean.FALSE);
+            // remove() rather than set(FALSE) so we don't leave a
+            // permanent map entry on every pool thread that ever
+            // resolved an auth.
+            RESOLVING.remove();
         }
     }
 

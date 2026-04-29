@@ -163,6 +163,7 @@ public final class AuthConfigFactory {
             throw new IllegalArgumentException(
                     "auth definition '" + auth.getName() + "' has no <url>");
         }
+        validateUrlScheme(auth.getName(), auth.getUrl());
         if (auth.getTokenFrom() == null) {
             throw new IllegalArgumentException(
                     "auth definition '" + auth.getName() + "' has no <token-from>");
@@ -181,6 +182,28 @@ public final class AuthConfigFactory {
                     "auth definition '" + auth.getName()
                             + "' has a negative <ttl-seconds>; use a positive value or omit the element");
         }
+    }
+
+    /**
+     * Lightweight scheme check on the configured URL. Skipped when
+     * the URL begins with a {@code ${...}} metadata placeholder --
+     * those resolve at acquire time and cannot be inspected here.
+     * Any literal scheme prefix that is not {@code http://} or
+     * {@code https://} is rejected so a typo like {@code htttp://}
+     * fails fast rather than producing a confusing acquire-time
+     * exception later.
+     */
+    private static void validateUrlScheme(final String name, final String url) {
+        if (url.startsWith("${")) {
+            return;
+        }
+        if (url.startsWith("http://") || url.startsWith("https://")) {
+            return;
+        }
+        throw new IllegalArgumentException(
+                "auth definition '" + name
+                        + "' has a <url> that does not start with http:// or https://: "
+                        + url);
     }
 
     private static void validateTokenFrom(final Auth auth) {

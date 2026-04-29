@@ -94,6 +94,17 @@ public class TokenCache {
         final CacheKey key = new CacheKey(auth.getName(), fingerprint);
         final Instant now = clock.instant();
         try {
+            // The acquire() call inside the compute() lambda performs
+            // network I/O (up to socketTimeoutMs, default 30s). This
+            // is technically against ConcurrentHashMap.compute's
+            // contract, which warns mappings should be short. We keep
+            // it inside compute deliberately so concurrent callers
+            // requesting the SAME (authName, fingerprint) coalesce
+            // onto a single in-flight HTTP request, which is the
+            // whole point of the cache. Different keys hash to
+            // different bins on average, so the per-bin lock
+            // contention is small. Do not nest another compute() on
+            // the same key inside acquire() -- that would deadlock.
             final CachedToken cached = cache.compute(key, (k, existing) -> {
                 if (existing != null && !existing.isExpired(now)) {
                     return existing;
@@ -140,13 +151,21 @@ public class TokenCache {
         }
         for (final Map.Entry<CacheKey, CachedToken> entry : cache.entrySet()) {
             final String token = entry.getValue().getValue();
-            if (token != null && !token.isEmpty() && headerValue.contains(token)) {
+            // Minimum length guard: a very short token (e.g. a 6-char
+            // API key) could appear as a substring of an unrelated
+            // header value (User-Agent, Cookie, etc.) and trigger a
+            // false invalidation. Real-world auth tokens are
+            // overwhelmingly opaque blobs / JWTs >= 16 chars; tighter
+            // bounds would be safer still.
+            if (token != null && token.length() >= MIN_TOKEN_MATCH_LEN && headerValue.contains(token)) {
                 cache.remove(entry.getKey(), entry.getValue());
                 return Optional.of(new TokenProvider.InvalidationResult(entry.getKey().authName, token));
             }
         }
         return Optional.empty();
     }
+
+    private static final int MIN_TOKEN_MATCH_LEN = 16;
 
     /** Drops every cached token. Useful on configuration reload. */
     public void invalidateAll() {

@@ -110,12 +110,18 @@ public class TokenAcquirer {
      * are also resolved. {@code ${auth:...}} self-references inside an
      * auth definition are guarded against by {@link AuthScope}'s
      * re-entrancy check, not by excluding it from the chain.
+     *
+     * <p>Always runs interpolation, even if no provider and no caller
+     * scope are available -- the resulting chain is just empty scopes
+     * in that case, which causes any placeholder to resolve as empty
+     * per the metadata DSL's empty-on-miss semantics. This is the safe
+     * choice over returning the raw text: if the auth runtime is in a
+     * partial-init state, an unresolved {@code ${scv:foo}} should
+     * surface visibly (an empty credential the auth server rejects)
+     * rather than be silently transmitted on the wire as literal text.</p>
      */
     String interpolate(final String text, final Scope callerScope) {
         if (text == null) {
-            return text;
-        }
-        if (entityScopeProvider == null && callerScope == null) {
             return text;
         }
         final Scope chain = buildScope(callerScope);

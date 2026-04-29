@@ -60,7 +60,9 @@ public class TokenCacheTest {
         @Override
         public CachedToken acquire(final Auth auth, final org.opennms.core.mate.api.Scope callerScope) {
             calls.incrementAndGet();
-            return new CachedToken(tokenValue + "-" + calls.get(), expiresAt);
+            // Long-enough token so it satisfies TokenCache's
+            // minimum-match-length guard for substring lookups.
+            return new CachedToken(tokenValue + "-fixture-cache-token-" + calls.get(), expiresAt);
         }
     }
 
@@ -76,8 +78,8 @@ public class TokenCacheTest {
         final CountingAcquirer acquirer = new CountingAcquirer("tok", null);
         final TokenCache cache = new TokenCache(acquirer);
 
-        assertEquals("tok-1", cache.getToken(namedAuth("a")));
-        assertEquals("tok-1", cache.getToken(namedAuth("a")));
+        assertEquals("tok-fixture-cache-token-1", cache.getToken(namedAuth("a")));
+        assertEquals("tok-fixture-cache-token-1", cache.getToken(namedAuth("a")));
         assertEquals(1, acquirer.calls.get());
     }
 
@@ -96,9 +98,9 @@ public class TokenCacheTest {
         final CountingAcquirer acquirer = new CountingAcquirer("tok", null);
         final TokenCache cache = new TokenCache(acquirer);
 
-        assertEquals("tok-1", cache.getToken(namedAuth("a")));
+        assertEquals("tok-fixture-cache-token-1", cache.getToken(namedAuth("a")));
         cache.invalidate("a");
-        assertEquals("tok-2", cache.getToken(namedAuth("a")));
+        assertEquals("tok-fixture-cache-token-2", cache.getToken(namedAuth("a")));
     }
 
     @Test
