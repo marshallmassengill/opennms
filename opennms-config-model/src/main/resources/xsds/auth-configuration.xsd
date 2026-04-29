@@ -60,6 +60,25 @@
             </documentation>
           </annotation>
         </element>
+
+        <element name="disable-ssl-verification" type="boolean" minOccurs="0">
+          <annotation>
+            <documentation>
+              When true, the auth call does not verify the server's SSL
+              certificate. Useful for self-signed certs in lab
+              environments. Default false.
+            </documentation>
+          </annotation>
+        </element>
+
+        <element name="use-system-proxy" type="boolean" minOccurs="0">
+          <annotation>
+            <documentation>
+              When true, the auth call uses the JVM-configured proxy.
+              Default false.
+            </documentation>
+          </annotation>
+        </element>
       </sequence>
       <attribute name="name" type="string" use="required"/>
     </complexType>

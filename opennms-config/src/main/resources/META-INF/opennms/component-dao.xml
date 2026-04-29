@@ -4,8 +4,12 @@
 	xmlns:onmsgi="http://xmlns.opennms.org/xsd/spring/onms-osgi"
 	xsi:schemaLocation="
 		http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.2.xsd
-		http://xmlns.opennms.org/xsd/spring/onms-osgi http://xmlns.opennms.org/xsd/spring/onms-osgi.xsd		
+		http://xmlns.opennms.org/xsd/spring/onms-osgi http://xmlns.opennms.org/xsd/spring/onms-osgi.xsd
 	">
+
+	<!-- Brings in the dynamic-auth runtime: TokenAcquirer, TokenCache, and
+	     the TokenProvider implementation that backs ${auth:<name>}. -->
+	<import resource="classpath:/META-INF/opennms/applicationContext-auth.xml"/>
 
 	<bean name="ackd-configuration.xml" class="org.opennms.core.config.impl.JaxbResourceConfiguration">
 		<constructor-arg value="org.opennms.netmgt.config.ackd.AckdConfiguration" />
@@ -20,6 +24,11 @@
 	<bean name="ami-config.xml" class="org.opennms.core.config.impl.JaxbResourceConfiguration">
 		<constructor-arg value="org.opennms.netmgt.config.ami.AmiConfig" />
 		<constructor-arg value="file:${opennms.home}/etc/ami-config.xml" />
+	</bean>
+
+	<bean name="auth-configuration.xml" class="org.opennms.core.config.impl.JaxbResourceConfiguration">
+		<constructor-arg value="org.opennms.netmgt.config.auth.AuthConfiguration" />
+		<constructor-arg value="file:${opennms.home}/etc/auth-configuration.xml" />
 	</bean>
 
 	<bean name="collectd-configuration.xml" class="org.opennms.core.config.impl.JaxbResourceConfiguration">

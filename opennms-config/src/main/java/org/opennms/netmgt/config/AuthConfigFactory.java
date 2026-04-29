@@ -25,8 +25,10 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import org.opennms.core.utils.ConfigFileConstants;
 import org.opennms.core.xml.JaxbUtils;
@@ -121,8 +123,13 @@ public final class AuthConfigFactory {
      * {@link IllegalArgumentException} on the first problem found.
      */
     static void validate(final AuthConfiguration config) {
+        final Set<String> seen = new HashSet<>();
         for (final Auth auth : config.getAuths()) {
             validate(auth);
+            if (!seen.add(auth.getName())) {
+                throw new IllegalArgumentException(
+                        "duplicate auth definition name: '" + auth.getName() + "'");
+            }
         }
     }
 
@@ -146,6 +153,11 @@ public final class AuthConfigFactory {
                         "auth definition '" + auth.getName()
                                 + "' has <basic-auth> without both username and password");
             }
+        }
+        if (auth.getTtlSeconds() != null && auth.getTtlSeconds() < 0) {
+            throw new IllegalArgumentException(
+                    "auth definition '" + auth.getName()
+                            + "' has a negative <ttl-seconds>; use a positive value or omit the element");
         }
     }
 

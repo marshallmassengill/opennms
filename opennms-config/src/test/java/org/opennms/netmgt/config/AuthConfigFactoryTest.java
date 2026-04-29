@@ -148,6 +148,48 @@ public class AuthConfigFactoryTest {
     }
 
     @Test
+    public void rejectsDuplicateAuthNames() {
+        final AuthConfiguration cfg = new AuthConfiguration();
+        final Auth first = new Auth();
+        first.setName("dup");
+        first.setUrl("https://example.com/x");
+        final TokenFrom tf1 = new TokenFrom();
+        tf1.setJsonpath("Token");
+        first.setTokenFrom(tf1);
+
+        final Auth second = new Auth();
+        second.setName("dup");  // same name -- forbidden
+        second.setUrl("https://example.com/y");
+        final TokenFrom tf2 = new TokenFrom();
+        tf2.setJsonpath("Token");
+        second.setTokenFrom(tf2);
+
+        cfg.setAuths(java.util.List.of(first, second));
+
+        final IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> new AuthConfigFactory(cfg));
+        assertTrue(ex.getMessage().contains("duplicate"));
+        assertTrue(ex.getMessage().contains("dup"));
+    }
+
+    @Test
+    public void rejectsNegativeTtl() {
+        final AuthConfiguration cfg = new AuthConfiguration();
+        final Auth auth = new Auth();
+        auth.setName("bad-ttl");
+        auth.setUrl("https://example.com/x");
+        final TokenFrom tf = new TokenFrom();
+        tf.setJsonpath("Token");
+        auth.setTokenFrom(tf);
+        auth.setTtlSeconds(-1L);
+        cfg.setAuths(java.util.List.of(auth));
+
+        final IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> new AuthConfigFactory(cfg));
+        assertTrue(ex.getMessage().contains("negative"));
+    }
+
+    @Test
     public void rejectsBasicAuthMissingPassword() {
         final AuthConfiguration cfg = new AuthConfiguration();
         final Auth auth = new Auth();

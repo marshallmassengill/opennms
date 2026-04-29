@@ -82,6 +82,20 @@ public class Auth implements Serializable {
     @XmlElement(name = "ttl-seconds")
     private Long ttlSeconds;
 
+    /**
+     * If true, disable SSL certificate verification for the auth call.
+     * Useful for self-signed certs in lab environments. Default false.
+     */
+    @XmlElement(name = "disable-ssl-verification")
+    private Boolean disableSslVerification;
+
+    /**
+     * If true, route the auth call through the JVM-configured proxy.
+     * Default false.
+     */
+    @XmlElement(name = "use-system-proxy")
+    private Boolean useSystemProxy;
+
     public Auth() {
     }
 
@@ -149,6 +163,30 @@ public class Auth implements Serializable {
         this.ttlSeconds = ttlSeconds;
     }
 
+    public Boolean getDisableSslVerification() {
+        return disableSslVerification;
+    }
+
+    public void setDisableSslVerification(final Boolean disableSslVerification) {
+        this.disableSslVerification = disableSslVerification;
+    }
+
+    public boolean isDisableSslVerification() {
+        return Boolean.TRUE.equals(disableSslVerification);
+    }
+
+    public Boolean getUseSystemProxy() {
+        return useSystemProxy;
+    }
+
+    public void setUseSystemProxy(final Boolean useSystemProxy) {
+        this.useSystemProxy = useSystemProxy;
+    }
+
+    public boolean isUseSystemProxy() {
+        return Boolean.TRUE.equals(useSystemProxy);
+    }
+
     @Override
     public boolean equals(final Object o) {
         if (this == o) return true;
@@ -161,11 +199,14 @@ public class Auth implements Serializable {
                 && Objects.equals(headers, other.headers)
                 && Objects.equals(content, other.content)
                 && Objects.equals(tokenFrom, other.tokenFrom)
-                && Objects.equals(ttlSeconds, other.ttlSeconds);
+                && Objects.equals(ttlSeconds, other.ttlSeconds)
+                && Objects.equals(disableSslVerification, other.disableSslVerification)
+                && Objects.equals(useSystemProxy, other.useSystemProxy);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(name, url, method, basicAuth, headers, content, tokenFrom, ttlSeconds);
+        return Objects.hash(name, url, method, basicAuth, headers, content, tokenFrom,
+                ttlSeconds, disableSslVerification, useSystemProxy);
     }
 }

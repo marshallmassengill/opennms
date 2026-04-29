@@ -23,33 +23,37 @@ package org.opennms.netmgt.config.auth;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
 import java.time.Instant;
 import java.util.Base64;
 
 import org.apache.http.Header;
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
-import org.apache.http.client.config.RequestConfig;
+import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpEntityEnclosingRequestBase;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpPut;
 import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.entity.StringEntity;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClients;
 import org.apache.http.util.EntityUtils;
+import org.opennms.core.web.HttpClientWrapper;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
- * Performs the HTTP call described by an {@link org.opennms.netmgt.config.auth.Auth}
- * definition and returns the resulting {@link CachedToken}. Used by
- * {@link TokenCache} on cache misses or when a token is invalidated.
+ * Performs the HTTP call described by an {@link Auth} definition and
+ * returns the resulting {@link CachedToken}. Used by {@link TokenCache} on
+ * cache misses and on token invalidation.
  *
  * <p>This class is intentionally stateless. A single instance can be shared
- * across many auth definitions and many concurrent callers.</p>
+ * across many auth definitions and many concurrent callers. Each
+ * {@link #acquire(Auth)} call constructs a fresh
+ * {@link HttpClientWrapper} configured for the specific auth definition's
+ * SSL/proxy/timeout settings, executes the request, and closes the
+ * wrapper.</p>
  */
 public class TokenAcquirer {
 
@@ -58,7 +62,6 @@ public class TokenAcquirer {
     private static final int DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
     private static final int DEFAULT_SOCKET_TIMEOUT_MS = 30_000;
 
-    /** Default connect/socket timeouts (milliseconds). */
     private final int connectTimeoutMs;
     private final int socketTimeoutMs;
 
@@ -78,7 +81,7 @@ public class TokenAcquirer {
      * @throws IOException on network errors, non-2xx status, or token
      *                     extraction failure
      */
-    public CachedToken acquire(final org.opennms.netmgt.config.auth.Auth auth) throws IOException {
+    public CachedToken acquire(final Auth auth) throws IOException {
         if (auth.getUrl() == null || auth.getUrl().isEmpty()) {
             throw new IOException("auth definition '" + auth.getName() + "' has no <url>");
         }
@@ -87,25 +90,41 @@ public class TokenAcquirer {
         }
 
         final HttpRequestBase request = buildRequest(auth);
-        try (CloseableHttpClient client = HttpClients.custom()
-                .setDefaultRequestConfig(RequestConfig.custom()
-                        .setConnectTimeout(connectTimeoutMs)
-                        .setSocketTimeout(socketTimeoutMs)
-                        .build())
-                .build()) {
-            try (org.apache.http.client.methods.CloseableHttpResponse response = client.execute(request)) {
-                final int status = response.getStatusLine().getStatusCode();
-                if (status < 200 || status >= 300) {
-                    throw new IOException("auth call to " + auth.getUrl()
-                            + " returned status " + status);
-                }
-                final String token = extractToken(auth.getTokenFrom(), response);
-                return new CachedToken(token, computeExpiresAt(auth));
+        try (HttpClientWrapper client = configureClient(auth);
+             CloseableHttpResponse response = client.execute(request)) {
+            final int status = response.getStatusLine().getStatusCode();
+            if (status < 200 || status >= 300) {
+                throw new IOException("auth call to " + auth.getUrl()
+                        + " returned status " + status);
             }
+            final String token = extractToken(auth.getTokenFrom(), response);
+            return new CachedToken(token, computeExpiresAt(auth));
         }
     }
 
-    private HttpRequestBase buildRequest(final org.opennms.netmgt.config.auth.Auth auth) throws IOException {
+    /**
+     * Builds an {@link HttpClientWrapper} configured per the auth
+     * definition's SSL/proxy/timeout settings.
+     */
+    private HttpClientWrapper configureClient(final Auth auth) throws IOException {
+        final HttpClientWrapper wrapper = HttpClientWrapper.create()
+                .setConnectionTimeout(connectTimeoutMs)
+                .setSocketTimeout(socketTimeoutMs);
+        if (auth.isUseSystemProxy()) {
+            wrapper.useSystemProxySettings();
+        }
+        if (auth.isDisableSslVerification()) {
+            try {
+                wrapper.useRelaxedSSL("https");
+            } catch (final GeneralSecurityException e) {
+                throw new IOException(
+                        "failed to configure relaxed SSL for auth '" + auth.getName() + "'", e);
+            }
+        }
+        return wrapper;
+    }
+
+    private HttpRequestBase buildRequest(final Auth auth) throws IOException {
         final String method = auth.getMethod();
         final HttpRequestBase request;
         if ("GET".equalsIgnoreCase(method)) {
@@ -145,7 +164,7 @@ public class TokenAcquirer {
         return request;
     }
 
-    private String extractToken(final org.opennms.netmgt.config.auth.TokenFrom tf,
+    private String extractToken(final TokenFrom tf,
                                 final HttpResponse response) throws IOException {
         // Header extraction does not consume the body; check it first.
         if (tf.getHeader() != null && !tf.getHeader().isEmpty()) {
@@ -198,7 +217,7 @@ public class TokenAcquirer {
         return node.asText();
     }
 
-    private Instant computeExpiresAt(final org.opennms.netmgt.config.auth.Auth auth) {
+    private Instant computeExpiresAt(final Auth auth) {
         final Long ttl = auth.getTtlSeconds();
         if (ttl == null || ttl <= 0) {
             return null;
