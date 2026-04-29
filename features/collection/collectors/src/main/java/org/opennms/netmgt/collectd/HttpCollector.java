@@ -457,6 +457,17 @@ public class HttpCollector extends AbstractRemoteServiceCollector {
                 method.setHeader(HTTP.TARGET_HOST, virtualHost);
             }
         }
+
+        // Configured per-URL request headers. Values are already
+        // metadata-DSL-resolved by the time we get here (see
+        // HttpCollector.getRuntimeAttributes' pleaseInterpolate wrap),
+        // so a value like "Bearer ${auth:my-auth}" arrives as the
+        // resolved token text.
+        for (final org.opennms.netmgt.config.httpdatacollection.Header h : url.getHeaders()) {
+            if (h.getName() != null && !h.getName().isEmpty()) {
+                method.setHeader(h.getName(), h.getValue());
+            }
+        }
         return method;
     }
 
