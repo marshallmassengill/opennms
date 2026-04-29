@@ -37,6 +37,7 @@ import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+import org.opennms.core.mate.api.AuthScope;
 import org.opennms.core.mate.api.ContextKey;
 import org.opennms.core.mate.api.EmptyScope;
 import org.opennms.core.mate.api.EntityScopeProvider;
@@ -46,6 +47,7 @@ import org.opennms.core.mate.api.MapScope;
 import org.opennms.core.mate.api.ObjectScope;
 import org.opennms.core.mate.api.Scope;
 import org.opennms.core.mate.api.SecureCredentialsVaultScope;
+import org.opennms.core.mate.api.TokenProvider;
 import org.opennms.core.utils.InetAddressUtils;
 import org.opennms.features.scv.api.SecureCredentialsVault;
 import org.opennms.netmgt.dao.api.IpInterfaceDao;
@@ -86,6 +88,14 @@ public class EntityScopeProviderImpl implements EntityScopeProvider {
     @Autowired
     private SecureCredentialsVault scv;
 
+    /**
+     * Optional. When unset, {@link #getScopeForAuth} returns
+     * {@link EmptyScope#EMPTY} and {@code ${auth:...}} placeholders go
+     * unresolved.
+     */
+    @Autowired(required = false)
+    private TokenProvider tokenProvider;
+
     @Override
     public Scope getScopeForScv() {
         return new SecureCredentialsVaultScope(this.scv);
@@ -94,6 +104,16 @@ public class EntityScopeProviderImpl implements EntityScopeProvider {
     @Override
     public Scope getScopeForEnv() {
         return new EnvironmentScope();
+    }
+
+    @Override
+    public Scope getScopeForAuth() {
+        return tokenProvider == null ? EmptyScope.EMPTY : new AuthScope(tokenProvider);
+    }
+
+    /** Convenience: build the auth scope (or skip when no provider). */
+    private Scope authScope() {
+        return tokenProvider == null ? EmptyScope.EMPTY : new AuthScope(tokenProvider);
     }
 
     @Override
@@ -192,6 +212,7 @@ public class EntityScopeProviderImpl implements EntityScopeProvider {
 
                 scopes.add(new SecureCredentialsVaultScope(this.scv));
                 scopes.add(new EnvironmentScope());
+                scopes.add(authScope());
             }
 
             return new FallbackScope(scopes);
@@ -264,7 +285,8 @@ public class EntityScopeProviderImpl implements EntityScopeProvider {
                     .map(INTERFACE, "if-name", (i) -> Optional.ofNullable(i.getSnmpInterface()).map(OnmsSnmpInterface::getIfName))
                     .map(INTERFACE, "phy-addr", (i) -> Optional.ofNullable(i.getSnmpInterface()).map(OnmsSnmpInterface::getPhysAddr)),
                 new SecureCredentialsVaultScope(this.scv),
-                new EnvironmentScope()
+                new EnvironmentScope(),
+                authScope()
             );
         });
     }
@@ -318,6 +340,7 @@ public class EntityScopeProviderImpl implements EntityScopeProvider {
 
             scopes.add(new SecureCredentialsVaultScope(this.scv));
             scopes.add(new EnvironmentScope());
+            scopes.add(authScope());
 
             return new FallbackScope(scopes);
         });
@@ -339,7 +362,8 @@ public class EntityScopeProviderImpl implements EntityScopeProvider {
                     new ObjectScope<>(Scope.ScopeName.SERVICE, monitoredService)
                             .map(SERVICE, "name", (s) -> Optional.of(s.getServiceName())),
                     new SecureCredentialsVaultScope(this.scv),
-                    new EnvironmentScope()
+                    new EnvironmentScope(),
+                    authScope()
             );
         });
     }
@@ -372,5 +396,9 @@ public class EntityScopeProviderImpl implements EntityScopeProvider {
 
     public void setScv(SecureCredentialsVault scv) {
         this.scv = scv;
+    }
+
+    public void setTokenProvider(TokenProvider tokenProvider) {
+        this.tokenProvider = tokenProvider;
     }
 }

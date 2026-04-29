@@ -413,6 +413,12 @@ public abstract class ConfigFileConstants {
      */
     public static final int JDBC_COLLECTION_CONFIG_FILE_NAME;
 
+    /**
+     * The config file for dynamic-auth definitions consumed via the
+     * {@code ${auth:<name>}} metadata DSL placeholder.
+     */
+    public static final int AUTH_CONFIG_FILE_NAME;
+
     //
     // Initialize the class data. This section is used to initialize the
     // integer constants to their final values and to build the array
@@ -527,9 +533,11 @@ public abstract class ConfigFileConstants {
         ENLINKD_CONFIG_FILE_NAME = 81;
 
         WSMAN_ASSET_ADAPTER_CONFIG_FILE_NAME = 82;
+
+        AUTH_CONFIG_FILE_NAME = 83;
         // Allocate and build the mapping of identifiers to names
         //
-        FILE_ID_TO_NAME = new String[83];
+        FILE_ID_TO_NAME = new String[84];
 
         FILE_ID_TO_NAME[DB_CONFIG_FILE_NAME] = "opennms-database.xml";
         FILE_ID_TO_NAME[JMS_CONFIG_FILE_NAME] = "opennms-jms.xml";
@@ -615,6 +623,7 @@ public abstract class ConfigFileConstants {
         FILE_ID_TO_NAME[SNMP_ASSET_ADAPTER_CONFIG_FILE_NAME] = "snmp-asset-adapter-configuration.xml";
         FILE_ID_TO_NAME[WSMAN_ASSET_ADAPTER_CONFIG_FILE_NAME] = "wsman-asset-adapter-configuration.xml";
         FILE_ID_TO_NAME[JDBC_COLLECTION_CONFIG_FILE_NAME] = "jdbc-datacollection-config.xml";
+        FILE_ID_TO_NAME[AUTH_CONFIG_FILE_NAME] = "auth-configuration.xml";
     }
 
     /**

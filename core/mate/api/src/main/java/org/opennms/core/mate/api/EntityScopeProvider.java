@@ -36,6 +36,15 @@ public interface EntityScopeProvider {
 
     Scope getScopeForEnv();
 
+    /**
+     * Returns the scope used to resolve {@code ${auth:<name>}} placeholders.
+     * Default returns an empty scope so implementations that pre-date the
+     * dynamic-auth feature continue to compile and behave as before.
+     */
+    default Scope getScopeForAuth() {
+        return EmptyScope.EMPTY;
+    }
+
     Scope getScopeForNode(final Integer nodeId);
 
     Scope getScopeForInterface(final Integer nodeId, final String ipAddress);
@@ -52,6 +61,10 @@ public interface EntityScopeProvider {
 
     default ScopeProvider getScopeProviderForEnv() {
         return () -> getScopeForEnv();
+    }
+
+    default ScopeProvider getScopeProviderForAuth() {
+        return () -> getScopeForAuth();
     }
 
     default ScopeProvider getScopeProviderForNode(final Integer nodeId) {

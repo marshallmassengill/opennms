@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:onmsgi="http://xmlns.opennms.org/xsd/spring/onms-osgi"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.2.xsd
+        http://xmlns.opennms.org/xsd/spring/onms-osgi http://xmlns.opennms.org/xsd/spring/onms-osgi.xsd">
+
+    <!--
+      Wires the runtime side of the dynamic-auth feature.
+
+      AuthConfigFactory is a static-singleton-style factory; TokenProviderImpl
+      handles its lazy init internally so a clean install without
+      etc/auth-configuration.xml degrades to "no auth definitions, every
+      ${auth:...} placeholder falls through" rather than failing at startup.
+    -->
+
+    <bean id="authTokenAcquirer"
+          class="org.opennms.netmgt.config.auth.TokenAcquirer"/>
+
+    <bean id="authTokenCache"
+          class="org.opennms.netmgt.config.auth.TokenCache">
+        <constructor-arg ref="authTokenAcquirer"/>
+    </bean>
+
+    <bean id="authTokenProvider"
+          class="org.opennms.netmgt.config.auth.TokenProviderImpl">
+        <constructor-arg ref="authTokenCache"/>
+    </bean>
+
+    <!--
+      Expose the TokenProvider as an OSGi service so consumers in other
+      bundles (notably any future cross-collector use of ${auth:...})
+      can autowire it without depending on opennms-config directly.
+    -->
+    <onmsgi:service interface="org.opennms.core.mate.api.TokenProvider"
+                    ref="authTokenProvider"/>
+</beans>
