@@ -73,7 +73,7 @@ public class AuthConfigReloadListenerTest {
 
         // The factory is a static singleton; reset it so reload() picks
         // up the temp file rather than whatever the previous test left.
-        AuthConfigFactory.setInstance(null);
+        AuthConfigFactory.resetForTesting();
         writeConfig(authBlock("auth-one"));
 
         acquireCount = new AtomicInteger();
@@ -90,7 +90,7 @@ public class AuthConfigReloadListenerTest {
 
     @After
     public void tearDown() {
-        AuthConfigFactory.setInstance(null);
+        AuthConfigFactory.resetForTesting();
         if (previousOpennmsHome == null) {
             System.clearProperty("opennms.home");
         } else {
@@ -189,7 +189,7 @@ public class AuthConfigReloadListenerTest {
         // Replace the on-disk config with malformed XML so reload() fails.
         Files.writeString(etcDir.toPath().resolve("auth-configuration.xml"),
                 "<not-valid-xml", StandardCharsets.UTF_8);
-        AuthConfigFactory.setInstance(null);
+        AuthConfigFactory.resetForTesting();
 
         listener.onEvent(reloadEventFor("AuthConfig"));
 

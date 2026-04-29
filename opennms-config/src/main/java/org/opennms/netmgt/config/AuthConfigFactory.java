@@ -99,8 +99,30 @@ public final class AuthConfigFactory {
         return m_singleton;
     }
 
-    public static synchronized void setInstance(final AuthConfigFactory factory) {
+    /**
+     * Test seam. Replaces the active singleton without going through
+     * {@link #init()}. Package-private rather than public because a
+     * caller outside this package could otherwise install a factory
+     * whose {@link AuthConfiguration} was mutated post-construction
+     * (e.g. setting both {@code header} and {@code body-as-token});
+     * validation only runs at construction. The reload path always
+     * re-parses XML and re-validates, so production never reaches a
+     * mutated state via legitimate means.
+     */
+    static synchronized void setInstance(final AuthConfigFactory factory) {
         m_singleton = factory;
+    }
+
+    /**
+     * Test-only helper to drop the active singleton so the next call
+     * to {@link #init()} or {@link #reload()} reads from disk fresh.
+     * Public visibility (in contrast to {@link #setInstance}) because
+     * resetting to null does not bypass validation -- the next load
+     * still goes through {@link #init()} and the constructor's
+     * checks. Useful from test classes outside this package.
+     */
+    public static synchronized void resetForTesting() {
+        m_singleton = null;
     }
 
     /**

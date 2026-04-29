@@ -24,6 +24,8 @@ package org.opennms.netmgt.config.auth;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.Base64;
 
@@ -149,10 +151,15 @@ public class TokenAcquirer {
      * lets {@code N} nodes pointing at the same regional endpoint share
      * one cached token.
      *
-     * <p>Headers are included only by name+value; {@link Auth} attributes
-     * that affect token identity (URL, basic-auth, content) are also
-     * folded in. Everything else (timeouts, SSL flags, token-from
-     * config) is excluded -- those don't change the resulting token.</p>
+     * <p>Uses SHA-256 rather than {@code String.hashCode}: a 32-bit
+     * hash collision would cause one tenant's request to receive
+     * another tenant's cached token, so the hash needs to be
+     * collision-resistant in the cryptographic sense, not just
+     * statistically uniform.</p>
+     *
+     * <p>Headers are included by name+value with insertion order
+     * preserved. {@link Auth} fields that don't change the resulting
+     * token (timeouts, SSL flags, token-from config) are excluded.</p>
      */
     public String fingerprint(final Auth auth, final Scope callerScope) {
         final StringBuilder sb = new StringBuilder();
@@ -174,15 +181,38 @@ public class TokenAcquirer {
             sb.append(auth.getContent().getType() == null ? "" : auth.getContent().getType()).append('\0');
             sb.append(interpolate(auth.getContent().getData(), callerScope));
         }
-        return Integer.toHexString(sb.toString().hashCode());
+        try {
+            final MessageDigest md = MessageDigest.getInstance("SHA-256");
+            final byte[] digest = md.digest(sb.toString().getBytes(StandardCharsets.UTF_8));
+            final StringBuilder hex = new StringBuilder(digest.length * 2);
+            for (final byte b : digest) {
+                hex.append(String.format("%02x", b));
+            }
+            return hex.toString();
+        } catch (final NoSuchAlgorithmException e) {
+            // SHA-256 is mandatory in every Java SE implementation per
+            // the platform spec, so this branch is unreachable. Fall
+            // back to the unhashed text rather than killing acquisition,
+            // and let any collision misbehavior surface visibly.
+            return sb.toString();
+        }
     }
 
     /**
      * Executes the auth call described by {@code auth} and returns the
      * resulting cached token. Per-node placeholders inside {@code auth}
-     * are not resolved on this path. This is the legacy override point;
-     * subclasses (notably test fakes) override this method to short-circuit
-     * acquisition without standing up an HTTP server.
+     * are not resolved on this path.
+     *
+     * <p><b>Subclassing note for test fakes:</b> if you override only
+     * this single-arg variant, your override is invoked when the cache
+     * calls with {@code callerScope == null}, but it is <b>bypassed</b>
+     * when production code passes a scope (per-node case). Production
+     * collects always pass a scope, so a fake that overrides only
+     * this method will work for unit tests but not for any test that
+     * exercises a scope-aware caller through a real
+     * {@link TokenCache#getToken(Auth, Scope)}. Override
+     * {@link #acquire(Auth, Scope)} as well -- or instead -- when
+     * writing scope-aware fakes.</p>
      */
     public CachedToken acquire(final Auth auth) throws IOException {
         return acquireInternal(auth, null);
@@ -194,10 +224,14 @@ public class TokenAcquirer {
      * env), and returns the resulting cached token.
      *
      * <p>When {@code callerScope} is {@code null} this delegates to
-     * {@link #acquire(Auth)} so subclasses that override the legacy
-     * single-argument variant keep working unchanged. When a scope is
-     * present, the full implementation (with per-node placeholder
-     * resolution) is used regardless of any subclass override.</p>
+     * {@link #acquire(Auth)} so subclasses that override only the
+     * legacy single-argument variant continue to work for the
+     * non-scope path. When a scope is present, the full implementation
+     * (with per-node placeholder resolution) is used; subclass
+     * overrides of {@link #acquire(Auth)} are <b>bypassed</b> on this
+     * path. Test fakes that need to short-circuit acquisition for
+     * scope-aware callers must override this two-arg method, not the
+     * single-arg one.</p>
      *
      * @throws IOException on network errors, non-2xx status, or token
      *                     extraction failure

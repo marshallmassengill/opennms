@@ -34,6 +34,7 @@ import org.opennms.netmgt.events.api.model.IParm;
 import org.opennms.netmgt.model.events.EventBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.DisposableBean;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.event.ContextRefreshedEvent;
 
@@ -60,7 +61,7 @@ import org.springframework.context.event.ContextRefreshedEvent;
  * registration is one-shot, guarded by a flag.</p>
  */
 public class AuthConfigReloadListener
-        implements EventListener, ApplicationListener<ContextRefreshedEvent> {
+        implements EventListener, ApplicationListener<ContextRefreshedEvent>, DisposableBean {
 
     /** Name advertised for daemon-reload routing. */
     public static final String NAME = "AuthConfig";
@@ -137,6 +138,25 @@ public class AuthConfigReloadListener
                     .addParam(EventConstants.PARM_DAEMON_NAME, NAME)
                     .addParam(EventConstants.PARM_REASON, StringUtils.abbreviate(t.getLocalizedMessage(), 128))
                     .getEvent());
+        }
+    }
+
+    /**
+     * Spring {@link DisposableBean} hook. When the bean is destroyed
+     * (context shutdown, OSGi bundle stop), unregister from
+     * {@link EventIpcManager} so the manager does not retain a
+     * reference to a dead listener and route events into a stale
+     * {@link TokenCache}.
+     */
+    @Override
+    public void destroy() {
+        if (eventIpcManager != null && registered) {
+            try {
+                eventIpcManager.removeEventListener(this);
+            } catch (final Exception t) {
+                LOG.warn("Failed to remove auth-config reload listener on shutdown", t);
+            }
+            registered = false;
         }
     }
 
