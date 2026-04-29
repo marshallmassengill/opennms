@@ -38,6 +38,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.opennms.core.mate.api.TokenProvider;
 import org.opennms.netmgt.config.AuthConfigFactory;
 
 import com.sun.net.httpserver.HttpExchange;
@@ -154,13 +155,31 @@ public class AuthRuntimeIntegrationTest {
 
         // Reverse-lookup invalidate using only the value, simulating the
         // 401-retry path in the XmlCollector.
-        final Optional<String> evicted = provider.invalidateByTokenValue(first);
-        assertEquals("catalyst", evicted.orElse(null));
+        final Optional<TokenProvider.InvalidationResult> evicted = provider.invalidateByTokenValue(first);
+        assertTrue(evicted.isPresent());
+        assertEquals("catalyst", evicted.get().getAuthName());
+        assertEquals(first, evicted.get().getMatchedTokenValue());
 
         final String second = provider.getToken("catalyst").orElseThrow();
         assertEquals("jwt-2", second);
         assertNotEquals(first, second);
         assertEquals(2, acquireCount.get());
+    }
+
+    @Test
+    public void invalidateByTokenValueMatchesPrefixedHeaderText() {
+        // Regression: the Authorization-header form is "Bearer <token>",
+        // so the cache must match the header value as a substring search,
+        // not an exact equality.
+        final TokenProviderImpl provider = buildProvider(configXml("catalyst", null));
+
+        final String first = provider.getToken("catalyst").orElseThrow();
+
+        final Optional<TokenProvider.InvalidationResult> evicted =
+                provider.invalidateByTokenValue("Bearer " + first);
+        assertTrue(evicted.isPresent());
+        assertEquals("catalyst", evicted.get().getAuthName());
+        assertEquals(first, evicted.get().getMatchedTokenValue());
     }
 
     @Test
@@ -230,8 +249,9 @@ public class AuthRuntimeIntegrationTest {
 
         // Simulate the downstream 401 by invoking invalidateByTokenValue
         // with the value that was attached to the request.
-        final Optional<String> name = provider.invalidateByTokenValue(t1);
-        assertEquals("api", name.orElse(null));
+        final Optional<TokenProvider.InvalidationResult> name = provider.invalidateByTokenValue(t1);
+        assertTrue(name.isPresent());
+        assertEquals("api", name.get().getAuthName());
 
         // The retry path now fetches a fresh token by name.
         final String t2 = provider.getToken("api").orElseThrow();
@@ -280,15 +300,15 @@ public class AuthRuntimeIntegrationTest {
         final String value = provider.getToken("catalyst").orElseThrow();
 
         final String[] candidates = { null, "", "Bearer something-else", value, "another-thing" };
-        Optional<String> hit = Optional.empty();
+        Optional<TokenProvider.InvalidationResult> hit = Optional.empty();
         for (String c : candidates) {
-            final Optional<String> ev = provider.invalidateByTokenValue(c);
+            final Optional<TokenProvider.InvalidationResult> ev = provider.invalidateByTokenValue(c);
             if (ev.isPresent()) {
                 hit = ev;
             }
         }
-        assertEquals("exactly the cached entry should have been hit",
-                Optional.of("catalyst"), hit);
+        assertTrue("exactly the cached entry should have been hit", hit.isPresent());
+        assertEquals("catalyst", hit.get().getAuthName());
     }
 
     @Test

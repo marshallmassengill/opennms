@@ -137,9 +137,28 @@ public class TokenCacheTest {
         final String value = cache.getToken(namedAuth("a"));
         assertTrue(cache.isCached("a"));
 
-        final java.util.Optional<String> evicted = cache.invalidateByTokenValue(value);
+        final java.util.Optional<org.opennms.core.mate.api.TokenProvider.InvalidationResult> evicted =
+                cache.invalidateByTokenValue(value);
         assertTrue(evicted.isPresent());
-        assertEquals("a", evicted.get());
+        assertEquals("a", evicted.get().getAuthName());
+        assertEquals(value, evicted.get().getMatchedTokenValue());
+        assertFalse(cache.isCached("a"));
+    }
+
+    @Test
+    public void invalidateByTokenValueMatchesSubstringOfHeaderValue() throws IOException {
+        // The reverse-lookup is substring-based so it works with prefixed
+        // headers like "Authorization: Bearer <token>".
+        final CountingAcquirer acquirer = new CountingAcquirer("tok", null);
+        final TokenCache cache = new TokenCache(acquirer);
+
+        final String value = cache.getToken(namedAuth("a"));
+
+        final java.util.Optional<org.opennms.core.mate.api.TokenProvider.InvalidationResult> evicted =
+                cache.invalidateByTokenValue("Bearer " + value);
+        assertTrue(evicted.isPresent());
+        assertEquals("a", evicted.get().getAuthName());
+        assertEquals(value, evicted.get().getMatchedTokenValue());
         assertFalse(cache.isCached("a"));
     }
 
@@ -162,8 +181,10 @@ public class TokenCacheTest {
         final String aValue = cache.getToken(namedAuth("a"));
         cache.getToken(namedAuth("b"));
 
-        final java.util.Optional<String> evicted = cache.invalidateByTokenValue(aValue);
-        assertEquals("a", evicted.orElse(null));
+        final java.util.Optional<org.opennms.core.mate.api.TokenProvider.InvalidationResult> evicted =
+                cache.invalidateByTokenValue(aValue);
+        assertTrue(evicted.isPresent());
+        assertEquals("a", evicted.get().getAuthName());
         assertFalse(cache.isCached("a"));
         assertTrue(cache.isCached("b"));
     }

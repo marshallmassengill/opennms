@@ -539,11 +539,13 @@ public abstract class AbstractXmlCollectionHandler implements XmlCollectionHandl
             if (h.getValue() == null || h.getValue().isEmpty()) {
                 continue;
             }
-            final Optional<String> authName = provider.invalidateByTokenValue(h.getValue());
-            if (authName.isPresent()) {
-                final Optional<String> fresh = provider.getToken(authName.get());
+            final Optional<TokenProvider.InvalidationResult> match = provider.invalidateByTokenValue(h.getValue());
+            if (match.isPresent()) {
+                final Optional<String> fresh = provider.getToken(match.get().getAuthName());
                 if (fresh.isPresent()) {
-                    h.setValue(fresh.get());
+                    // Substitute in place to preserve any prefix/suffix
+                    // around the token (e.g. "Bearer ").
+                    h.setValue(h.getValue().replace(match.get().getMatchedTokenValue(), fresh.get()));
                     any = true;
                 }
             }

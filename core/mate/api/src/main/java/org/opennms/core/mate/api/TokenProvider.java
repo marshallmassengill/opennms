@@ -49,15 +49,47 @@ public interface TokenProvider {
     Optional<String> getToken(String authName);
 
     /**
-     * Reverse-lookup invalidation: if any cached token currently matches
-     * {@code tokenValue}, drop it and return the auth name it belonged to.
+     * Result of a successful reverse-lookup invalidation: identifies the
+     * auth that owned the matched token and surfaces the matched token text
+     * itself, so callers performing in-place header rewrites can substitute
+     * just the token portion and preserve any surrounding text (e.g. a
+     * "Bearer " prefix).
+     */
+    final class InvalidationResult {
+        private final String authName;
+        private final String matchedTokenValue;
+
+        public InvalidationResult(final String authName, final String matchedTokenValue) {
+            this.authName = authName;
+            this.matchedTokenValue = matchedTokenValue;
+        }
+
+        public String getAuthName() {
+            return authName;
+        }
+
+        public String getMatchedTokenValue() {
+            return matchedTokenValue;
+        }
+    }
+
+    /**
+     * Reverse-lookup invalidation: scans cached tokens for any whose value
+     * appears as a substring of {@code headerValue}. If found, drops that
+     * cache entry and returns the auth name and the matched token text.
+     *
+     * <p>Substring matching lets this work for both raw-token headers
+     * ({@code X-Vault-Token: abc123}) and prefixed forms
+     * ({@code Authorization: Bearer abc123}). Token strings are random and
+     * long enough in practice that accidental substring collisions are not
+     * a real concern.</p>
      *
      * <p>Used by HTTP retry paths that observe a 401 on a downstream
      * request and need to invalidate the right auth without having the
      * auth name on hand. Default implementation returns empty -- providers
      * that have no notion of a cache override this.</p>
      */
-    default Optional<String> invalidateByTokenValue(String tokenValue) {
+    default Optional<InvalidationResult> invalidateByTokenValue(String headerValue) {
         return Optional.empty();
     }
 }

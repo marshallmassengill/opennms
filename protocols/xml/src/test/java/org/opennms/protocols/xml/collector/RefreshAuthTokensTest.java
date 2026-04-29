@@ -73,14 +73,15 @@ public class RefreshAuthTokensTest {
         }
 
         @Override
-        public Optional<String> invalidateByTokenValue(final String tokenValue) {
+        public Optional<TokenProvider.InvalidationResult> invalidateByTokenValue(final String headerValue) {
             for (final Map.Entry<String, String> entry : currentByName.entrySet()) {
-                if (entry.getValue().equals(tokenValue)) {
+                if (headerValue != null && headerValue.contains(entry.getValue())) {
+                    final String oldToken = entry.getValue();
                     currentByName.remove(entry.getKey());
                     if (nextByName.containsKey(entry.getKey())) {
                         currentByName.put(entry.getKey(), nextByName.remove(entry.getKey()));
                     }
-                    return Optional.of(entry.getKey());
+                    return Optional.of(new TokenProvider.InvalidationResult(entry.getKey(), oldToken));
                 }
             }
             return Optional.empty();
@@ -127,6 +128,26 @@ public class RefreshAuthTokensTest {
         assertEquals("fresh-token", request.getHeader("X-Auth-Token"));
         // Other headers untouched
         assertEquals("application/json", request.getHeader("Content-Type"));
+    }
+
+    @Test
+    public void refreshesBearerPrefixedHeaderInPlace() {
+        // The header value contains the cached token as a substring, with
+        // a "Bearer " prefix. Refresh must replace just the token text and
+        // leave the prefix intact.
+        final InMemoryTokenProvider provider = new InMemoryTokenProvider()
+                .primeCache("catalyst", "stale-token")
+                .scriptNext("catalyst", "fresh-token");
+
+        final Request request = new Request();
+        request.setHeaders(Arrays.asList(
+                new Header("Authorization", "Bearer stale-token")));
+
+        final StubHandler handler = new StubHandler();
+        handler.setTokenProviderForTest(provider);
+
+        assertTrue(handler.refreshAuthTokensInRequest(request));
+        assertEquals("Bearer fresh-token", request.getHeader("Authorization"));
     }
 
     @Test

@@ -31,6 +31,8 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+import org.opennms.core.mate.api.TokenProvider;
+
 /**
  * In-memory cache of auth tokens, keyed by auth-definition name.
  *
@@ -102,22 +104,27 @@ public class TokenCache {
     }
 
     /**
-     * Reverse-lookup invalidation: scans the cache for an entry whose token
-     * value matches {@code tokenValue}, removes it if found, and returns the
-     * auth name it belonged to. Used by HTTP retry paths that observe a 401
-     * on a request and need to figure out which auth's token to invalidate
-     * without having the auth name on hand.
+     * Reverse-lookup invalidation: scans the cache for an entry whose
+     * token value appears as a substring of {@code headerValue}, removes
+     * it if found, and returns the auth name plus the matched token text.
+     *
+     * <p>Substring matching is used so that this works for both raw-token
+     * headers ({@code X-Vault-Token: abc123}) and prefixed forms
+     * ({@code Authorization: Bearer abc123}). Returning the matched token
+     * text lets callers do an in-place rewrite of the header without
+     * losing any surrounding prefix or suffix.</p>
      *
      * <p>Safe to call with a null or empty value (returns empty).</p>
      */
-    public Optional<String> invalidateByTokenValue(final String tokenValue) {
-        if (tokenValue == null || tokenValue.isEmpty()) {
+    public Optional<TokenProvider.InvalidationResult> invalidateByTokenValue(final String headerValue) {
+        if (headerValue == null || headerValue.isEmpty()) {
             return Optional.empty();
         }
         for (final Map.Entry<String, CachedToken> entry : cache.entrySet()) {
-            if (tokenValue.equals(entry.getValue().getValue())) {
+            final String token = entry.getValue().getValue();
+            if (token != null && !token.isEmpty() && headerValue.contains(token)) {
                 cache.remove(entry.getKey(), entry.getValue());
-                return Optional.of(entry.getKey());
+                return Optional.of(new TokenProvider.InvalidationResult(entry.getKey(), token));
             }
         }
         return Optional.empty();

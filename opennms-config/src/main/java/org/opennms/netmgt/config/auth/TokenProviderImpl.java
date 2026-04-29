@@ -118,7 +118,7 @@ public class TokenProviderImpl implements TokenProvider {
     }
 
     @Override
-    public Optional<String> invalidateByTokenValue(final String tokenValue) {
-        return tokenCache.invalidateByTokenValue(tokenValue);
+    public Optional<TokenProvider.InvalidationResult> invalidateByTokenValue(final String headerValue) {
+        return tokenCache.invalidateByTokenValue(headerValue);
     }
 }
