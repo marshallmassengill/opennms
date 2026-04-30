@@ -16,4 +16,27 @@
     <bean name="entityScopeProvider" class="org.opennms.core.mate.model.EntityScopeProviderImpl" primary="true"/>
 
     <onmsgi:service ref="entityScopeProvider" interface="org.opennms.core.mate.api.EntityScopeProvider"/>
+
+    <!--
+      Late-binds the entityScopeProvider onto the dynamic-auth
+      TokenAcquirer (defined in opennms-config's
+      applicationContext-auth.xml). The wiring lives here so it only
+      fires when both modules' contexts are loaded together; tests
+      that pull in opennms-config without core/mate/model see a
+      TokenAcquirer that runs in degraded mode (SCV and env scopes
+      only, no per-node placeholder resolution) rather than a
+      Spring context that fails to build.
+
+      lazy-init=false and depends-on guarantees the setter runs
+      before any consumer of authTokenProvider tries to acquire.
+    -->
+    <bean id="authTokenAcquirerScopeWiring"
+          class="org.springframework.beans.factory.config.MethodInvokingFactoryBean"
+          depends-on="entityScopeProvider">
+        <property name="targetObject" ref="authTokenAcquirer"/>
+        <property name="targetMethod" value="setEntityScopeProvider"/>
+        <property name="arguments">
+            <list><ref bean="entityScopeProvider"/></list>
+        </property>
+    </bean>
 </beans>
