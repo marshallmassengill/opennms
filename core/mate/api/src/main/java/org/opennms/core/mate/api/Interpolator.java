@@ -128,6 +128,17 @@ public class Interpolator {
             return new Result(null, List.of());
         }
 
+        // Callers may pass a null scope when no scope context is available
+        // (e.g. WmiPeerFactory before SecureCredentialsVault is wired). The
+        // pre-dynamic-auth contract was to handle this fall-through silently
+        // for inputs that contain no placeholders; preserve that by skipping
+        // the calling-scope-stack manipulation when scope is null.
+        if (scope == null) {
+            final ImmutableList.Builder<ResultPart> parts = ImmutableList.builder();
+            final String output = interpolateRecursive(raw, parts, null, 1);
+            return new Result(output, parts.build());
+        }
+
         final java.util.Deque<Scope> stack = CALLING_SCOPE_STACK.get();
         stack.push(scope);
         try {
