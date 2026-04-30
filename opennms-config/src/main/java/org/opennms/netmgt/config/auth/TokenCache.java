@@ -151,12 +151,26 @@ public class TokenCache {
         }
         for (final Map.Entry<CacheKey, CachedToken> entry : cache.entrySet()) {
             final String token = entry.getValue().getValue();
-            // Minimum length guard: a very short token (e.g. a 6-char
-            // API key) could appear as a substring of an unrelated
-            // header value (User-Agent, Cookie, etc.) and trigger a
-            // false invalidation. Real-world auth tokens are
-            // overwhelmingly opaque blobs / JWTs >= 16 chars; tighter
-            // bounds would be safer still.
+            // Why substring match instead of exact-equals: the header
+            // value typically wraps the token, e.g.
+            // "Authorization: Bearer abc123". String.equals on the
+            // header value misses the cached "abc123". Hardcoding a
+            // list of known prefixes (Bearer, Token, Basic, SSWS...)
+            // would be brittle as new vendors invent custom schemes.
+            // The cleaner long-term fix is to track the
+            // ${auth:foo} -> (request, header-name) mapping at
+            // substitution time so we can invalidate by auth name on
+            // 401 without searching by token value, but that is a
+            // larger change in the metadata DSL pipeline.
+            //
+            // Why the minimum length guard: substring match exposes a
+            // false-positive risk. A 6-char token could appear inside
+            // an unrelated header value (User-Agent, Cookie, etc.) by
+            // coincidence; the caller would then rewrite that header
+            // in place, corrupting it on the retry. Real-world auth
+            // tokens are essentially always opaque blobs / JWTs well
+            // above this floor, so the guard costs nothing in
+            // practice while removing the corruption path.
             if (token != null && token.length() >= MIN_TOKEN_MATCH_LEN && headerValue.contains(token)) {
                 cache.remove(entry.getKey(), entry.getValue());
                 return Optional.of(new TokenProvider.InvalidationResult(entry.getKey().authName, token));
