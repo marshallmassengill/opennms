@@ -15,14 +15,11 @@
     -->
 
     <!--
-      TokenAcquirer is constructed without an EntityScopeProvider so
-      this file stands alone in test contexts that pull in
-      opennms-config but not core/mate/model. The provider is
-      injected via setter from
-      core/mate/model's applicationContext-entity-scope-provider.xml
-      when that file is on the classpath; in degraded contexts
-      (tests, minion-light bundles) TokenAcquirer runs without
-      per-node placeholder resolution.
+      TokenAcquirer is constructed without an EntityScopeProvider; the
+      provider is bound by TokenAcquirerScopeBinder below if one is on
+      the classpath, and skipped otherwise (degraded mode, SCV and env
+      scopes only). This keeps applicationContext-auth.xml loadable
+      both with and without core/mate/model.
 
       Setter rather than constructor injection because the production
       EntityScopeProviderImpl autowires the TokenProvider service to
@@ -33,6 +30,11 @@
     -->
     <bean id="authTokenAcquirer"
           class="org.opennms.netmgt.config.auth.TokenAcquirer"/>
+
+    <bean id="authTokenAcquirerScopeBinder"
+          class="org.opennms.netmgt.config.auth.TokenAcquirerScopeBinder">
+        <constructor-arg ref="authTokenAcquirer"/>
+    </bean>
 
     <bean id="authTokenCache"
           class="org.opennms.netmgt.config.auth.TokenCache">
