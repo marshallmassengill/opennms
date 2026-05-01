@@ -127,6 +127,11 @@ public class ConfigTesterTest {
     }
 
     @Test
+    public void testAuthConfiguration() {
+        testConfigFile("auth-configuration.xml");
+    }
+
+    @Test
     /**
      * FIXME: AsteriskConfig doesn't appear to be in our classpath.
      */
