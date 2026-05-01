@@ -131,11 +131,15 @@ public class Interpolator {
         // Callers may pass a null scope when no scope context is available
         // (e.g. WmiPeerFactory before SecureCredentialsVault is wired). The
         // pre-dynamic-auth contract was to handle this fall-through silently
-        // for inputs that contain no placeholders; preserve that by skipping
-        // the calling-scope-stack manipulation when scope is null.
+        // for inputs that contain no placeholders. Substitute EmptyScope.EMPTY
+        // so inputs that DO contain placeholders also fall through cleanly
+        // (resolving to empty / default) instead of NPEing inside
+        // interpolateSingle when it calls scope.get(...). Skip the
+        // calling-scope-stack push since EmptyScope contributes nothing
+        // worth tracking for AuthScope re-entry.
         if (scope == null) {
             final ImmutableList.Builder<ResultPart> parts = ImmutableList.builder();
-            final String output = interpolateRecursive(raw, parts, null, 1);
+            final String output = interpolateRecursive(raw, parts, EmptyScope.EMPTY, 1);
             return new Result(output, parts.build());
         }
 

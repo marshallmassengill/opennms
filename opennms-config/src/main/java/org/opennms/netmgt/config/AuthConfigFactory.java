@@ -83,13 +83,20 @@ public final class AuthConfigFactory {
     }
 
     /**
-     * Reloads the config from disk. Replaces the singleton instance on
-     * success. The caller is responsible for invalidating any token cache
-     * that depends on the previous configuration.
+     * Reloads the config from disk. Parses and validates into a new
+     * factory instance first, and only swaps {@code m_singleton} on
+     * success -- a parse or validation failure leaves the previously
+     * loaded configuration in effect, matching the documented behavior
+     * (see auth-configuration.adoc, "Reload without restart"). The
+     * caller is responsible for invalidating any token cache that
+     * depends on the previous configuration.
      */
     public static synchronized void reload() throws IOException {
-        m_singleton = null;
-        init();
+        try (InputStream is = new FileInputStream(
+                ConfigFileConstants.getFile(ConfigFileConstants.AUTH_CONFIG_FILE_NAME))) {
+            final AuthConfigFactory next = new AuthConfigFactory(is);
+            setInstance(next);
+        }
     }
 
     public static synchronized AuthConfigFactory getInstance() {

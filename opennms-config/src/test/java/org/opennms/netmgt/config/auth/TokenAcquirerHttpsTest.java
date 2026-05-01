@@ -38,8 +38,12 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLParameters;
 
+import javax.net.ssl.HostnameVerifier;
+
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import com.sun.net.httpserver.HttpsConfigurator;
@@ -61,6 +65,34 @@ public class TokenAcquirerHttpsTest {
 
     private HttpsServer server;
     private int port;
+
+    /**
+     * Hostname verifier captured from the JVM at the moment this test class
+     * starts, so we can restore it after the test class finishes regardless
+     * of what other tests in the same surefire fork did to the global
+     * default. The class itself installs a known-strict verifier in
+     * {@link #installStrictDefaultHostnameVerifier()} so the
+     * {@code rejectsSelfSignedCert...} test is order-independent.
+     */
+    private static HostnameVerifier originalDefaultHostnameVerifier;
+
+    @BeforeClass
+    public static void installStrictDefaultHostnameVerifier() {
+        originalDefaultHostnameVerifier = HttpsURLConnection.getDefaultHostnameVerifier();
+        // org.apache.http.conn.ssl.DefaultHostnameVerifier (the strict
+        // verifier from Apache HttpClient) rejects mismatched hostnames
+        // and self-signed CN=localhost certs that aren't in the
+        // truststore -- the behavior the negative test below depends on.
+        HttpsURLConnection.setDefaultHostnameVerifier(
+                new org.apache.http.conn.ssl.DefaultHostnameVerifier());
+    }
+
+    @AfterClass
+    public static void restoreDefaultHostnameVerifier() {
+        if (originalDefaultHostnameVerifier != null) {
+            HttpsURLConnection.setDefaultHostnameVerifier(originalDefaultHostnameVerifier);
+        }
+    }
 
     @Before
     public void startTlsServer() throws Exception {
@@ -133,13 +165,12 @@ public class TokenAcquirerHttpsTest {
         // Don't trust this cert via the JVM truststore for this test;
         // ensure that without disable-ssl-verification the wrapper's
         // default verification rejects the self-signed snakeoil cert.
+        // The strict default HostnameVerifier installed in
+        // installStrictDefaultHostnameVerifier() ensures this test runs
+        // against a known-strict verifier no matter what the JVM
+        // default was on entry.
         final Auth auth = httpsAuth();
         auth.setDisableSslVerification(false);
-
-        // Disable any process-wide HostnameVerifier that other tests
-        // might have weakened, so this test is robust against ordering.
-        HttpsURLConnection.setDefaultHostnameVerifier(
-                javax.net.ssl.HttpsURLConnection.getDefaultHostnameVerifier());
 
         final IOException ex = assertThrows(IOException.class,
                 () -> new TokenAcquirer().acquire(auth));

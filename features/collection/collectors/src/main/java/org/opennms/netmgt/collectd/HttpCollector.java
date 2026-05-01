@@ -474,8 +474,17 @@ public class HttpCollector extends AbstractRemoteServiceCollector {
             }
         }
         for (final org.opennms.netmgt.config.httpdatacollection.Header h : url.getHeaders()) {
-            if (h.getName() != null && !h.getName().isEmpty()) {
-                method.setHeader(h.getName(), h.getValue());
+            if (h == null) {
+                continue;
+            }
+            final String name = h.getName();
+            final String value = h.getValue();
+            // The XSD makes both attributes required (use="required"), but
+            // a programmatically constructed Header with no value would
+            // cause method.setHeader(name, null) to fail downstream.
+            // Match the existing name-guard with a value-guard.
+            if (name != null && !name.isEmpty() && value != null) {
+                method.setHeader(name, value);
             }
         }
     }

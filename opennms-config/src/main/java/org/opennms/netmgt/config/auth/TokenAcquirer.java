@@ -85,21 +85,37 @@ public class TokenAcquirer {
 
     private final int connectTimeoutMs;
     private final int socketTimeoutMs;
+    private final java.time.Clock clock;
     private volatile EntityScopeProvider entityScopeProvider;
 
     public TokenAcquirer() {
-        this(DEFAULT_CONNECT_TIMEOUT_MS, DEFAULT_SOCKET_TIMEOUT_MS, null);
+        this(DEFAULT_CONNECT_TIMEOUT_MS, DEFAULT_SOCKET_TIMEOUT_MS, null, java.time.Clock.systemUTC());
     }
 
     public TokenAcquirer(final int connectTimeoutMs, final int socketTimeoutMs) {
-        this(connectTimeoutMs, socketTimeoutMs, null);
+        this(connectTimeoutMs, socketTimeoutMs, null, java.time.Clock.systemUTC());
     }
 
     public TokenAcquirer(final int connectTimeoutMs, final int socketTimeoutMs,
                          final EntityScopeProvider entityScopeProvider) {
+        this(connectTimeoutMs, socketTimeoutMs, entityScopeProvider, java.time.Clock.systemUTC());
+    }
+
+    /**
+     * Test-friendly constructor that accepts a {@link java.time.Clock} for
+     * computing the cached-token expiry timestamp. Production wiring uses
+     * {@link java.time.Clock#systemUTC()}; tests that share a fake clock
+     * with {@link TokenCache} should pass that same clock here so token
+     * expiries computed at acquire time are comparable to the cache's
+     * notion of "now".
+     */
+    public TokenAcquirer(final int connectTimeoutMs, final int socketTimeoutMs,
+                         final EntityScopeProvider entityScopeProvider,
+                         final java.time.Clock clock) {
         this.connectTimeoutMs = connectTimeoutMs;
         this.socketTimeoutMs = socketTimeoutMs;
         this.entityScopeProvider = entityScopeProvider;
+        this.clock = java.util.Objects.requireNonNull(clock, "clock");
     }
 
     /**
@@ -405,6 +421,6 @@ public class TokenAcquirer {
         if (ttl == null || ttl <= 0) {
             return null;
         }
-        return Instant.now().plusSeconds(ttl);
+        return clock.instant().plusSeconds(ttl);
     }
 }

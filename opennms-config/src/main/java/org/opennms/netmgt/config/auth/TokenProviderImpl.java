@@ -90,7 +90,7 @@ public class TokenProviderImpl implements TokenProvider {
             // Tokens silently fail to resolve until next call; surface
             // at debug so an operator chasing a "${auth:foo} resolved
             // to empty" report can see this happened.
-            LOG.debug("AuthConfigFactory not yet initialised; ${{auth:...}} will resolve as empty until init() completes", e);
+            LOG.debug("AuthConfigFactory not yet initialised; ${auth:...} will resolve as empty until init() completes", e);
             return null;
         }
     }

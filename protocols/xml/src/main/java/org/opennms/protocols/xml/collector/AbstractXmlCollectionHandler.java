@@ -534,20 +534,63 @@ public abstract class AbstractXmlCollectionHandler implements XmlCollectionHandl
         if (provider == null) {
             return false;
         }
-        boolean any = false;
+
+        // First pass: discover distinct (oldToken -> freshToken) pairs by
+        // probing one header at a time. invalidateByTokenValue both
+        // returns the match AND removes the cache entry, so subsequent
+        // probes for the same token would miss; collect all swaps now and
+        // apply them across every matching header in the second pass.
+        // This keeps a single request that uses the same ${auth:...} in
+        // multiple headers (e.g. Authorization and X-Auth-Token) fully
+        // refreshed before the retry, rather than only the first header.
+        final java.util.List<String[]> swaps = new java.util.ArrayList<>();
         for (Header h : request.getHeaders()) {
             if (h.getValue() == null || h.getValue().isEmpty()) {
+                continue;
+            }
+            // Skip if a swap we've already collected covers this header's
+            // current value (avoids re-invalidating an already-evicted
+            // entry, which can never hit anyway).
+            boolean alreadyCovered = false;
+            for (final String[] swap : swaps) {
+                if (h.getValue().contains(swap[0])) {
+                    alreadyCovered = true;
+                    break;
+                }
+            }
+            if (alreadyCovered) {
                 continue;
             }
             final Optional<TokenProvider.InvalidationResult> match = provider.invalidateByTokenValue(h.getValue());
             if (match.isPresent()) {
                 final Optional<String> fresh = provider.getToken(match.get().getAuthName());
                 if (fresh.isPresent()) {
-                    // Substitute in place to preserve any prefix/suffix
-                    // around the token (e.g. "Bearer ").
-                    h.setValue(h.getValue().replace(match.get().getMatchedTokenValue(), fresh.get()));
-                    any = true;
+                    swaps.add(new String[]{match.get().getMatchedTokenValue(), fresh.get()});
                 }
+            }
+        }
+
+        if (swaps.isEmpty()) {
+            return false;
+        }
+
+        // Second pass: substitute every collected (old -> fresh) pair in
+        // every header that still contains the old value. Preserves any
+        // prefix/suffix around the token (e.g. "Bearer ").
+        boolean any = false;
+        for (Header h : request.getHeaders()) {
+            if (h.getValue() == null) {
+                continue;
+            }
+            String updated = h.getValue();
+            for (final String[] swap : swaps) {
+                if (updated.contains(swap[0])) {
+                    updated = updated.replace(swap[0], swap[1]);
+                }
+            }
+            if (!updated.equals(h.getValue())) {
+                h.setValue(updated);
+                any = true;
             }
         }
         return any;
