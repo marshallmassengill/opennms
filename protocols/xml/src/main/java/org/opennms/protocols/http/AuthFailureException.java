@@ -22,6 +22,8 @@
 package org.opennms.protocols.http;
 
 import java.io.IOException;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * Thrown by {@link HttpUrlConnection} when a downstream HTTP call returns
@@ -30,18 +32,37 @@ import java.io.IOException;
  * any other I/O failure; callers that do (the XML collector's
  * dynamic-auth retry path) catch this type specifically and attempt to
  * invalidate-and-refresh the offending token.
+ *
+ * <p>The {@code attemptedHeaderValues} list, when populated, carries the
+ * literal header values that were on the failed request. The controller-
+ * side retry path uses these to invalidate matching cache entries when a
+ * minion-served collection surfaces an auth failure across the RPC
+ * boundary; the in-process retry path on the controller picks the same
+ * values out of the live request directly.</p>
  */
 public class AuthFailureException extends IOException {
-    private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 2L;
 
     private final int statusCode;
+    private final List<String> attemptedHeaderValues;
 
     public AuthFailureException(final String message, final int statusCode) {
+        this(message, statusCode, Collections.emptyList());
+    }
+
+    public AuthFailureException(final String message, final int statusCode, final List<String> attemptedHeaderValues) {
         super(message);
         this.statusCode = statusCode;
+        this.attemptedHeaderValues = attemptedHeaderValues == null
+                ? Collections.emptyList()
+                : List.copyOf(attemptedHeaderValues);
     }
 
     public int getStatusCode() {
         return statusCode;
+    }
+
+    public List<String> getAttemptedHeaderValues() {
+        return attemptedHeaderValues;
     }
 }

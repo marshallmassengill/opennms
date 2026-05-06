@@ -21,7 +21,9 @@
  */
 package org.opennms.netmgt.collection.client.rpc;
 
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -30,11 +32,13 @@ import org.opennms.core.mate.api.FallbackScope;
 import org.opennms.core.mate.api.Interpolator;
 import org.opennms.core.mate.api.MetadataConstants;
 import org.opennms.core.mate.api.Scope;
+import org.opennms.core.mate.api.TokenProvider;
 import org.opennms.core.rpc.api.RpcRequest;
 import org.opennms.core.rpc.api.RpcTarget;
 import org.opennms.core.utils.InetAddressUtils;
 import org.opennms.core.utils.ParameterMap;
 import org.opennms.netmgt.collection.api.CollectionAgent;
+import org.opennms.netmgt.collection.api.CollectionAuthFailureException;
 import org.opennms.netmgt.collection.api.CollectionSet;
 import org.opennms.netmgt.collection.api.CollectorRequestBuilder;
 import org.opennms.netmgt.collection.api.ServiceCollector;
@@ -116,6 +120,17 @@ public class CollectorRequestBuilderImpl implements CollectorRequestBuilder {
             throw new IllegalArgumentException("Agent is required.");
         }
 
+        return executeOnce().thenCompose(this::handleResponseWithRetry);
+    }
+
+    /**
+     * Builds a fresh request -- runs interpolation, walks the runtime
+     * attributes, marshals if remote -- and dispatches it once. Called
+     * a second time on auth-failure retry so the interpolation pass
+     * re-reads the (now-invalidated) token cache and produces the
+     * freshly-acquired token.
+     */
+    private CompletableFuture<CollectorResponseDTO> executeOnce() {
         final Scope scope = new FallbackScope(
                 this.client.getEntityScopeProvider().getScopeForNode(agent.getNodeId()),
                 this.client.getEntityScopeProvider().getScopeForInterface(agent.getNodeId(), InetAddressUtils.toIpAddrString(agent.getAddress()))
@@ -168,8 +183,63 @@ public class CollectorRequestBuilderImpl implements CollectorRequestBuilder {
             request.setAttributesNeedUnmarshaling(true);
         }
 
-        // Execute the request
-        return client.getDelegate().execute(request).thenApply(CollectorResponseDTO::getCollectionSet);
+        return client.getDelegate().execute(request);
+    }
+
+    /**
+     * Inspects the response for an auth-failure signal. On success, hands
+     * the {@link CollectionSet} on. On 401/403 from a remotely-served
+     * collection, invalidates the cached dynamic-auth token(s) that
+     * carried the failed request and re-issues the RPC once. A second
+     * auth failure in a row surfaces as a {@link
+     * CollectionAuthFailureException}, matching what an unrecoverable
+     * core-local failure would produce.
+     */
+    private CompletableFuture<CollectionSet> handleResponseWithRetry(final CollectorResponseDTO response) {
+        if (response.getAuthFailureStatusCode() == null) {
+            return CompletableFuture.completedFuture(response.getCollectionSet());
+        }
+
+        final List<String> failedHeaderValues = response.getAuthFailureHeaderValues();
+        final int failedStatus = response.getAuthFailureStatusCode();
+
+        final TokenProvider provider = client.getTokenProvider();
+        if (provider == null) {
+            // Without a TokenProvider we have nothing to invalidate; the
+            // retry would re-send the same stale token. Surface the
+            // failure rather than spin.
+            LOG.debug("Auth failure on remote collection (status {}) but TokenProvider is not wired; "
+                    + "cannot invalidate-and-retry", failedStatus);
+            throw new CollectionAuthFailureException(
+                    "auth failure on remote collection (status " + failedStatus
+                            + "); TokenProvider not available for retry",
+                    failedStatus,
+                    failedHeaderValues);
+        }
+
+        for (final String headerValue : failedHeaderValues) {
+            try {
+                provider.invalidateByTokenValue(headerValue);
+            } catch (Throwable t) {
+                LOG.debug("invalidateByTokenValue threw for one of the failed header values; continuing", t);
+            }
+        }
+
+        LOG.info("Auth failure (status {}) on remote collection; invalidated {} cached token entries and retrying once",
+                failedStatus, failedHeaderValues.size());
+
+        return executeOnce().thenApply(retryResponse -> {
+            if (retryResponse.getAuthFailureStatusCode() != null) {
+                throw new CollectionAuthFailureException(
+                        "auth failure persisted after token refresh: status "
+                                + retryResponse.getAuthFailureStatusCode(),
+                        retryResponse.getAuthFailureStatusCode(),
+                        retryResponse.getAuthFailureHeaderValues() == null
+                                ? Collections.emptyList()
+                                : retryResponse.getAuthFailureHeaderValues());
+            }
+            return retryResponse.getCollectionSet();
+        });
     }
 
 }

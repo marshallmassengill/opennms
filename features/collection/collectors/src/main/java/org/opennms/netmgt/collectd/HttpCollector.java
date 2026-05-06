@@ -70,6 +70,7 @@ import org.opennms.core.web.HttpClientWrapper;
 import org.opennms.netmgt.collection.api.AbstractRemoteServiceCollector;
 import org.opennms.netmgt.collection.api.AttributeType;
 import org.opennms.netmgt.collection.api.CollectionAgent;
+import org.opennms.netmgt.collection.api.CollectionAuthFailureException;
 import org.opennms.netmgt.collection.api.CollectionInitializationException;
 import org.opennms.netmgt.collection.api.CollectionSet;
 import org.opennms.netmgt.collection.api.CollectionStatus;
@@ -260,8 +261,26 @@ public class HttpCollector extends AbstractRemoteServiceCollector {
 
             LOG.info("doCollection: collecting using method: {}", method);
             final CloseableHttpResponse response = clientWrapper.execute(method);
+            final int status = response.getStatusLine().getStatusCode();
+            if (status == 401 || status == 403) {
+                // Collected endpoint refused us. Surface the auth-failure
+                // signal as a typed CollectionException so the controller
+                // can invalidate the cached dynamic-auth token, fetch a
+                // fresh one, and re-issue the request.
+                try { EntityUtils.consumeQuietly(response.getEntity()); } catch (Throwable ignored) {}
+                try { response.close(); } catch (Throwable ignored) {}
+                throw new CollectionAuthFailureException(
+                        "auth failure: " + collectorAgent.getUriDef().getName()
+                                + " returned status " + status,
+                        status,
+                        attemptedHeaderValues(method));
+            }
             //Not really a persist as such; it just stores data in collectionSet for later retrieval
             persistResponse(collectorAgent, collectionSetBuilder, response);
+        } catch (CollectionAuthFailureException e) {
+            // Already a typed CollectionException -- pass through so the
+            // RPC executor on the minion can populate the response DTO.
+            throw e;
         } catch (URISyntaxException e) {
             throw new HttpCollectorException("Error building HttpClient URI", e);
         } catch (IOException e) {
@@ -273,6 +292,26 @@ public class HttpCollector extends AbstractRemoteServiceCollector {
         } finally {
             IOUtils.closeQuietly(clientWrapper);
         }
+    }
+
+    /**
+     * Returns the values of every header on the request that has a
+     * non-empty value, in the order the request carries them. Used to
+     * carry the values of a 401/403-refused request back to the
+     * controller's retry path so it can invalidate matching cached
+     * dynamic-auth tokens.
+     */
+    private static List<String> attemptedHeaderValues(final HttpRequestBase method) {
+        final List<String> values = new ArrayList<>();
+        if (method == null) {
+            return values;
+        }
+        for (final Header h : method.getAllHeaders()) {
+            if (h != null && h.getValue() != null && !h.getValue().isEmpty()) {
+                values.add(h.getValue());
+            }
+        }
+        return values;
     }
 
     private static void processResponse(final Locale responseLocale, final String responseBodyAsString, final HttpCollectorAgent collectorAgent, final CollectionSetBuilder collectionSetBuilder) {

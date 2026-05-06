@@ -47,13 +47,30 @@ public class CollectorResponseDTOTest extends XmlTestNoCastor<CollectorResponseD
                 .withTimestamp(new Date(0))
                 .build();
         CollectorResponseDTO response = new CollectorResponseDTO(collectionSet);
+
+        // Auth-failure response: minion-side detected 401, populated the
+        // status code and the request's header values, no collection set.
+        CollectorResponseDTO authFailureResponse = new CollectorResponseDTO();
+        authFailureResponse.setAuthFailureStatusCode(401);
+        authFailureResponse.setAuthFailureHeaderValues(Arrays.asList(
+                "Bearer abc123def456ghi7", "X-Auth-Token: jkl789mnop012qrs"));
+
         return Arrays.asList(new Object[][] {
             {
                 response,
-                "<collector-response>\n" + 
-                "   <collection-set status=\"SUCCEEDED\" timestamp=\"" + StringUtils.iso8601OffsetString(new Date(0), ZoneId.systemDefault(), ChronoUnit.SECONDS) + "\">\n" + 
-                "      <agent node-id=\"0\" sys-up-time=\"0\"/>\n" + 
-                "   </collection-set>\n" + 
+                "<collector-response>\n" +
+                "   <collection-set status=\"SUCCEEDED\" timestamp=\"" + StringUtils.iso8601OffsetString(new Date(0), ZoneId.systemDefault(), ChronoUnit.SECONDS) + "\">\n" +
+                "      <agent node-id=\"0\" sys-up-time=\"0\"/>\n" +
+                "   </collection-set>\n" +
+                "</collector-response>"
+            },
+            {
+                authFailureResponse,
+                "<collector-response auth-failure-status-code=\"401\">\n" +
+                "   <auth-failure-header-values>\n" +
+                "      <value>Bearer abc123def456ghi7</value>\n" +
+                "      <value>X-Auth-Token: jkl789mnop012qrs</value>\n" +
+                "   </auth-failure-header-values>\n" +
                 "</collector-response>"
             }
         });

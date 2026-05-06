@@ -88,6 +88,15 @@ This snippet provides a collection definition named `opennms-copyright`:
 NOTE: Metadata expressions can also be used in attributes of the `http-datacollection-config.xml` configuration file.
 This lets the user to also reference credentials stored in the secure credentials.
 
+== Behavior on `401`/`403` responses
+
+The HttpCollector treats `401 Unauthorized` and `403 Forbidden` responses as collection failures rather than as data to persist.
+The collection cycle is marked failed; if the request used a `${auth:<name>}` placeholder for its authorization header, the cached token is invalidated and the cycle is retried once with a freshly acquired token.
+See xref:operation:deep-dive/admin/configuration/auth-configuration.adoc[Collector token authentication] for the retry semantics.
+
+In earlier releases, the HttpCollector did not distinguish `401`/`403` from successful responses and would attempt to extract attributes from the body of a refused response.
+If you have an existing collection that intentionally captures the response status of an authentication-required endpoint, consider switching it to xref:reference:service-assurance/monitors/PageSequenceMonitor.adoc[PageSequenceMonitor], which is designed to test status codes and response patterns.
+
 Once added to `etc/http-datacollection-config.xml`, you can use the `collect` command available in the xref:reference:karaf-shell/karaf-shell.adoc[Karaf shell] to test it:
 
 [source]

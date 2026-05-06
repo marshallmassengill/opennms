@@ -152,7 +152,11 @@ The 401/403 retry is best-effort.
 A single retry runs with the same caller scope.
 If the retry also fails, the original error propagates.
 
-CAUTION: The 401/403 retry path runs on the OpenNMS core only. A Minion-served collection that receives a 401 can keep sending the same cached token on subsequent cycles, until `<ttl-seconds>` elapses or a reload event flushes the cache from the core. A shorter `<ttl-seconds>` on auth definitions used through Minions reduces the window during which a stale token can keep producing failures.
+The retry path applies to both core-served and Minion-served collections.
+For a Minion-served collection, the Minion surfaces the auth failure back to the core; the core invalidates the cached token, acquires a fresh one, and re-issues the collection through the same Minion.
+This adds one RPC round-trip on top of the local-retry case but is otherwise transparent.
+
+NOTE: A short `<ttl-seconds>` is still useful as defense-in-depth for environments where tokens can be revoked out of band, since it bounds the window during which the cache may hold a token the auth server has already invalidated.
 
 == Reload without restart
 

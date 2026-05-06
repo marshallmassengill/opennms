@@ -65,9 +65,11 @@ import org.opennms.core.mate.api.TokenProvider;
 import org.opennms.core.spring.BeanUtils;
 import org.opennms.features.distributed.kvstore.api.BlobStore;
 import org.opennms.netmgt.collection.api.CollectionAgent;
+import org.opennms.netmgt.collection.api.CollectionAuthFailureException;
 import org.opennms.netmgt.collection.api.CollectionException;
 import org.opennms.netmgt.collection.api.CollectionResource;
 import org.opennms.netmgt.collection.api.CollectionSet;
+import org.opennms.protocols.http.AuthFailureException;
 import org.opennms.netmgt.collection.support.builder.CollectionSetBuilder;
 import org.opennms.netmgt.collection.support.builder.DeferredGenericTypeResource;
 import org.opennms.netmgt.collection.support.builder.NodeLevelResource;
@@ -190,6 +192,14 @@ public abstract class AbstractXmlCollectionHandler implements XmlCollectionHandl
                 LOG.debug("collect: finished source url '{}' collection with {} resources", urlStr, builder.getNumResources());
             }
             return builder.build();
+        } catch (AuthFailureException afe) {
+            // The in-process retry didn't fix it (or wasn't available --
+            // e.g. running on a Minion where TokenProvider isn't wired).
+            // Surface auth-failure context across the RPC boundary so the
+            // controller can invalidate-and-retry.
+            status = "failed";
+            throw new CollectionAuthFailureException(afe.getMessage(), afe.getStatusCode(),
+                    afe.getAttemptedHeaderValues(), afe);
         } catch (Exception e) {
             status = "failed";
             throw new CollectionException(e.getMessage(), e);

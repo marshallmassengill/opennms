@@ -28,6 +28,7 @@ import java.net.URLConnection;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.commons.io.IOUtils;
@@ -191,9 +192,18 @@ public class HttpUrlConnection extends URLConnection {
                 // typed exception that auth-aware callers can recognize.
                 try { org.apache.http.util.EntityUtils.consumeQuietly(response.getEntity()); } catch (Throwable ignored) {}
                 try { response.close(); } catch (Throwable ignored) {}
+                final List<String> attemptedHeaderValues = new ArrayList<>();
+                if (m_request != null && m_request.getHeaders() != null) {
+                    for (final Header h : m_request.getHeaders()) {
+                        if (h.getValue() != null && !h.getValue().isEmpty()) {
+                            attemptedHeaderValues.add(h.getValue());
+                        }
+                    }
+                }
                 throw new AuthFailureException(
                         "auth failure: " + m_url + " returned status " + status,
-                        status);
+                        status,
+                        attemptedHeaderValues);
             }
             return response.getEntity().getContent();
         } catch (AuthFailureException e) {

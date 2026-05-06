@@ -29,6 +29,7 @@ import java.util.function.Supplier;
 import org.opennms.core.logging.Logging;
 import org.opennms.core.rpc.xml.AbstractXmlRpcModule;
 import org.opennms.netmgt.collection.api.CollectionAgent;
+import org.opennms.netmgt.collection.api.CollectionAuthFailureException;
 import org.opennms.netmgt.collection.api.ServiceCollector;
 import org.opennms.netmgt.collection.api.ServiceCollectorRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -73,7 +74,17 @@ public class CollectorClientRpcModule extends AbstractXmlRpcModule<CollectorRequ
                 Logging.putPrefix("collectd");
                 final CollectionAgent agent = request.getAgent();
                 final Map<String, Object> parameters = request.getParameters(collector);
-                return new CollectorResponseDTO(collector.collect(agent, parameters));
+                try {
+                    return new CollectorResponseDTO(collector.collect(agent, parameters));
+                } catch (CollectionAuthFailureException afe) {
+                    // Don't fail the RPC; carry the auth-failure context
+                    // back so the controller can invalidate the cached
+                    // dynamic-auth token, fetch a fresh one, and retry.
+                    final CollectorResponseDTO response = new CollectorResponseDTO();
+                    response.setAuthFailureStatusCode(afe.getStatusCode());
+                    response.setAuthFailureHeaderValues(afe.getAttemptedHeaderValues());
+                    return response;
+                }
             }
         }, executor);
     }

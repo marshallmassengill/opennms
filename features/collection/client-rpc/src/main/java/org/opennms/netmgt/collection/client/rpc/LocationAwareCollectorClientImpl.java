@@ -26,6 +26,7 @@ import java.util.Objects;
 import org.opennms.core.rpc.api.RpcClient;
 import org.opennms.core.rpc.api.RpcClientFactory;
 import org.opennms.core.mate.api.EntityScopeProvider;
+import org.opennms.core.mate.api.TokenProvider;
 import org.opennms.core.rpc.utils.RpcTargetHelper;
 import org.opennms.netmgt.collection.api.CollectorRequestBuilder;
 import org.opennms.netmgt.collection.api.LocationAwareCollectorClient;
@@ -46,6 +47,15 @@ public class LocationAwareCollectorClientImpl implements LocationAwareCollectorC
 
     @Autowired
     private EntityScopeProvider entityScopeProvider;
+
+    /**
+     * Optional. Wired only when the dynamic-auth runtime is on the
+     * classpath; null in stand-alone test contexts and on Minions. Used
+     * by the controller-side single-retry path to invalidate cached
+     * tokens that drove a 401/403 from a remotely-served collection.
+     */
+    @Autowired(required = false)
+    private TokenProvider tokenProvider;
 
     private RpcClient<CollectorRequestDTO, CollectorResponseDTO> delegate;
 
@@ -92,5 +102,13 @@ public class LocationAwareCollectorClientImpl implements LocationAwareCollectorC
 
     public void setEntityScopeProvider(final EntityScopeProvider entityScopeProvider) {
         this.entityScopeProvider = entityScopeProvider;
+    }
+
+    public TokenProvider getTokenProvider() {
+        return this.tokenProvider;
+    }
+
+    public void setTokenProvider(final TokenProvider tokenProvider) {
+        this.tokenProvider = tokenProvider;
     }
 }

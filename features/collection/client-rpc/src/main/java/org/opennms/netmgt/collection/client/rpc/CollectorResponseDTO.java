@@ -21,12 +21,16 @@
  */
 package org.opennms.netmgt.collection.client.rpc;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 
 import javax.xml.bind.annotation.XmlAccessType;
 import javax.xml.bind.annotation.XmlAccessorType;
 import javax.xml.bind.annotation.XmlAttribute;
 import javax.xml.bind.annotation.XmlElement;
+import javax.xml.bind.annotation.XmlElementWrapper;
 import javax.xml.bind.annotation.XmlRootElement;
 
 import org.opennms.core.rpc.api.RemoteExecutionException;
@@ -44,6 +48,23 @@ public class CollectorResponseDTO implements RpcResponse {
     @XmlElement(name = "collection-set", type=CollectionSetDTO.class)
     private CollectionSet collectionSet;
 
+    /**
+     * When the minion sees a 401/403 from the collected endpoint, it
+     * sets this to the status code instead of failing the RPC. The
+     * controller-side retry path keys off this being non-null.
+     */
+    @XmlAttribute(name="auth-failure-status-code")
+    private Integer authFailureStatusCode;
+
+    /**
+     * Header values that were on the failed request. The controller-side
+     * retry path runs each through TokenProvider.invalidateByTokenValue
+     * to evict matching cache entries before retrying.
+     */
+    @XmlElementWrapper(name="auth-failure-header-values")
+    @XmlElement(name="value")
+    private List<String> authFailureHeaderValues;
+
     public CollectorResponseDTO() { }
 
     public CollectorResponseDTO(CollectionSet collectionSet) {
@@ -58,6 +79,24 @@ public class CollectorResponseDTO implements RpcResponse {
         return collectionSet;
     }
 
+    public Integer getAuthFailureStatusCode() {
+        return authFailureStatusCode;
+    }
+
+    public void setAuthFailureStatusCode(final Integer authFailureStatusCode) {
+        this.authFailureStatusCode = authFailureStatusCode;
+    }
+
+    public List<String> getAuthFailureHeaderValues() {
+        return authFailureHeaderValues == null
+                ? Collections.emptyList()
+                : authFailureHeaderValues;
+    }
+
+    public void setAuthFailureHeaderValues(final List<String> values) {
+        this.authFailureHeaderValues = values == null ? null : new ArrayList<>(values);
+    }
+
     @Override
     public String getErrorMessage() {
         return error;
@@ -65,7 +104,7 @@ public class CollectorResponseDTO implements RpcResponse {
 
     @Override
     public int hashCode() {
-        return Objects.hash(error, collectionSet);
+        return Objects.hash(error, collectionSet, authFailureStatusCode, authFailureHeaderValues);
     }
 
     @Override
@@ -79,7 +118,9 @@ public class CollectorResponseDTO implements RpcResponse {
         }
         CollectorResponseDTO other = (CollectorResponseDTO) obj;
         return Objects.equals(this.error, other.error)
-                && Objects.equals(this.collectionSet, other.collectionSet);
+                && Objects.equals(this.collectionSet, other.collectionSet)
+                && Objects.equals(this.authFailureStatusCode, other.authFailureStatusCode)
+                && Objects.equals(this.authFailureHeaderValues, other.authFailureHeaderValues);
     }
 
 
