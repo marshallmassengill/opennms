@@ -174,6 +174,11 @@ const router = createRouter({
       ]
     },
     {
+      path: '/topology',
+      name: 'Topology',
+      component: () => import('@/containers/Topology.vue')
+    },
+    {
       path: '/nodes',
       name: 'Nodes',
       component: () => import('@/containers/Nodes.vue')
