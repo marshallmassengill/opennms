@@ -26,34 +26,46 @@ License.
       <template #start>
         <span class="topology-title">Topology (Preview)</span>
       </template>
+      <template #end>
+        <div class="toolbar-controls">
+          <label for="node-count" class="control-label">Mock nodes:</label>
+          <PInputNumber
+            v-model="nodeCount"
+            input-id="node-count"
+            :min="10"
+            :max="2000"
+            :step="50"
+            show-buttons
+            buttonLayout="horizontal"
+            inputClass="node-count-input"
+          />
+          <PButton label="Fit" severity="secondary" outlined @click="canvasRef?.fit()" />
+        </div>
+      </template>
     </PToolbar>
 
-    <PCard class="topology-empty-state">
-      <template #title>Coming soon</template>
-      <template #content>
-        <p>
-          This is the new PrimeVue-based topology canvas. The full feature ships in
-          subsequent steps.
-        </p>
-        <p>
-          The legacy topology map remains available at
-          <a href="/opennms/topology"><code>/opennms/topology</code></a>.
-        </p>
-      </template>
-    </PCard>
+    <TopologyCanvas ref="canvasRef" :node-count="nodeCount" class="topology-body" />
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import Toolbar from 'primevue/toolbar'
-import Card from 'primevue/card'
+import Button from 'primevue/button'
+import InputNumber from 'primevue/inputnumber'
+import TopologyCanvas from '@/components/Topology/TopologyCanvas.vue'
 import { useTopologyStore } from '@/stores/topologyStore'
 
 const PToolbar = Toolbar
-const PCard = Card
+const PButton = Button
+const PInputNumber = InputNumber
 
-// Store wired but unused in the scaffold step; reserved for subsequent steps.
+// Store wired but unused in the renderer-spike step; reserved for the
+// palette/view work that follows.
 useTopologyStore()
+
+const canvasRef = ref<InstanceType<typeof TopologyCanvas> | null>(null)
+const nodeCount = ref<number>(500)
 </script>
 
 <style scoped>
@@ -62,7 +74,7 @@ useTopologyStore()
   flex-direction: column;
   gap: 1rem;
   padding: 1rem;
-  height: 100%;
+  height: calc(100vh - 4rem);
 }
 
 .topology-toolbar {
@@ -74,7 +86,22 @@ useTopologyStore()
   font-weight: 600;
 }
 
-.topology-empty-state {
+.toolbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.control-label {
+  font-size: 0.875rem;
+}
+
+.toolbar-controls :deep(.node-count-input) {
+  width: 6rem;
+}
+
+.topology-body {
   flex: 1 1 auto;
+  min-height: 400px;
 }
 </style>
