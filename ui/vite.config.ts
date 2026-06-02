@@ -39,11 +39,20 @@ export default defineConfig({
     }
   },
   resolve: {
-    alias: {
-      '@/': new URL('./src/', import.meta.url).pathname,
-      '~@featherds': '@featherds',
-      './src/assets/ProductLogo.vue': `./src/assets/${process.env.VITE_APP_LOGO_NAME}.vue`
-    },
+    alias: [
+      { find: /^@\//, replacement: new URL('./src/', import.meta.url).pathname },
+      { find: '~@featherds', replacement: '@featherds' },
+      // Per-product logo: any import of './src/assets/ProductLogo.vue' is
+      // rewritten to the absolute path of the configured product logo file.
+      // Vite v6 normalizes relative-path import ids before alias matching, so
+      // we use a regex find + absolute-path replacement (the previous
+      // relative-path replacement was resolved against the importing file's
+      // directory, which broke under Vite v6).
+      {
+        find: /^\.\/src\/assets\/ProductLogo\.vue$/,
+        replacement: new URL(`./src/assets/${process.env.VITE_APP_LOGO_NAME}.vue`, import.meta.url).pathname
+      }
+    ],
     dedupe: ['vue', 'primevue']
   },
   plugins: [
