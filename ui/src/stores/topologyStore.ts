@@ -53,12 +53,29 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     isEditMode.value = value
   }
 
+  const selectOnly = (id: string) => {
+    selectedIds.value = [id]
+  }
+
+  const toggleSelection = (id: string) => {
+    const idx = selectedIds.value.indexOf(id)
+    if (idx >= 0) selectedIds.value.splice(idx, 1)
+    else selectedIds.value.push(id)
+  }
+
+  const clearSelection = () => {
+    selectedIds.value = []
+  }
+
   return {
     catalog,
     currentView,
     isEditMode,
     selectedIds,
     newView,
-    setEditMode
+    setEditMode,
+    selectOnly,
+    toggleSelection,
+    clearSelection
   }
 })

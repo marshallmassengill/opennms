@@ -50,10 +50,13 @@ import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import Graph from 'graphology'
 import Sigma from 'sigma'
 import { PALETTE_DRAG_MIME, type PaletteDragPayload } from '@/components/Topology/dragTypes'
+import { useTopologyStore } from '@/stores/topologyStore'
 
 const props = defineProps<{
   nodeCount: number
 }>()
+
+const store = useTopologyStore()
 
 const canvasEl = ref<HTMLDivElement>()
 const edgeCount = ref(0)
@@ -62,6 +65,7 @@ const isDropHover = ref(false)
 let sigma: Sigma | null = null
 let graph: Graph | null = null
 let placedSequence = 0
+let draggedNode: string | null = null
 
 const generateMockGraph = (n: number): Graph => {
   const g = new Graph()
@@ -104,14 +108,103 @@ const rebuild = (n: number) => {
   edgeCount.value = graph.size
   placedCount.value = 0
   placedSequence = 0
+  draggedNode = null
+  // Re-attach selection visuals after a rebuild wipes the graph.
+  store.clearSelection()
 
   if (canvasEl.value && graph) {
     sigma = new Sigma(graph, canvasEl.value, {
       renderEdgeLabels: false,
       // Defaults are reasonable; pan/zoom/drag are on by default.
     })
+    attachInteractionHandlers(sigma, graph)
   }
 }
+
+/**
+ * Wires drag-to-move and click-to-select behavior onto a freshly-built
+ * sigma instance + graphology graph.
+ *
+ * Drag pattern follows the canonical sigma example:
+ *   - mousedown on a node captures it as the dragged node
+ *   - mousemove on the captor (body-level) updates the node's x/y
+ *   - mouseup releases the node
+ *   - preventSigmaDefault() prevents sigma's camera pan during the drag
+ *
+ * Selection writes into the topology store; the store's selectedIds is
+ * watched separately to reflect highlight state on the graph.
+ */
+const attachInteractionHandlers = (s: Sigma, g: Graph) => {
+  // Window-level mouseup listener installed only while a drag is in
+  // progress, so that releasing the mouse outside the canvas (over the
+  // palette, the toolbar, or off the page entirely) still ends the drag.
+  // Sigma only exposes a `mousemovebody` event, not a `mouseupbody`.
+  const windowMouseUp = () => finishDrag()
+  const finishDrag = () => {
+    draggedNode = null
+    window.removeEventListener('mouseup', windowMouseUp)
+  }
+
+  s.on('downNode', (e) => {
+    draggedNode = e.node
+    // Freeze sigma's auto-rescale by locking the bounding box at drag
+    // start. Without this, dragging a node beyond the current natural
+    // bbox grows the bbox, and sigma compensates by zooming the camera
+    // out -- producing a "canvas zooms further out as I drag" effect.
+    if (!s.getCustomBBox()) {
+      s.setCustomBBox(s.getBBox())
+    }
+    window.addEventListener('mouseup', windowMouseUp)
+  })
+
+  const captor = s.getMouseCaptor()
+  captor.on('mousemovebody', (e) => {
+    if (!draggedNode) return
+    // Prevent sigma's camera pan while dragging a node.
+    e.preventSigmaDefault()
+    e.original.preventDefault()
+    e.original.stopPropagation()
+    const pos = s.viewportToGraph(e)
+    g.setNodeAttribute(draggedNode, 'x', pos.x)
+    g.setNodeAttribute(draggedNode, 'y', pos.y)
+  })
+
+  // In-canvas mouseup still finishes the drag (the window listener is
+  // belt-and-suspenders for mouseups outside the canvas).
+  captor.on('mouseup', finishDrag)
+
+  s.on('clickNode', (e) => {
+    const original = e.event.original as MouseEvent | undefined
+    if (original?.shiftKey) {
+      store.toggleSelection(e.node)
+    } else {
+      store.selectOnly(e.node)
+    }
+  })
+
+  s.on('clickStage', () => {
+    store.clearSelection()
+  })
+}
+
+/**
+ * Reflects the store's selectedIds into the graph as the `highlighted`
+ * attribute (sigma's built-in selection visual). When the watcher fires
+ * after a rebuild the graph reference may have changed; we guard for
+ * that by checking hasNode.
+ */
+watch(
+  () => store.selectedIds.slice(),
+  (newIds, oldIds) => {
+    if (!graph) return
+    ;(oldIds ?? []).forEach((id) => {
+      if (graph && graph.hasNode(id)) graph.removeNodeAttribute(id, 'highlighted')
+    })
+    newIds.forEach((id) => {
+      if (graph && graph.hasNode(id)) graph.setNodeAttribute(id, 'highlighted', true)
+    })
+  }
+)
 
 /**
  * Translate a DragEvent's viewport (clientX/clientY) coordinates into the
