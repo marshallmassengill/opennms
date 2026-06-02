@@ -40,9 +40,39 @@ License.
       <span>Mock: {{ nodeCount }}</span>
       <span>Placed: {{ placedCount }}</span>
       <span>Edges: {{ edgeCount }}</span>
+      <span>Labels: {{ store.labels.length }}</span>
       <span>Selected: {{ store.selectedIds.length }}</span>
     </div>
     <div ref="canvasEl" class="topology-canvas" />
+    <div class="topology-labels-layer">
+      <!-- Labels are reactively positioned in viewport space via
+           cameraVersion (bumped on sigma's afterRender); references it
+           in the style binding so Vue re-evaluates each render. -->
+      <div
+        v-for="label in store.labels"
+        :key="label.id"
+        class="topology-label"
+        :class="{ 'is-selected': store.selectedIds.includes(label.id), 'is-editing': editingLabelId === label.id }"
+        :style="labelStyle(label, cameraVersion)"
+        @mousedown.stop="onLabelMouseDown($event, label)"
+        @click.stop="onLabelClick($event, label)"
+        @dblclick.stop="onLabelDoubleClick(label)"
+      >
+        <input
+          v-if="editingLabelId === label.id"
+          ref="editingInputRef"
+          v-model="editingText"
+          class="topology-label-input"
+          :style="{ color: label.color || undefined }"
+          @keydown.enter.prevent="commitEdit"
+          @keydown.escape.prevent="cancelEdit"
+          @blur="commitEdit"
+        />
+        <span v-else class="topology-label-text" :style="{ color: label.color || undefined }">
+          {{ label.text }}
+        </span>
+      </div>
+    </div>
     <div
       v-if="rubberBand && rubberBandWidth > 1 && rubberBandHeight > 1"
       class="topology-rubber-band"
@@ -52,11 +82,12 @@ License.
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import Graph from 'graphology'
 import Sigma from 'sigma'
 import { PALETTE_DRAG_MIME, type PaletteDragPayload } from '@/components/Topology/dragTypes'
 import { useTopologyStore } from '@/stores/topologyStore'
+import type { CanvasLabel } from '@/types/topology'
 
 const props = defineProps<{
   nodeCount: number
@@ -96,6 +127,34 @@ let graph: Graph | null = null
 let placedSequence = 0
 let draggedNode: string | null = null
 let dragStartPos: { x: number; y: number } | null = null
+
+/**
+ * Bumped on sigma's afterRender event so label DOM positions reactively
+ * re-project. The labels reference cameraVersion in their style binding,
+ * which forces Vue to re-evaluate labelStyle each render.
+ */
+const cameraVersion = ref(0)
+
+/**
+ * Label edit state. Only one label edits at a time. `editingOriginalText`
+ * captures the text at edit start so commit can compare and push an
+ * undoable change only when the text actually changed. `editingIsNew`
+ * marks labels that were just created (so Esc removes them rather than
+ * reverting).
+ */
+const editingLabelId = ref<string | null>(null)
+const editingText = ref('')
+const editingInputRef = ref<HTMLInputElement[] | HTMLInputElement | null>(null)
+let editingOriginalText = ''
+let editingIsNew = false
+
+/**
+ * Label drag state. Separate from node drag so the two don't interfere.
+ */
+let draggingLabel: { id: string; startLabelX: number; startLabelY: number; startMouseGraphX: number; startMouseGraphY: number } | null = null
+
+const LABEL_PREFIX = 'label-'
+const isLabelId = (id: string) => id.startsWith(LABEL_PREFIX)
 
 /**
  * Undo/redo. Each user action that mutates the canvas (add from
@@ -293,6 +352,15 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
             inside.push(nodeId)
           }
         })
+        // Labels live outside the graphology graph but share the same
+        // graph coordinate system; project each and test against the
+        // rubber band rectangle the same way.
+        for (const label of store.labels) {
+          const v = sigma!.graphToViewport({ x: label.x, y: label.y })
+          if (v.x >= x0 && v.x <= x1 && v.y >= y0 && v.y <= y1) {
+            inside.push(label.id)
+          }
+        }
         // Shift modifier was held to start the rubber band; treat it as
         // additive (matches shift+click behavior).
         store.addToSelection(inside)
@@ -356,6 +424,180 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
     // clear selection on it.
     if (original?.shiftKey) return
     store.clearSelection()
+  })
+
+  s.on('doubleClickStage', (e) => {
+    // Double-click on empty stage creates a new free-standing label at
+    // the cursor's graph coordinates and enters edit mode.
+    const original = e.event.original as MouseEvent | undefined
+    if (!original || !canvasEl.value) return
+    // sigma also fires its zoom-on-doubleClick by default; suppress it.
+    e.preventSigmaDefault()
+    const rect = canvasEl.value.getBoundingClientRect()
+    const pos = s.viewportToGraph({
+      x: original.clientX - rect.left,
+      y: original.clientY - rect.top
+    })
+    createLabelAt(pos.x, pos.y)
+  })
+
+  // Bump cameraVersion on each rendered frame so the label DOM overlay
+  // re-projects in lock-step with sigma's WebGL render.
+  s.on('afterRender', () => {
+    cameraVersion.value++
+  })
+}
+
+/* ---------- Labels (free-standing DOM overlay annotations) ---------- */
+
+let labelSequence = 0
+const newLabelId = () => `${LABEL_PREFIX}${Date.now()}-${labelSequence++}`
+
+/**
+ * Projects a label's graph coordinates into viewport space and returns a
+ * CSS style object positioning it inside .topology-labels-layer. The
+ * cameraVersion argument is unused in computation but referenced so Vue's
+ * reactivity re-evaluates this function on every render frame.
+ */
+const labelStyle = (label: CanvasLabel, _cameraVersion: number) => {
+  if (!sigma) return { display: 'none' }
+  void _cameraVersion
+  const v = sigma.graphToViewport({ x: label.x, y: label.y })
+  return {
+    left: v.x + 'px',
+    top: v.y + 'px',
+    fontSize: label.fontSize ? `${label.fontSize}px` : undefined
+  }
+}
+
+const createLabelAt = (graphX: number, graphY: number) => {
+  const id = newLabelId()
+  const label: CanvasLabel = { id, text: '', x: graphX, y: graphY }
+  store.addLabel(label)
+  startEditLabel(id, '', true)
+}
+
+const startEditLabel = (id: string, originalText: string, isNew: boolean) => {
+  editingLabelId.value = id
+  editingText.value = originalText
+  editingOriginalText = originalText
+  editingIsNew = isNew
+  nextTick(() => {
+    const ref = editingInputRef.value
+    const input = Array.isArray(ref) ? ref[0] : ref
+    input?.focus()
+    input?.select()
+  })
+}
+
+const commitEdit = () => {
+  const id = editingLabelId.value
+  if (id === null) return
+  const text = editingText.value.trim()
+  editingLabelId.value = null
+  if (text.length === 0) {
+    // Empty text on commit removes the label entirely.
+    store.removeLabel(id)
+    return
+  }
+  if (editingIsNew) {
+    store.updateLabel(id, { text })
+    const final = store.getLabel(id)
+    if (!final) return
+    const snapshot: CanvasLabel = { ...final }
+    pushCommand({
+      label: `Add label "${text}"`,
+      do: () => {
+        if (!store.getLabel(snapshot.id)) store.addLabel(snapshot)
+      },
+      undo: () => {
+        store.removeLabel(snapshot.id)
+      }
+    })
+    return
+  }
+  if (text === editingOriginalText) return
+  const original = editingOriginalText
+  store.updateLabel(id, { text })
+  pushCommand({
+    label: `Edit label`,
+    do: () => store.updateLabel(id, { text }),
+    undo: () => store.updateLabel(id, { text: original })
+  })
+}
+
+const cancelEdit = () => {
+  const id = editingLabelId.value
+  if (id === null) return
+  editingLabelId.value = null
+  if (editingIsNew) {
+    // Cancel of a freshly-created label drops it -- never lands in
+    // history (no add command was pushed yet).
+    store.removeLabel(id)
+  }
+}
+
+const onLabelClick = (event: MouseEvent, label: CanvasLabel) => {
+  if (editingLabelId.value === label.id) return
+  if (event.shiftKey) {
+    store.toggleSelection(label.id)
+  } else {
+    store.selectOnly(label.id)
+  }
+}
+
+const onLabelDoubleClick = (label: CanvasLabel) => {
+  startEditLabel(label.id, label.text, false)
+}
+
+const onLabelMouseDown = (event: MouseEvent, label: CanvasLabel) => {
+  // Only left button; do not interfere with edit-mode input field.
+  if (event.button !== 0) return
+  if (editingLabelId.value === label.id) return
+  if (!sigma || !canvasEl.value) return
+  const rect = canvasEl.value.getBoundingClientRect()
+  const mouseGraph = sigma.viewportToGraph({
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top
+  })
+  draggingLabel = {
+    id: label.id,
+    startLabelX: label.x,
+    startLabelY: label.y,
+    startMouseGraphX: mouseGraph.x,
+    startMouseGraphY: mouseGraph.y
+  }
+  window.addEventListener('mousemove', onLabelMouseMove)
+  window.addEventListener('mouseup', onLabelMouseUp)
+}
+
+const onLabelMouseMove = (event: MouseEvent) => {
+  if (!draggingLabel || !sigma || !canvasEl.value) return
+  const rect = canvasEl.value.getBoundingClientRect()
+  const cur = sigma.viewportToGraph({
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top
+  })
+  const newX = draggingLabel.startLabelX + (cur.x - draggingLabel.startMouseGraphX)
+  const newY = draggingLabel.startLabelY + (cur.y - draggingLabel.startMouseGraphY)
+  store.updateLabel(draggingLabel.id, { x: newX, y: newY })
+}
+
+const onLabelMouseUp = () => {
+  window.removeEventListener('mousemove', onLabelMouseMove)
+  window.removeEventListener('mouseup', onLabelMouseUp)
+  if (!draggingLabel) return
+  const id = draggingLabel.id
+  const start = { x: draggingLabel.startLabelX, y: draggingLabel.startLabelY }
+  const current = store.getLabel(id)
+  draggingLabel = null
+  if (!current) return
+  if (Math.abs(current.x - start.x) < 0.001 && Math.abs(current.y - start.y) < 0.001) return
+  const end = { x: current.x, y: current.y }
+  pushCommand({
+    label: `Move label`,
+    do: () => store.updateLabel(id, { x: end.x, y: end.y }),
+    undo: () => store.updateLabel(id, { x: start.x, y: start.y })
   })
 }
 
@@ -508,8 +750,17 @@ const deleteSelected = () => {
   const ids = store.selectedIds.slice()
   if (ids.length === 0) return
 
+  // Partition into node ids and label ids. Labels are deleted via the
+  // store; nodes are removed from the graphology graph.
+  const labelIds = ids.filter(isLabelId)
+  const nodeIds = ids.filter((id) => !isLabelId(id))
+  const labelSnapshots: CanvasLabel[] = labelIds
+    .map((id) => store.getLabel(id))
+    .filter((l): l is CanvasLabel => l !== undefined)
+    .map((l) => ({ ...l }))
+
   const snapshots: DeletedNodeSnapshot[] = []
-  for (const id of ids) {
+  for (const id of nodeIds) {
     if (!graph.hasNode(id)) continue
     const attrs = { ...graph.getNodeAttributes(id) }
     // `highlighted` is transient visual state owned by the selection
@@ -539,6 +790,9 @@ const deleteSelected = () => {
       }
       graph.dropNode(s.id)
     }
+    for (const l of labelSnapshots) {
+      store.removeLabel(l.id)
+    }
     edgeCount.value = graph.size
   }
 
@@ -565,13 +819,18 @@ const deleteSelected = () => {
         }
       }
     }
+    for (const l of labelSnapshots) {
+      if (!store.getLabel(l.id)) store.addLabel(l)
+    }
     edgeCount.value = graph.size
   }
 
   applyDelete()
   store.clearSelection()
+  const totalDeleted = snapshots.length + labelSnapshots.length
+  if (totalDeleted === 0) return
   pushCommand({
-    label: `Delete ${snapshots.length} node(s)`,
+    label: `Delete ${totalDeleted} item(s)`,
     do: applyDelete,
     undo: applyUndo
   })
@@ -678,5 +937,65 @@ defineExpose({
   border: 1px dashed #1f5fb0;
   background: rgba(31, 95, 176, 0.08);
   z-index: 2;
+}
+
+.topology-labels-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 3;
+}
+
+.topology-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  cursor: grab;
+  user-select: none;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.85);
+  font-size: 12px;
+  font-weight: 500;
+  color: #1d2939;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  border: 1px solid transparent;
+}
+
+.topology-label:hover {
+  border-color: #c0d1e8;
+}
+
+.topology-label.is-selected {
+  border-color: #1f5fb0;
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.topology-label.is-editing {
+  background: #fff;
+  border-color: #1f5fb0;
+  padding: 0;
+  cursor: text;
+}
+
+.topology-label:active {
+  cursor: grabbing;
+}
+
+.topology-label-input {
+  border: none;
+  outline: none;
+  padding: 2px 6px;
+  font: inherit;
+  background: transparent;
+  width: 12ch;
+  min-width: 4ch;
+  font-family: inherit;
+}
+
+.topology-label-text {
+  display: inline-block;
 }
 </style>

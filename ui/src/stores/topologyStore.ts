@@ -21,7 +21,7 @@
 ///
 
 import { defineStore } from 'pinia'
-import type { TopologyView, TopologyViewSummary } from '@/types/topology'
+import type { CanvasLabel, TopologyView, TopologyViewSummary } from '@/types/topology'
 
 const emptyView = (): TopologyView => ({
   name: 'Untitled view',
@@ -49,6 +49,12 @@ export const useTopologyStore = defineStore('topologyStore', () => {
    * drop/delete. Reactive Set: any mutation reassigns the ref.
    */
   const placedNodeIds = ref<Set<string>>(new Set())
+  /**
+   * Free-standing text annotations on the canvas. Lives outside the
+   * graphology graph so it doesn't interact with sigma node/edge
+   * concepts. Persisted as part of TopologyView when save lands.
+   */
+  const labels = ref<CanvasLabel[]>([])
 
   const newView = () => {
     currentView.value = emptyView()
@@ -97,12 +103,28 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     placedNodeIds.value = next
   }
 
+  const addLabel = (label: CanvasLabel) => {
+    labels.value = [...labels.value, label]
+  }
+
+  const updateLabel = (id: string, patch: Partial<CanvasLabel>) => {
+    labels.value = labels.value.map((l) => (l.id === id ? { ...l, ...patch } : l))
+  }
+
+  const removeLabel = (id: string) => {
+    labels.value = labels.value.filter((l) => l.id !== id)
+  }
+
+  const getLabel = (id: string): CanvasLabel | undefined =>
+    labels.value.find((l) => l.id === id)
+
   return {
     catalog,
     currentView,
     isEditMode,
     selectedIds,
     placedNodeIds,
+    labels,
     newView,
     setEditMode,
     selectOnly,
@@ -112,6 +134,10 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     addToSelection,
     isPlaced,
     markPlaced,
-    markUnplaced
+    markUnplaced,
+    addLabel,
+    updateLabel,
+    removeLabel,
+    getLabel
   }
 })
