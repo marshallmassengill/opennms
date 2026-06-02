@@ -67,6 +67,16 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     selectedIds.value = []
   }
 
+  const setSelection = (ids: string[]) => {
+    selectedIds.value = [...ids]
+  }
+
+  const addToSelection = (ids: string[]) => {
+    const merged = new Set(selectedIds.value)
+    ids.forEach((id) => merged.add(id))
+    selectedIds.value = Array.from(merged)
+  }
+
   return {
     catalog,
     currentView,
@@ -76,6 +86,8 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     setEditMode,
     selectOnly,
     toggleSelection,
-    clearSelection
+    clearSelection,
+    setSelection,
+    addToSelection
   }
 })

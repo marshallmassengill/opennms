@@ -40,13 +40,19 @@ License.
       <span>Mock: {{ nodeCount }}</span>
       <span>Placed: {{ placedCount }}</span>
       <span>Edges: {{ edgeCount }}</span>
+      <span>Selected: {{ store.selectedIds.length }}</span>
     </div>
     <div ref="canvasEl" class="topology-canvas" />
+    <div
+      v-if="rubberBand && rubberBandWidth > 1 && rubberBandHeight > 1"
+      class="topology-rubber-band"
+      :style="rubberBandStyle"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import Graph from 'graphology'
 import Sigma from 'sigma'
 import { PALETTE_DRAG_MIME, type PaletteDragPayload } from '@/components/Topology/dragTypes'
@@ -62,6 +68,29 @@ const canvasEl = ref<HTMLDivElement>()
 const edgeCount = ref(0)
 const placedCount = ref(0)
 const isDropHover = ref(false)
+interface RubberBandState {
+  startX: number
+  startY: number
+  currentX: number
+  currentY: number
+}
+const rubberBand = ref<RubberBandState | null>(null)
+const rubberBandWidth = computed(() =>
+  rubberBand.value ? Math.abs(rubberBand.value.currentX - rubberBand.value.startX) : 0
+)
+const rubberBandHeight = computed(() =>
+  rubberBand.value ? Math.abs(rubberBand.value.currentY - rubberBand.value.startY) : 0
+)
+const rubberBandStyle = computed(() => {
+  if (!rubberBand.value) return {}
+  const { startX, startY, currentX, currentY } = rubberBand.value
+  return {
+    left: Math.min(startX, currentX) + 'px',
+    top: Math.min(startY, currentY) + 'px',
+    width: rubberBandWidth.value + 'px',
+    height: rubberBandHeight.value + 'px'
+  }
+})
 let sigma: Sigma | null = null
 let graph: Graph | null = null
 let placedSequence = 0
@@ -135,7 +164,7 @@ const rebuild = (n: number) => {
  * watched separately to reflect highlight state on the graph.
  */
 const attachInteractionHandlers = (s: Sigma, g: Graph) => {
-  // Window-level mouseup listener installed only while a drag is in
+  // Window-level mouseup listener installed only while a node drag is in
   // progress, so that releasing the mouse outside the canvas (over the
   // palette, the toolbar, or off the page entirely) still ends the drag.
   // Sigma only exposes a `mousemovebody` event, not a `mouseupbody`.
@@ -157,8 +186,62 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
     window.addEventListener('mouseup', windowMouseUp)
   })
 
+  // Rubber-band selection: shift+drag on empty stage. Plain drag still
+  // pans the camera (sigma's default). The window-level mouseup handler
+  // finishes the rubber band even if the user releases outside the
+  // canvas.
+  const windowRubberMouseUp = () => finishRubberBand()
+  const finishRubberBand = () => {
+    if (rubberBand.value && sigma && graph && canvasEl.value) {
+      const { startX, startY, currentX, currentY } = rubberBand.value
+      const x0 = Math.min(startX, currentX)
+      const x1 = Math.max(startX, currentX)
+      const y0 = Math.min(startY, currentY)
+      const y1 = Math.max(startY, currentY)
+      // Below a minimum drag distance, treat the gesture as a click and
+      // make no selection change. Without this, a quick shift+click on
+      // empty stage would clear selection unexpectedly.
+      if (Math.abs(x1 - x0) > 3 || Math.abs(y1 - y0) > 3) {
+        const inside: string[] = []
+        graph.forEachNode((nodeId) => {
+          const gx = graph!.getNodeAttribute(nodeId, 'x') as number
+          const gy = graph!.getNodeAttribute(nodeId, 'y') as number
+          const v = sigma!.graphToViewport({ x: gx, y: gy })
+          if (v.x >= x0 && v.x <= x1 && v.y >= y0 && v.y <= y1) {
+            inside.push(nodeId)
+          }
+        })
+        // Shift modifier was held to start the rubber band; treat it as
+        // additive (matches shift+click behavior).
+        store.addToSelection(inside)
+      }
+    }
+    rubberBand.value = null
+    window.removeEventListener('mouseup', windowRubberMouseUp)
+  }
+
+  s.on('downStage', (e) => {
+    const original = e.event.original as MouseEvent | undefined
+    if (!original?.shiftKey || !canvasEl.value) return
+    const rect = canvasEl.value.getBoundingClientRect()
+    const x = original.clientX - rect.left
+    const y = original.clientY - rect.top
+    rubberBand.value = { startX: x, startY: y, currentX: x, currentY: y }
+    window.addEventListener('mouseup', windowRubberMouseUp)
+  })
+
   const captor = s.getMouseCaptor()
   captor.on('mousemovebody', (e) => {
+    // Rubber band takes priority over camera pan when active.
+    if (rubberBand.value && canvasEl.value) {
+      e.preventSigmaDefault()
+      e.original.preventDefault()
+      const rect = canvasEl.value.getBoundingClientRect()
+      const original = e.original as MouseEvent
+      rubberBand.value.currentX = original.clientX - rect.left
+      rubberBand.value.currentY = original.clientY - rect.top
+      return
+    }
     if (!draggedNode) return
     // Prevent sigma's camera pan while dragging a node.
     e.preventSigmaDefault()
@@ -169,9 +252,12 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
     g.setNodeAttribute(draggedNode, 'y', pos.y)
   })
 
-  // In-canvas mouseup still finishes the drag (the window listener is
+  // In-canvas mouseup still finishes the drag (the window listeners are
   // belt-and-suspenders for mouseups outside the canvas).
-  captor.on('mouseup', finishDrag)
+  captor.on('mouseup', () => {
+    finishDrag()
+    finishRubberBand()
+  })
 
   s.on('clickNode', (e) => {
     const original = e.event.original as MouseEvent | undefined
@@ -182,7 +268,11 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
     }
   })
 
-  s.on('clickStage', () => {
+  s.on('clickStage', (e) => {
+    const original = e.event.original as MouseEvent | undefined
+    // Shift+click on empty stage is reserved for rubber band; never
+    // clear selection on it.
+    if (original?.shiftKey) return
     store.clearSelection()
   })
 }
@@ -334,5 +424,13 @@ defineExpose({
   flex: 1 1 auto;
   width: 100%;
   min-height: 500px;
+}
+
+.topology-rubber-band {
+  position: absolute;
+  pointer-events: none;
+  border: 1px dashed #1f5fb0;
+  background: rgba(31, 95, 176, 0.08);
+  z-index: 2;
 }
 </style>
