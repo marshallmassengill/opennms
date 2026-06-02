@@ -44,7 +44,10 @@ License.
       </template>
     </PToolbar>
 
-    <TopologyCanvas ref="canvasRef" :node-count="nodeCount" class="topology-body" />
+    <div class="topology-body">
+      <TopologyPalette class="topology-palette-pane" />
+      <TopologyCanvas ref="canvasRef" :node-count="nodeCount" class="topology-canvas-pane" />
+    </div>
   </div>
 </template>
 
@@ -54,6 +57,7 @@ import Toolbar from 'primevue/toolbar'
 import Button from 'primevue/button'
 import InputNumber from 'primevue/inputnumber'
 import TopologyCanvas from '@/components/Topology/TopologyCanvas.vue'
+import TopologyPalette from '@/components/Topology/TopologyPalette.vue'
 import { useTopologyStore } from '@/stores/topologyStore'
 
 const PToolbar = Toolbar
@@ -102,6 +106,18 @@ const nodeCount = ref<number>(500)
 
 .topology-body {
   flex: 1 1 auto;
+  display: flex;
+  gap: 0.75rem;
   min-height: 400px;
+  min-height: 0;
+}
+
+.topology-palette-pane {
+  flex: 0 0 auto;
+}
+
+.topology-canvas-pane {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 </style>

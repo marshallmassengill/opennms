@@ -22,6 +22,116 @@
 
 import { v2 } from './axiosInstances'
 import type { TopologyView, TopologyViewSummary } from '@/types/topology'
+import type { Node, NodeApiResponse, QueryParameters } from '@/types'
+
+/**
+ * Palette node fetch.
+ *
+ * Step 3 spike: returns a realistic mock list. The shape matches
+ * `nodeService.getNodes`'s `NodeApiResponse` so swapping the mock for the
+ * real call (during Step 8 or sooner, when we point the SPA at a live
+ * OpenNMS) is a one-line change in the implementation, with no consumer
+ * impact.
+ */
+
+const MOCK_LOCATIONS = ['Default', 'branch-east', 'branch-west', 'dc-primary', 'dc-secondary']
+const MOCK_FOREIGN_SOURCES = ['selfmonitor', 'network', 'manual', 'vcsa-r36-test']
+
+interface MockArchetype {
+  prefix: string
+  count: number
+  categories: string[]
+}
+
+const MOCK_ARCHETYPES: MockArchetype[] = [
+  { prefix: 'rt-core', count: 6, categories: ['Routers'] },
+  { prefix: 'rt-edge', count: 8, categories: ['Routers'] },
+  { prefix: 'sw-dist', count: 10, categories: ['Switches'] },
+  { prefix: 'sw-access', count: 30, categories: ['Switches'] },
+  { prefix: 'fw-edge', count: 4, categories: ['Firewalls'] },
+  { prefix: 'lb-app', count: 4, categories: ['LoadBalancers'] },
+  { prefix: 'web-prd', count: 20, categories: ['Servers', 'Linux'] },
+  { prefix: 'web-stg', count: 6, categories: ['Servers', 'Linux'] },
+  { prefix: 'db-prd', count: 8, categories: ['Servers', 'Linux'] },
+  { prefix: 'app-prd', count: 16, categories: ['Servers', 'Linux'] },
+  { prefix: 'win-prd', count: 12, categories: ['Servers', 'Windows'] },
+  { prefix: 'esxi-mgmt', count: 6, categories: ['VMware8'] },
+  { prefix: 'bsm-service', count: 8, categories: ['BSM'] }
+]
+
+const generateMockNodes = (): Node[] => {
+  const nodes: Node[] = []
+  let id = 1
+  let categoryId = 1
+  const categoryIdByName = new Map<string, number>()
+
+  for (const arch of MOCK_ARCHETYPES) {
+    for (let i = 1; i <= arch.count; i++) {
+      const label = `${arch.prefix}-${i.toString().padStart(2, '0')}`
+      const location = MOCK_LOCATIONS[id % MOCK_LOCATIONS.length]
+      const foreignSource = MOCK_FOREIGN_SOURCES[id % MOCK_FOREIGN_SOURCES.length]
+      const categories = arch.categories.map((name) => {
+        if (!categoryIdByName.has(name)) {
+          categoryIdByName.set(name, categoryId++)
+        }
+        return {
+          id: categoryIdByName.get(name) as number,
+          name,
+          authorizedGroups: []
+        }
+      })
+      nodes.push({
+        id: String(id),
+        label,
+        location,
+        type: 'A',
+        foreignSource,
+        foreignId: `mock-${id}`,
+        categories,
+        createTime: Date.now() - id * 60_000,
+        assetRecord: {
+          longitude: '',
+          latitude: '',
+          category: '',
+          description: '',
+          maintcontract: ''
+        },
+        lastEgressFlow: 0,
+        lastIngressFlow: 0,
+        labelSource: 'U',
+        lastCapabilitiesScan: '',
+        primaryInterface: 0,
+        sysObjectId: '',
+        sysDescription: '',
+        sysName: label,
+        sysContact: '',
+        sysLocation: location
+      })
+      id++
+    }
+  }
+  return nodes
+}
+
+const mockNodes = generateMockNodes()
+
+/**
+ * Returns nodes for the palette. Mirrors `nodeService.getNodes`'s response
+ * shape; switching to the real call is a single-line change in this body.
+ */
+const fetchPaletteNodes = async (
+  queryParameters?: QueryParameters
+): Promise<NodeApiResponse | false> => {
+  const limit = queryParameters?.limit ?? 200
+  const offset = queryParameters?.offset ?? 0
+  const slice = mockNodes.slice(offset, offset + limit)
+  return {
+    node: slice,
+    count: slice.length,
+    offset,
+    totalCount: mockNodes.length
+  }
+}
 
 /**
  * Service stub for the topology views catalog.
@@ -76,6 +186,7 @@ const deleteView = async (id: string): Promise<boolean> => {
 }
 
 export {
+  fetchPaletteNodes,
   listViews,
   getView,
   saveView,

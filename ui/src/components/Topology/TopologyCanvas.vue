@@ -28,9 +28,17 @@ License.
 -->
 
 <template>
-  <div class="topology-canvas-root">
+  <div
+    class="topology-canvas-root"
+    :class="{ 'is-drop-target': isDropHover }"
+    @dragenter.prevent="onDragEnter"
+    @dragover.prevent="onDragOver"
+    @dragleave="onDragLeave"
+    @drop.prevent="onDrop"
+  >
     <div class="topology-canvas-stats">
-      <span>Nodes: {{ nodeCount }}</span>
+      <span>Mock: {{ nodeCount }}</span>
+      <span>Placed: {{ placedCount }}</span>
       <span>Edges: {{ edgeCount }}</span>
     </div>
     <div ref="canvasEl" class="topology-canvas" />
@@ -41,6 +49,7 @@ License.
 import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import Graph from 'graphology'
 import Sigma from 'sigma'
+import { PALETTE_DRAG_MIME, type PaletteDragPayload } from '@/components/Topology/dragTypes'
 
 const props = defineProps<{
   nodeCount: number
@@ -48,8 +57,11 @@ const props = defineProps<{
 
 const canvasEl = ref<HTMLDivElement>()
 const edgeCount = ref(0)
+const placedCount = ref(0)
+const isDropHover = ref(false)
 let sigma: Sigma | null = null
 let graph: Graph | null = null
+let placedSequence = 0
 
 const generateMockGraph = (n: number): Graph => {
   const g = new Graph()
@@ -90,6 +102,8 @@ const rebuild = (n: number) => {
   }
   graph = generateMockGraph(n)
   edgeCount.value = graph.size
+  placedCount.value = 0
+  placedSequence = 0
 
   if (canvasEl.value && graph) {
     sigma = new Sigma(graph, canvasEl.value, {
@@ -97,6 +111,73 @@ const rebuild = (n: number) => {
       // Defaults are reasonable; pan/zoom/drag are on by default.
     })
   }
+}
+
+/**
+ * Translate a DragEvent's viewport (clientX/clientY) coordinates into the
+ * graph's coordinate space, accounting for the canvas container's position
+ * and sigma's current camera state.
+ */
+const eventToGraphCoords = (event: DragEvent): { x: number; y: number } | null => {
+  if (!sigma || !canvasEl.value) return null
+  const rect = canvasEl.value.getBoundingClientRect()
+  const localX = event.clientX - rect.left
+  const localY = event.clientY - rect.top
+  return sigma.viewportToGraph({ x: localX, y: localY })
+}
+
+const isPaletteDrag = (event: DragEvent): boolean => {
+  if (!event.dataTransfer) return false
+  // Some browsers expose types via dataTransfer.types (lowercased).
+  return Array.from(event.dataTransfer.types).includes(PALETTE_DRAG_MIME)
+}
+
+const onDragEnter = (event: DragEvent) => {
+  if (isPaletteDrag(event)) {
+    isDropHover.value = true
+  }
+}
+
+const onDragOver = (event: DragEvent) => {
+  if (isPaletteDrag(event) && event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'copy'
+    isDropHover.value = true
+  }
+}
+
+const onDragLeave = (event: DragEvent) => {
+  // Only clear the hover state when the drag leaves the root, not when it
+  // crosses internal element boundaries.
+  if (event.currentTarget === event.target) {
+    isDropHover.value = false
+  }
+}
+
+const onDrop = (event: DragEvent) => {
+  isDropHover.value = false
+  if (!event.dataTransfer || !graph) return
+  const raw = event.dataTransfer.getData(PALETTE_DRAG_MIME)
+  if (!raw) return
+  let payload: PaletteDragPayload
+  try {
+    payload = JSON.parse(raw)
+  } catch {
+    return
+  }
+  const coords = eventToGraphCoords(event)
+  if (!coords) return
+
+  placedSequence++
+  const placedId = `placed-${payload.nodeId}-${placedSequence}`
+  if (graph.hasNode(placedId)) return
+  graph.addNode(placedId, {
+    label: payload.label,
+    x: coords.x,
+    y: coords.y,
+    size: 10,
+    color: '#1f5fb0'
+  })
+  placedCount.value++
 }
 
 onMounted(() => {
@@ -134,6 +215,11 @@ defineExpose({
   flex-direction: column;
   background: #fafafa;
   border: 1px solid #e0e0e0;
+  transition: box-shadow 100ms ease-in;
+}
+
+.topology-canvas-root.is-drop-target {
+  box-shadow: inset 0 0 0 2px #1f5fb0;
 }
 
 .topology-canvas-stats {
