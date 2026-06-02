@@ -99,6 +99,7 @@ import MultiSelect from 'primevue/multiselect'
 import VirtualScroller from 'primevue/virtualscroller'
 import { fetchPaletteNodes } from '@/services/topologyService'
 import { PALETTE_DRAG_MIME, type PaletteDragPayload } from '@/components/Topology/dragTypes'
+import { useTopologyStore } from '@/stores/topologyStore'
 import type { Node } from '@/types'
 
 const PIconField = IconField
@@ -106,6 +107,8 @@ const PInputIcon = InputIcon
 const PInputText = InputText
 const PMultiSelect = MultiSelect
 const PVirtualScroller = VirtualScroller
+
+const store = useTopologyStore()
 
 const allNodes = ref<Node[]>([])
 const searchText = ref('')
@@ -120,7 +123,9 @@ const availableCategories = computed<string[]>(() => {
 const filteredNodes = computed<Node[]>(() => {
   const q = searchText.value.trim().toLowerCase()
   const cats = selectedCategories.value
+  const placed = store.placedNodeIds
   return allNodes.value.filter((n) => {
+    if (placed.has(n.id)) return false
     if (q && !n.label.toLowerCase().includes(q)) return false
     if (cats.length > 0) {
       const nodeCatNames = (n.categories ?? []).map((c) => c.name)

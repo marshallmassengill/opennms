@@ -336,6 +336,16 @@ const onDragLeave = (event: DragEvent) => {
   }
 }
 
+/**
+ * Canvas node id format for palette-dropped nodes. Deterministic
+ * (no per-drop sequence suffix) so the canvas id ↔ palette id mapping
+ * is one-to-one. Stays in sync with the placedNodeIds set in the store.
+ */
+const PLACED_PREFIX = 'placed-'
+const placedIdFor = (paletteId: string) => `${PLACED_PREFIX}${paletteId}`
+const paletteIdFromPlacedId = (placedId: string): string | null =>
+  placedId.startsWith(PLACED_PREFIX) ? placedId.slice(PLACED_PREFIX.length) : null
+
 const onDrop = (event: DragEvent) => {
   isDropHover.value = false
   if (!event.dataTransfer || !graph) return
@@ -350,8 +360,18 @@ const onDrop = (event: DragEvent) => {
   const coords = eventToGraphCoords(event)
   if (!coords) return
 
-  placedSequence++
-  const placedId = `placed-${payload.nodeId}-${placedSequence}`
+  if (store.isPlaced(payload.nodeId)) {
+    // Defensive: the palette filters out already-placed nodes, but if
+    // the user finds a way to drag one anyway, select the existing
+    // canvas node instead of creating a duplicate.
+    const existingId = placedIdFor(payload.nodeId)
+    if (graph.hasNode(existingId)) {
+      store.selectOnly(existingId)
+    }
+    return
+  }
+
+  const placedId = placedIdFor(payload.nodeId)
   if (graph.hasNode(placedId)) return
   graph.addNode(placedId, {
     label: payload.label,
@@ -360,11 +380,56 @@ const onDrop = (event: DragEvent) => {
     size: 10,
     color: '#1f5fb0'
   })
+  store.markPlaced(payload.nodeId)
   placedCount.value++
+  placedSequence++ // retained for stats; not used in id construction
+}
+
+/**
+ * Delete the currently-selected canvas nodes. For palette-placed nodes,
+ * the placed-id ↔ palette-id mapping is reversed so the palette entry
+ * is restored. Mock-graph nodes (n0, n1, ...) just disappear -- they
+ * have no palette counterpart. graphology.dropNode removes incident
+ * edges automatically.
+ */
+const deleteSelected = () => {
+  if (!graph) return
+  const ids = store.selectedIds.slice()
+  if (ids.length === 0) return
+  for (const id of ids) {
+    if (!graph.hasNode(id)) continue
+    const paletteId = paletteIdFromPlacedId(id)
+    if (paletteId !== null) {
+      store.markUnplaced(paletteId)
+      placedCount.value = Math.max(0, placedCount.value - 1)
+    }
+    graph.dropNode(id)
+  }
+  store.clearSelection()
+  // Recompute edge count (dropNode removes incident edges).
+  edgeCount.value = graph.size
+}
+
+/**
+ * Window keyboard handler so Delete/Backspace work without first
+ * clicking into the canvas. Skips when the user is typing in a form
+ * field so it doesn't hijack the palette search box.
+ */
+const onKeyDown = (e: KeyboardEvent) => {
+  if (e.key !== 'Delete' && e.key !== 'Backspace') return
+  const target = e.target as HTMLElement | null
+  if (target) {
+    const tag = target.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return
+  }
+  if (store.selectedIds.length === 0) return
+  e.preventDefault()
+  deleteSelected()
 }
 
 onMounted(() => {
   rebuild(props.nodeCount)
+  window.addEventListener('keydown', onKeyDown)
 })
 
 watch(
@@ -373,6 +438,7 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeyDown)
   if (sigma) {
     sigma.kill()
     sigma = null

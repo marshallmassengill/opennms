@@ -43,6 +43,12 @@ export const useTopologyStore = defineStore('topologyStore', () => {
   const currentView = ref<TopologyView | null>(null)
   const isEditMode = ref<boolean>(true)
   const selectedIds = ref<string[]>([])
+  /**
+   * Palette node ids currently placed on the canvas. The palette uses
+   * this to hide already-placed entries; the canvas writes it on
+   * drop/delete. Reactive Set: any mutation reassigns the ref.
+   */
+  const placedNodeIds = ref<Set<string>>(new Set())
 
   const newView = () => {
     currentView.value = emptyView()
@@ -77,17 +83,35 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     selectedIds.value = Array.from(merged)
   }
 
+  const isPlaced = (paletteId: string): boolean => placedNodeIds.value.has(paletteId)
+
+  const markPlaced = (paletteId: string) => {
+    if (placedNodeIds.value.has(paletteId)) return
+    placedNodeIds.value = new Set(placedNodeIds.value).add(paletteId)
+  }
+
+  const markUnplaced = (paletteId: string) => {
+    if (!placedNodeIds.value.has(paletteId)) return
+    const next = new Set(placedNodeIds.value)
+    next.delete(paletteId)
+    placedNodeIds.value = next
+  }
+
   return {
     catalog,
     currentView,
     isEditMode,
     selectedIds,
+    placedNodeIds,
     newView,
     setEditMode,
     selectOnly,
     toggleSelection,
     clearSelection,
     setSelection,
-    addToSelection
+    addToSelection,
+    isPlaced,
+    markPlaced,
+    markUnplaced
   }
 })
