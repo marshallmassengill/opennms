@@ -28,6 +28,12 @@ License.
       </template>
       <template #end>
         <div class="toolbar-controls">
+          <PButton
+            :label="store.isEdgeDrawMode ? 'Edge: ON' : 'Draw Edge'"
+            :severity="store.isEdgeDrawMode ? 'primary' : 'secondary'"
+            :outlined="!store.isEdgeDrawMode"
+            @click="store.setEdgeDrawMode(!store.isEdgeDrawMode)"
+          />
           <label for="node-count" class="control-label">Mock nodes:</label>
           <PInputNumber
             v-model="nodeCount"
@@ -64,9 +70,7 @@ const PToolbar = Toolbar
 const PButton = Button
 const PInputNumber = InputNumber
 
-// Store wired but unused in the renderer-spike step; reserved for the
-// palette/view work that follows.
-useTopologyStore()
+const store = useTopologyStore()
 
 const canvasRef = ref<InstanceType<typeof TopologyCanvas> | null>(null)
 const nodeCount = ref<number>(500)

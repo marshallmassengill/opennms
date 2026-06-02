@@ -30,11 +30,12 @@ License.
 <template>
   <div
     class="topology-canvas-root"
-    :class="{ 'is-drop-target': isDropHover }"
+    :class="{ 'is-drop-target': isDropHover, 'is-edge-draw-mode': store.isEdgeDrawMode }"
     @dragenter.prevent="onDragEnter"
     @dragover.prevent="onDragOver"
     @dragleave="onDragLeave"
     @drop.prevent="onDrop"
+    @mousemove="onCanvasMouseMove"
   >
     <div class="topology-canvas-stats">
       <span>Mock: {{ nodeCount }}</span>
@@ -78,6 +79,17 @@ License.
       class="topology-rubber-band"
       :style="rubberBandStyle"
     />
+    <svg v-if="edgePreview" class="topology-edge-preview" xmlns="http://www.w3.org/2000/svg">
+      <line
+        :x1="edgePreview.x1"
+        :y1="edgePreview.y1"
+        :x2="edgePreview.x2"
+        :y2="edgePreview.y2"
+        stroke="#1f5fb0"
+        stroke-width="2"
+        stroke-dasharray="6 4"
+      />
+    </svg>
   </div>
 </template>
 
@@ -155,6 +167,42 @@ let draggingLabel: { id: string; startLabelX: number; startLabelY: number; start
 
 const LABEL_PREFIX = 'label-'
 const isLabelId = (id: string) => id.startsWith(LABEL_PREFIX)
+
+/**
+ * Edge-draw state. `edgeDrawSource` is the node id captured on first
+ * click while in edge-draw mode; the next clickNode commits an edge
+ * source -> target. Click on empty stage cancels the in-flight; Esc
+ * exits edge-draw mode entirely.
+ */
+const edgeDrawSource = ref<string | null>(null)
+const cursorViewport = ref<{ x: number; y: number } | null>(null)
+
+const edgePreview = computed<{ x1: number; y1: number; x2: number; y2: number } | null>(() => {
+  if (!edgeDrawSource.value || !cursorViewport.value || !sigma || !graph) return null
+  if (!graph.hasNode(edgeDrawSource.value)) return null
+  void cameraVersion.value
+  const sx = graph.getNodeAttribute(edgeDrawSource.value, 'x') as number
+  const sy = graph.getNodeAttribute(edgeDrawSource.value, 'y') as number
+  const src = sigma.graphToViewport({ x: sx, y: sy })
+  return { x1: src.x, y1: src.y, x2: cursorViewport.value.x, y2: cursorViewport.value.y }
+})
+
+const onCanvasMouseMove = (event: MouseEvent) => {
+  if (!store.isEdgeDrawMode || !edgeDrawSource.value || !canvasEl.value) return
+  const rect = canvasEl.value.getBoundingClientRect()
+  cursorViewport.value = {
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top
+  }
+}
+
+let edgeIdSequence = 0
+const newEdgeId = () => `edge-${Date.now()}-${edgeIdSequence++}`
+
+const isEdgeId = (id: string): boolean => {
+  if (!graph) return false
+  return graph.hasEdge(id)
+}
 
 /**
  * Undo/redo. Each user action that mutates the canvas (add from
@@ -252,7 +300,15 @@ const rebuild = (n: number) => {
   if (canvasEl.value && graph) {
     sigma = new Sigma(graph, canvasEl.value, {
       renderEdgeLabels: false,
-      // Defaults are reasonable; pan/zoom/drag are on by default.
+      // Selected edges render highlighted in blue without us mutating
+      // the edge's actual color attribute; the reducer pulls a
+      // transient _selected flag we set in the selection watcher.
+      edgeReducer: (_edge, attrs) => {
+        if ((attrs as { _selected?: boolean })._selected) {
+          return { ...attrs, color: '#1f5fb0', size: 3 }
+        }
+        return attrs
+      }
     })
     attachInteractionHandlers(sigma, graph)
   }
@@ -411,6 +467,20 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
 
   s.on('clickNode', (e) => {
     const original = e.event.original as MouseEvent | undefined
+    if (store.isEdgeDrawMode) {
+      // Seed cursorViewport from the click position so the preview line
+      // is rendered immediately (rather than waiting for the next
+      // mousemove to set it).
+      if (original && canvasEl.value) {
+        const rect = canvasEl.value.getBoundingClientRect()
+        cursorViewport.value = {
+          x: original.clientX - rect.left,
+          y: original.clientY - rect.top
+        }
+      }
+      handleEdgeDrawClick(e.node)
+      return
+    }
     if (original?.shiftKey) {
       store.toggleSelection(e.node)
     } else {
@@ -418,8 +488,24 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
     }
   })
 
+  s.on('clickEdge', (e) => {
+    if (store.isEdgeDrawMode) return
+    const original = e.event.original as MouseEvent | undefined
+    if (original?.shiftKey) {
+      store.toggleSelection(e.edge)
+    } else {
+      store.selectOnly(e.edge)
+    }
+  })
+
   s.on('clickStage', (e) => {
     const original = e.event.original as MouseEvent | undefined
+    if (store.isEdgeDrawMode) {
+      // Click on empty stage cancels the in-flight edge but stays in
+      // edge-draw mode (so the user can keep chaining edges).
+      edgeDrawSource.value = null
+      return
+    }
     // Shift+click on empty stage is reserved for rubber band; never
     // clear selection on it.
     if (original?.shiftKey) return
@@ -447,6 +533,55 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
     cameraVersion.value++
   })
 }
+
+/* ---------- Edges (user-drawn connections between nodes) ---------- */
+
+/**
+ * In edge-draw mode, the first node click captures the source; the
+ * next clickNode (a different node) commits the edge. graphology
+ * assigns the edge key via addEdgeWithKey; we use a deterministic id
+ * (newEdgeId) so undo/redo can re-create the exact same edge object.
+ */
+const handleEdgeDrawClick = (nodeId: string) => {
+  if (!graph) return
+  if (edgeDrawSource.value === null) {
+    edgeDrawSource.value = nodeId
+    return
+  }
+  const source = edgeDrawSource.value
+  edgeDrawSource.value = null
+  if (source === nodeId) return // ignore clicks on the same node (no self-loops)
+  if (graph.hasEdge(source, nodeId) || graph.hasEdge(nodeId, source)) {
+    // Don't create duplicate edges between the same endpoints.
+    return
+  }
+  const edgeId = newEdgeId()
+  const attrs = { size: 2, color: '#1f5fb0', origin: 'user' }
+  graph.addEdgeWithKey(edgeId, source, nodeId, attrs)
+  edgeCount.value = graph.size
+  pushCommand({
+    label: 'Add edge',
+    do: () => {
+      if (!graph || graph.hasEdge(edgeId)) return
+      graph.addEdgeWithKey(edgeId, source, nodeId, attrs)
+      edgeCount.value = graph.size
+    },
+    undo: () => {
+      if (!graph || !graph.hasEdge(edgeId)) return
+      graph.dropEdge(edgeId)
+      edgeCount.value = graph.size
+    }
+  })
+}
+
+// When the user toggles edge-draw mode off mid-flight, drop any
+// captured source so re-entering the mode starts fresh.
+watch(
+  () => store.isEdgeDrawMode,
+  (on) => {
+    if (!on) edgeDrawSource.value = null
+  }
+)
 
 /* ---------- Labels (free-standing DOM overlay annotations) ---------- */
 
@@ -602,21 +737,28 @@ const onLabelMouseUp = () => {
 }
 
 /**
- * Reflects the store's selectedIds into the graph as the `highlighted`
- * attribute (sigma's built-in selection visual). When the watcher fires
- * after a rebuild the graph reference may have changed; we guard for
- * that by checking hasNode.
+ * Reflects the store's selectedIds into the graph. Nodes get the
+ * `highlighted` attribute (sigma's built-in selection visual); edges
+ * get a transient `_selected` flag that the edgeReducer maps to blue.
+ * Label selection is rendered via a CSS class in the template -- no
+ * graph mutation needed. Rebuild may have changed the graph reference,
+ * so each id is guarded by hasNode/hasEdge.
  */
 watch(
   () => store.selectedIds.slice(),
   (newIds, oldIds) => {
     if (!graph) return
     ;(oldIds ?? []).forEach((id) => {
-      if (graph && graph.hasNode(id)) graph.removeNodeAttribute(id, 'highlighted')
+      if (!graph) return
+      if (graph.hasNode(id)) graph.removeNodeAttribute(id, 'highlighted')
+      else if (graph.hasEdge(id)) graph.removeEdgeAttribute(id, '_selected')
     })
     newIds.forEach((id) => {
-      if (graph && graph.hasNode(id)) graph.setNodeAttribute(id, 'highlighted', true)
+      if (!graph) return
+      if (graph.hasNode(id)) graph.setNodeAttribute(id, 'highlighted', true)
+      else if (graph.hasEdge(id)) graph.setEdgeAttribute(id, '_selected', true)
     })
+    sigma?.refresh()
   }
 )
 
@@ -750,14 +892,25 @@ const deleteSelected = () => {
   const ids = store.selectedIds.slice()
   if (ids.length === 0) return
 
-  // Partition into node ids and label ids. Labels are deleted via the
-  // store; nodes are removed from the graphology graph.
+  // Partition into label ids, edge ids, and node ids. Labels live in
+  // the store; edges and nodes live in the graphology graph.
   const labelIds = ids.filter(isLabelId)
-  const nodeIds = ids.filter((id) => !isLabelId(id))
+  const edgeIds = ids.filter((id) => !isLabelId(id) && graph!.hasEdge(id))
+  const nodeIds = ids.filter((id) => !isLabelId(id) && graph!.hasNode(id))
   const labelSnapshots: CanvasLabel[] = labelIds
     .map((id) => store.getLabel(id))
     .filter((l): l is CanvasLabel => l !== undefined)
     .map((l) => ({ ...l }))
+  const edgeSnapshots: Array<{ id: string; source: string; target: string; attrs: Record<string, unknown> }> = []
+  for (const eid of edgeIds) {
+    if (!graph.hasEdge(eid)) continue
+    edgeSnapshots.push({
+      id: eid,
+      source: graph.source(eid),
+      target: graph.target(eid),
+      attrs: { ...graph.getEdgeAttributes(eid) }
+    })
+  }
 
   const snapshots: DeletedNodeSnapshot[] = []
   for (const id of nodeIds) {
@@ -782,6 +935,11 @@ const deleteSelected = () => {
 
   const applyDelete = () => {
     if (!graph) return
+    // Edges first so node-deletion cascade doesn't trip the explicit
+    // edge-drop step (dropNode also drops incident edges).
+    for (const e of edgeSnapshots) {
+      if (graph.hasEdge(e.id)) graph.dropEdge(e.id)
+    }
     for (const s of snapshots) {
       if (!graph.hasNode(s.id)) continue
       if (s.paletteId !== null) {
@@ -819,6 +977,15 @@ const deleteSelected = () => {
         }
       }
     }
+    for (const e of edgeSnapshots) {
+      if (
+        graph.hasNode(e.source) &&
+        graph.hasNode(e.target) &&
+        !graph.hasEdge(e.id)
+      ) {
+        graph.addEdgeWithKey(e.id, e.source, e.target, e.attrs)
+      }
+    }
     for (const l of labelSnapshots) {
       if (!store.getLabel(l.id)) store.addLabel(l)
     }
@@ -827,7 +994,7 @@ const deleteSelected = () => {
 
   applyDelete()
   store.clearSelection()
-  const totalDeleted = snapshots.length + labelSnapshots.length
+  const totalDeleted = snapshots.length + labelSnapshots.length + edgeSnapshots.length
   if (totalDeleted === 0) return
   pushCommand({
     label: `Delete ${totalDeleted} item(s)`,
@@ -858,6 +1025,18 @@ const onKeyDown = (e: KeyboardEvent) => {
     e.preventDefault()
     redo()
     return
+  }
+  if (e.key === 'Escape') {
+    if (store.isEdgeDrawMode) {
+      e.preventDefault()
+      store.setEdgeDrawMode(false)
+      return
+    }
+    if (editingLabelId.value !== null) {
+      e.preventDefault()
+      cancelEdit()
+      return
+    }
   }
   if (e.key === 'Delete' || e.key === 'Backspace') {
     if (store.selectedIds.length === 0) return
@@ -937,6 +1116,23 @@ defineExpose({
   border: 1px dashed #1f5fb0;
   background: rgba(31, 95, 176, 0.08);
   z-index: 2;
+}
+
+.topology-edge-preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.topology-canvas-root.is-edge-draw-mode {
+  cursor: crosshair;
+}
+
+.topology-canvas-root.is-edge-draw-mode .topology-canvas canvas {
+  cursor: crosshair;
 }
 
 .topology-labels-layer {

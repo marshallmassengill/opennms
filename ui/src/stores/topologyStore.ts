@@ -42,6 +42,11 @@ export const useTopologyStore = defineStore('topologyStore', () => {
   const catalog = ref<TopologyViewSummary[]>([])
   const currentView = ref<TopologyView | null>(null)
   const isEditMode = ref<boolean>(true)
+  /**
+   * Edge-draw mode: when true, clicks on nodes capture source/target
+   * instead of selecting. Driven by the toolbar Draw Edge toggle.
+   */
+  const isEdgeDrawMode = ref<boolean>(false)
   const selectedIds = ref<string[]>([])
   /**
    * Palette node ids currently placed on the canvas. The palette uses
@@ -63,6 +68,10 @@ export const useTopologyStore = defineStore('topologyStore', () => {
 
   const setEditMode = (value: boolean) => {
     isEditMode.value = value
+  }
+
+  const setEdgeDrawMode = (value: boolean) => {
+    isEdgeDrawMode.value = value
   }
 
   const selectOnly = (id: string) => {
@@ -122,11 +131,13 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     catalog,
     currentView,
     isEditMode,
+    isEdgeDrawMode,
     selectedIds,
     placedNodeIds,
     labels,
     newView,
     setEditMode,
+    setEdgeDrawMode,
     selectOnly,
     toggleSelection,
     clearSelection,
