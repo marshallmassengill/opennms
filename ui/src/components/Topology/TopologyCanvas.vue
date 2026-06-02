@@ -95,6 +95,51 @@ let sigma: Sigma | null = null
 let graph: Graph | null = null
 let placedSequence = 0
 let draggedNode: string | null = null
+let dragStartPos: { x: number; y: number } | null = null
+
+/**
+ * Undo/redo. Each user action that mutates the canvas (add from
+ * palette, move, delete) pushes a Command onto undoStack. Ctrl+Z pops
+ * undoStack, runs cmd.undo(), pushes to redoStack. Ctrl+Shift+Z
+ * (or Ctrl+Y) reverses. The do/undo closures capture the graph and
+ * store references at command-creation time but check them defensively
+ * at execution time -- the graph reference can change across rebuild
+ * (e.g., when the mock-node-count slider changes), and history is
+ * cleared at that point.
+ */
+interface Command {
+  label: string
+  do: () => void
+  undo: () => void
+}
+const MAX_HISTORY = 100
+const undoStack: Command[] = []
+const redoStack: Command[] = []
+
+const pushCommand = (cmd: Command) => {
+  undoStack.push(cmd)
+  if (undoStack.length > MAX_HISTORY) undoStack.shift()
+  redoStack.length = 0
+}
+
+const undo = () => {
+  const cmd = undoStack.pop()
+  if (!cmd) return
+  cmd.undo()
+  redoStack.push(cmd)
+}
+
+const redo = () => {
+  const cmd = redoStack.pop()
+  if (!cmd) return
+  cmd.do()
+  undoStack.push(cmd)
+}
+
+const clearHistory = () => {
+  undoStack.length = 0
+  redoStack.length = 0
+}
 
 const generateMockGraph = (n: number): Graph => {
   const g = new Graph()
@@ -138,6 +183,10 @@ const rebuild = (n: number) => {
   placedCount.value = 0
   placedSequence = 0
   draggedNode = null
+  dragStartPos = null
+  // Rebuild replaces the graph wholesale; previous commands reference
+  // ids that no longer exist.
+  clearHistory()
   // Re-attach selection visuals after a rebuild wipes the graph.
   store.clearSelection()
 
@@ -170,12 +219,45 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
   // Sigma only exposes a `mousemovebody` event, not a `mouseupbody`.
   const windowMouseUp = () => finishDrag()
   const finishDrag = () => {
+    if (draggedNode && dragStartPos && graph && graph.hasNode(draggedNode)) {
+      const id = draggedNode
+      const start = dragStartPos
+      const end = {
+        x: graph.getNodeAttribute(id, 'x') as number,
+        y: graph.getNodeAttribute(id, 'y') as number
+      }
+      // Only push a Move command if the node actually moved beyond a
+      // sub-pixel threshold -- a plain click on a node should not
+      // pollute the undo stack.
+      if (Math.abs(end.x - start.x) > 0.001 || Math.abs(end.y - start.y) > 0.001) {
+        pushCommand({
+          label: `Move ${id}`,
+          do: () => {
+            if (!graph || !graph.hasNode(id)) return
+            graph.setNodeAttribute(id, 'x', end.x)
+            graph.setNodeAttribute(id, 'y', end.y)
+          },
+          undo: () => {
+            if (!graph || !graph.hasNode(id)) return
+            graph.setNodeAttribute(id, 'x', start.x)
+            graph.setNodeAttribute(id, 'y', start.y)
+          }
+        })
+      }
+    }
     draggedNode = null
+    dragStartPos = null
     window.removeEventListener('mouseup', windowMouseUp)
   }
 
   s.on('downNode', (e) => {
     draggedNode = e.node
+    if (g.hasNode(e.node)) {
+      dragStartPos = {
+        x: g.getNodeAttribute(e.node, 'x') as number,
+        y: g.getNodeAttribute(e.node, 'y') as number
+      }
+    }
     // Freeze sigma's auto-rescale by locking the bounding box at drag
     // start. Without this, dragging a node beyond the current natural
     // bbox grows the bbox, and sigma compensates by zooming the camera
@@ -373,16 +455,45 @@ const onDrop = (event: DragEvent) => {
 
   const placedId = placedIdFor(payload.nodeId)
   if (graph.hasNode(placedId)) return
-  graph.addNode(placedId, {
+  const attrs = {
     label: payload.label,
     x: coords.x,
     y: coords.y,
     size: 10,
     color: '#1f5fb0'
-  })
-  store.markPlaced(payload.nodeId)
+  }
+  const paletteId = payload.nodeId
+  // Execute the addition, then record the inverse for undo.
+  graph.addNode(placedId, attrs)
+  store.markPlaced(paletteId)
   placedCount.value++
   placedSequence++ // retained for stats; not used in id construction
+  pushCommand({
+    label: `Add ${payload.label}`,
+    do: () => {
+      if (!graph || graph.hasNode(placedId)) return
+      graph.addNode(placedId, attrs)
+      store.markPlaced(paletteId)
+      placedCount.value++
+    },
+    undo: () => {
+      if (!graph || !graph.hasNode(placedId)) return
+      graph.dropNode(placedId)
+      store.markUnplaced(paletteId)
+      placedCount.value = Math.max(0, placedCount.value - 1)
+    }
+  })
+}
+
+/**
+ * Snapshot of a node + its incident edges, captured before deletion
+ * so that an undo can restore the full graph topology around it.
+ */
+interface DeletedNodeSnapshot {
+  id: string
+  attrs: Record<string, unknown>
+  paletteId: string | null
+  edges: Array<{ source: string; target: string; attrs: Record<string, unknown> }>
 }
 
 /**
@@ -390,41 +501,110 @@ const onDrop = (event: DragEvent) => {
  * the placed-id ↔ palette-id mapping is reversed so the palette entry
  * is restored. Mock-graph nodes (n0, n1, ...) just disappear -- they
  * have no palette counterpart. graphology.dropNode removes incident
- * edges automatically.
+ * edges automatically; we capture them first so undo can rebuild them.
  */
 const deleteSelected = () => {
   if (!graph) return
   const ids = store.selectedIds.slice()
   if (ids.length === 0) return
+
+  const snapshots: DeletedNodeSnapshot[] = []
   for (const id of ids) {
     if (!graph.hasNode(id)) continue
+    const attrs = { ...graph.getNodeAttributes(id) }
+    // `highlighted` is transient visual state owned by the selection
+    // watcher, not user-meaningful node data. Preserving it across a
+    // delete/undo cycle leaves the restored node visually selected
+    // without selectedIds containing it -- the watcher then has no
+    // diff to apply and the stale highlight sticks.
+    delete attrs.highlighted
     const paletteId = paletteIdFromPlacedId(id)
-    if (paletteId !== null) {
-      store.markUnplaced(paletteId)
-      placedCount.value = Math.max(0, placedCount.value - 1)
-    }
-    graph.dropNode(id)
+    const edges: DeletedNodeSnapshot['edges'] = []
+    graph.forEachEdge(id, (_key, edgeAttrs, source, target) => {
+      // Capture each incident edge once; for an edge whose endpoints
+      // are both in the deletion set, this still records it from each
+      // side, but the undo step de-dupes via hasEdge.
+      edges.push({ source, target, attrs: { ...edgeAttrs } })
+    })
+    snapshots.push({ id, attrs, paletteId, edges })
   }
+
+  const applyDelete = () => {
+    if (!graph) return
+    for (const s of snapshots) {
+      if (!graph.hasNode(s.id)) continue
+      if (s.paletteId !== null) {
+        store.markUnplaced(s.paletteId)
+        placedCount.value = Math.max(0, placedCount.value - 1)
+      }
+      graph.dropNode(s.id)
+    }
+    edgeCount.value = graph.size
+  }
+
+  const applyUndo = () => {
+    if (!graph) return
+    for (const s of snapshots) {
+      if (!graph.hasNode(s.id)) {
+        graph.addNode(s.id, s.attrs)
+        if (s.paletteId !== null) {
+          store.markPlaced(s.paletteId)
+          placedCount.value++
+        }
+      }
+    }
+    for (const s of snapshots) {
+      for (const e of s.edges) {
+        if (
+          graph.hasNode(e.source) &&
+          graph.hasNode(e.target) &&
+          !graph.hasEdge(e.source, e.target) &&
+          !graph.hasEdge(e.target, e.source)
+        ) {
+          graph.addEdge(e.source, e.target, e.attrs)
+        }
+      }
+    }
+    edgeCount.value = graph.size
+  }
+
+  applyDelete()
   store.clearSelection()
-  // Recompute edge count (dropNode removes incident edges).
-  edgeCount.value = graph.size
+  pushCommand({
+    label: `Delete ${snapshots.length} node(s)`,
+    do: applyDelete,
+    undo: applyUndo
+  })
 }
 
 /**
- * Window keyboard handler so Delete/Backspace work without first
- * clicking into the canvas. Skips when the user is typing in a form
- * field so it doesn't hijack the palette search box.
+ * Window keyboard handler. Handles Delete/Backspace (delete selected),
+ * Ctrl+Z (undo), and Ctrl+Shift+Z or Ctrl+Y (redo). Skips when the user
+ * is typing in a form field so it doesn't hijack the palette search box.
  */
 const onKeyDown = (e: KeyboardEvent) => {
-  if (e.key !== 'Delete' && e.key !== 'Backspace') return
   const target = e.target as HTMLElement | null
   if (target) {
     const tag = target.tagName
     if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return
   }
-  if (store.selectedIds.length === 0) return
-  e.preventDefault()
-  deleteSelected()
+  const ctrlOrMeta = e.ctrlKey || e.metaKey
+  if (ctrlOrMeta && (e.key === 'z' || e.key === 'Z')) {
+    e.preventDefault()
+    if (e.shiftKey) redo()
+    else undo()
+    return
+  }
+  if (ctrlOrMeta && (e.key === 'y' || e.key === 'Y')) {
+    e.preventDefault()
+    redo()
+    return
+  }
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (store.selectedIds.length === 0) return
+    e.preventDefault()
+    deleteSelected()
+  }
 }
 
 onMounted(() => {
