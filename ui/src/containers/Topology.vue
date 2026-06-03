@@ -76,6 +76,7 @@ License.
     </div>
 
     <ViewManager v-model:visible="managerVisible" @open="onOpen" />
+    <PToast position="bottom-right" />
   </div>
 </template>
 
@@ -84,6 +85,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Toolbar from 'primevue/toolbar'
 import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
+import Toast from 'primevue/toast'
+import { useToast } from 'primevue/usetoast'
 import TopologyCanvas from '@/components/Topology/TopologyCanvas.vue'
 import TopologyPalette from '@/components/Topology/TopologyPalette.vue'
 import TopologyInspector from '@/components/Topology/TopologyInspector.vue'
@@ -93,8 +96,10 @@ import { useTopologyStore } from '@/stores/topologyStore'
 const PToolbar = Toolbar
 const PButton = Button
 const PInputText = InputText
+const PToast = Toast
 
 const store = useTopologyStore()
+const toast = useToast()
 
 const canvasRef = ref<InstanceType<typeof TopologyCanvas> | null>(null)
 const managerVisible = ref<boolean>(false)
@@ -148,23 +153,36 @@ const onNew = () => {
   if (store.currentView) canvasRef.value?.loadView(store.currentView)
 }
 
-const onSave = async () => {
+const saveCurrent = async (): Promise<boolean> => {
   const snapshot = canvasRef.value?.serialize()
-  if (!snapshot) return
-  await store.saveCurrentView(snapshot)
+  if (!snapshot) return false
+  const ok = await store.saveCurrentView(snapshot)
+  if (ok) {
+    toast.add({ severity: 'success', summary: 'View saved', detail: store.currentView?.name, life: 3000 })
+  } else {
+    toast.add({ severity: 'error', summary: 'Save failed', detail: 'Could not save the view.', life: 5000 })
+  }
+  return ok
 }
+
+const onSave = () => saveCurrent()
 
 const onSaveAs = async () => {
   const name = window.prompt('Save view as:', store.currentView?.name ?? 'Untitled view')
   if (!name || !store.currentView) return
   // Drop the id so the save creates a new catalog entry under the new name.
   store.currentView = { ...store.currentView, id: undefined, name }
-  await onSave()
+  await saveCurrent()
 }
 
 const onOpen = async (id: string) => {
   const view = await store.openView(id)
-  if (view) canvasRef.value?.loadView(view)
+  if (view) {
+    canvasRef.value?.loadView(view)
+    toast.add({ severity: 'success', summary: 'View opened', detail: view.name, life: 3000 })
+  } else {
+    toast.add({ severity: 'error', summary: 'Open failed', detail: 'Could not load the view.', life: 5000 })
+  }
 }
 </script>
 
@@ -184,6 +202,12 @@ const onOpen = async (id: string) => {
 .topology-title {
   font-size: 1.25rem;
   font-weight: 600;
+}
+
+.toolbar-start {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .toolbar-controls {

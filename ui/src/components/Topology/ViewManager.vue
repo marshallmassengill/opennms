@@ -67,12 +67,15 @@ import Dialog from 'primevue/dialog'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
+import { useToast } from 'primevue/usetoast'
 import { useTopologyStore } from '@/stores/topologyStore'
 
 const PDialog = Dialog
 const PDataTable = DataTable
 const PColumn = Column
 const PButton = Button
+
+const toast = useToast()
 
 const props = defineProps<{ visible: boolean }>()
 const emit = defineEmits<{
@@ -97,7 +100,12 @@ const onOpen = (id: string) => {
 
 const onDelete = async (id: string, name: string) => {
   if (!window.confirm(`Delete view "${name}"? This cannot be undone.`)) return
-  await store.removeView(id)
+  const ok = await store.removeView(id)
+  toast.add(
+    ok
+      ? { severity: 'success', summary: 'View deleted', detail: name, life: 3000 }
+      : { severity: 'error', summary: 'Delete failed', detail: name, life: 5000 }
+  )
 }
 </script>
 
