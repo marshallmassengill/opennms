@@ -99,6 +99,12 @@ import Sigma from 'sigma'
 import { PALETTE_DRAG_MIME, type PaletteDragPayload } from '@/components/Topology/dragTypes'
 import { useTopologyStore } from '@/stores/topologyStore'
 import { severityColor } from '@/components/Topology/severity'
+import {
+  LABEL_PREFIX,
+  isLabelId,
+  placedIdFor,
+  paletteIdFromPlacedId
+} from '@/components/Topology/nodeIds'
 import type { CanvasEdge, CanvasLabel, CanvasNode, TopologyView } from '@/types/topology'
 
 const store = useTopologyStore()
@@ -160,9 +166,6 @@ let editingIsNew = false
  * Label drag state. Separate from node drag so the two don't interfere.
  */
 let draggingLabel: { id: string; startLabelX: number; startLabelY: number; startMouseGraphX: number; startMouseGraphY: number } | null = null
-
-const LABEL_PREFIX = 'label-'
-const isLabelId = (id: string) => id.startsWith(LABEL_PREFIX)
 
 /**
  * Edge-draw state. `edgeDrawSource` is the node id captured on first
@@ -896,16 +899,6 @@ const onDragLeave = (event: DragEvent) => {
     isDropHover.value = false
   }
 }
-
-/**
- * Canvas node id format for palette-dropped nodes. Deterministic
- * (no per-drop sequence suffix) so the canvas id ↔ palette id mapping
- * is one-to-one. Stays in sync with the placedNodeIds set in the store.
- */
-const PLACED_PREFIX = 'placed-'
-const placedIdFor = (paletteId: string) => `${PLACED_PREFIX}${paletteId}`
-const paletteIdFromPlacedId = (placedId: string): string | null =>
-  placedId.startsWith(PLACED_PREFIX) ? placedId.slice(PLACED_PREFIX.length) : null
 
 const onDrop = (event: DragEvent) => {
   isDropHover.value = false

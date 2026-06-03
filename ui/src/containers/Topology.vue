@@ -72,6 +72,7 @@ License.
     <div class="topology-body">
       <TopologyPalette class="topology-palette-pane" />
       <TopologyCanvas ref="canvasRef" class="topology-canvas-pane" />
+      <TopologyInspector class="topology-inspector-pane" />
     </div>
 
     <ViewManager v-model:visible="managerVisible" @open="onOpen" />
@@ -85,6 +86,7 @@ import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import TopologyCanvas from '@/components/Topology/TopologyCanvas.vue'
 import TopologyPalette from '@/components/Topology/TopologyPalette.vue'
+import TopologyInspector from '@/components/Topology/TopologyInspector.vue'
 import ViewManager from '@/components/Topology/ViewManager.vue'
 import { useTopologyStore } from '@/stores/topologyStore'
 
@@ -205,5 +207,9 @@ const onOpen = async (id: string) => {
 .topology-canvas-pane {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.topology-inspector-pane {
+  flex: 0 0 auto;
 }
 </style>
