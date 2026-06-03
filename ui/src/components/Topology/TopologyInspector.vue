@@ -43,19 +43,19 @@ License.
         {{ store.selectedIds.length }} items selected.
       </p>
 
-      <!-- A free-standing label -->
+      <!-- A free-standing label (editable in Edit mode, read-only in View) -->
       <div v-else-if="kind === 'label' && label" class="ti-section">
         <div class="ti-field">
           <label class="ti-label">Text</label>
-          <PInputText v-model="labelText" class="ti-input" />
+          <PInputText v-model="labelText" class="ti-input" :disabled="!editable" />
         </div>
         <div class="ti-field">
           <label class="ti-label">Color</label>
-          <input type="color" :value="labelColor" class="ti-color" @input="onLabelColor" />
+          <input type="color" :value="labelColor" class="ti-color" :disabled="!editable" @input="onLabelColor" />
         </div>
         <div class="ti-field">
           <label class="ti-label">Font size</label>
-          <PInputNumber v-model="labelFontSize" :min="8" :max="48" show-buttons buttonLayout="horizontal" />
+          <PInputNumber v-model="labelFontSize" :min="8" :max="48" show-buttons buttonLayout="horizontal" :disabled="!editable" />
         </div>
       </div>
 
@@ -86,7 +86,7 @@ License.
         </div>
         <div class="ti-field">
           <label class="ti-label">Edge label</label>
-          <PInputText v-model="edgeLabel" class="ti-input" placeholder="(none)" />
+          <PInputText v-model="edgeLabel" class="ti-input" placeholder="(none)" :disabled="!editable" />
         </div>
       </div>
 
@@ -119,6 +119,9 @@ interface CanvasEdgeApi {
 const props = defineProps<{ canvas: CanvasEdgeApi | null }>()
 
 const store = useTopologyStore()
+
+// Properties are editable only in Edit mode; View mode is read-only.
+const editable = computed<boolean>(() => store.isEditMode)
 
 const selectedId = computed<string | null>(() =>
   store.selectedIds.length === 1 ? store.selectedIds[0] : null

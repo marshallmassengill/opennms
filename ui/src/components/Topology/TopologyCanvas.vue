@@ -453,6 +453,8 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
   }
 
   s.on('downNode', (e) => {
+    // No node dragging in View mode (read-only canvas).
+    if (!store.isEditMode) return
     draggedNode = e.node
     if (g.hasNode(e.node)) {
       dragStartPos = {
@@ -601,7 +603,9 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
 
   s.on('doubleClickStage', (e) => {
     // Double-click on empty stage creates a new free-standing label at
-    // the cursor's graph coordinates and enters edit mode.
+    // the cursor's graph coordinates and enters edit mode. Edit mode only;
+    // in View mode let sigma's default double-click zoom happen.
+    if (!store.isEditMode) return
     const original = e.event.original as MouseEvent | undefined
     if (!original || !canvasEl.value) return
     // sigma also fires its zoom-on-doubleClick by default; suppress it.
@@ -630,7 +634,7 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
  * (newEdgeId) so undo/redo can re-create the exact same edge object.
  */
 const handleEdgeDrawClick = (nodeId: string) => {
-  if (!graph) return
+  if (!graph || !store.isEditMode) return
   if (edgeDrawSource.value === null) {
     edgeDrawSource.value = nodeId
     return
@@ -769,12 +773,15 @@ const onLabelClick = (event: MouseEvent, label: CanvasLabel) => {
 }
 
 const onLabelDoubleClick = (label: CanvasLabel) => {
+  if (!store.isEditMode) return
   startEditLabel(label.id, label.text, false)
 }
 
 const onLabelMouseDown = (event: MouseEvent, label: CanvasLabel) => {
   // Only left button; do not interfere with edit-mode input field.
   if (event.button !== 0) return
+  // No label dragging in View mode (selection-to-inspect still works via click).
+  if (!store.isEditMode) return
   if (editingLabelId.value === label.id) return
   if (!sigma || !canvasEl.value) return
   const rect = canvasEl.value.getBoundingClientRect()
@@ -902,6 +909,7 @@ const onDragLeave = (event: DragEvent) => {
 
 const onDrop = (event: DragEvent) => {
   isDropHover.value = false
+  if (!store.isEditMode) return
   if (!event.dataTransfer || !graph) return
   const raw = event.dataTransfer.getData(PALETTE_DRAG_MIME)
   if (!raw) return
@@ -976,7 +984,7 @@ interface DeletedNodeSnapshot {
  * edges automatically; we capture them first so undo can rebuild them.
  */
 const deleteSelected = () => {
-  if (!graph) return
+  if (!graph || !store.isEditMode) return
   const ids = store.selectedIds.slice()
   if (ids.length === 0) return
 
@@ -1102,6 +1110,8 @@ const onKeyDown = (e: KeyboardEvent) => {
     const tag = target.tagName
     if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return
   }
+  // All keyboard editing (undo/redo, delete, edit-mode escapes) is Edit-only.
+  if (!store.isEditMode) return
   const ctrlOrMeta = e.ctrlKey || e.metaKey
   if (ctrlOrMeta && (e.key === 'z' || e.key === 'Z')) {
     e.preventDefault()

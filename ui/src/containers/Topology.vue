@@ -59,6 +59,7 @@ License.
             @click="store.refreshStatus()"
           />
           <PButton
+            v-if="store.isEditMode"
             :label="store.isEdgeDrawMode ? 'Edge: ON' : 'Draw Edge'"
             :severity="store.isEdgeDrawMode ? 'primary' : 'secondary'"
             :outlined="!store.isEdgeDrawMode"
@@ -70,9 +71,16 @@ License.
     </PToolbar>
 
     <div class="topology-body">
-      <TopologyPalette class="topology-palette-pane" />
+      <!-- Palette is an Edit-mode tool (compose); hidden in View. -->
+      <TopologyPalette v-if="store.isEditMode" class="topology-palette-pane" />
       <TopologyCanvas ref="canvasRef" class="topology-canvas-pane" />
-      <TopologyInspector :canvas="canvasRef" class="topology-inspector-pane" />
+      <!-- Inspector sits on the right in Edit, on the left in View (where the
+           palette would be) -- driven by flex order. -->
+      <TopologyInspector
+        :canvas="canvasRef"
+        class="topology-inspector-pane"
+        :style="{ order: store.isEditMode ? 0 : -1 }"
+      />
     </div>
 
     <ViewManager v-model:visible="managerVisible" @open="onOpen" />
@@ -128,7 +136,9 @@ watch(
   (editMode) => {
     stopPolling()
     if (!editMode) {
-      // Entering View mode: refresh now, then on an interval.
+      // Entering View mode: drop any in-flight edge-draw (an Edit-only tool),
+      // then refresh status now and on an interval.
+      store.setEdgeDrawMode(false)
       store.refreshStatus()
       statusTimer = setInterval(() => store.refreshStatus(), STATUS_INTERVAL_MS)
     }
