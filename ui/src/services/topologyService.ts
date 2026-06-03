@@ -23,6 +23,7 @@
 import { v2 } from './axiosInstances'
 import type { TopologyView, TopologyViewSummary } from '@/types/topology'
 import type { Node, NodeApiResponse, QueryParameters } from '@/types'
+import { aggregateNodeSeverities } from '@/components/Topology/severity'
 
 /**
  * Palette node fetch.
@@ -130,6 +131,31 @@ const fetchPaletteNodes = async (
     count: slice.length,
     offset,
     totalCount: mockNodes.length
+  }
+}
+
+/**
+ * Current alarm status for a set of nodes, as a map of node id -> highest
+ * severity. Used to color placed canvas nodes. Returns an empty map (never
+ * `false`) so a status refresh failure leaves the canvas uncolored rather
+ * than tearing down the view. Node ids match the real OnmsNode ids carried
+ * by placed palette nodes; a hand-composed view holds few, so a single
+ * FIQL "node.id==a,node.id==b" query covers them.
+ */
+const alarmsEndpoint = '/alarms'
+
+const getNodeSeverities = async (nodeIds: number[]): Promise<Record<number, string>> => {
+  if (nodeIds.length === 0) return {}
+  const fiql = nodeIds.map((id) => `node.id==${id}`).join(',')
+  try {
+    const resp = await v2.get<{ alarm?: Array<{ nodeId?: number; severity?: string }> }>(
+      alarmsEndpoint,
+      { params: { _s: fiql, limit: 1000 } }
+    )
+    if (resp.status === 204 || !resp.data) return {}
+    return aggregateNodeSeverities(resp.data.alarm ?? [])
+  } catch (err) {
+    return {}
   }
 }
 
@@ -246,6 +272,7 @@ const deleteView = async (id: string): Promise<boolean> => {
 
 export {
   fetchPaletteNodes,
+  getNodeSeverities,
   listViews,
   getView,
   saveView,

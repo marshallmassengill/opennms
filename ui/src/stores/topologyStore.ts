@@ -22,7 +22,7 @@
 
 import { defineStore } from 'pinia'
 import type { CanvasLabel, TopologyView, TopologyViewSummary } from '@/types/topology'
-import { listViews, getView, saveView, deleteView } from '@/services/topologyService'
+import { listViews, getView, saveView, deleteView, getNodeSeverities } from '@/services/topologyService'
 
 /**
  * The live canvas geometry the canvas component hands back on save:
@@ -71,6 +71,34 @@ export const useTopologyStore = defineStore('topologyStore', () => {
 
   /** True while a save request is in flight; drives toolbar disabled state. */
   const isSaving = ref<boolean>(false)
+
+  /**
+   * Latest alarm status for placed nodes, keyed by real OnmsNode id. The
+   * canvas colors nodes from this map. Empty until a status refresh runs;
+   * refreshes are driven by the page (interval in View mode, manual in
+   * Edit mode -- see the Edit/View semantics in the plan).
+   */
+  const severities = ref<Record<number, string>>({})
+
+  const setSeverities = (next: Record<number, string>) => {
+    severities.value = next
+  }
+
+  /**
+   * Fetch current severities for the placed nodes that map to real
+   * OnmsNode ids. Placed-node palette ids are the node ids; non-numeric
+   * ids (mock/decorative nodes) are skipped.
+   */
+  const refreshStatus = async (): Promise<void> => {
+    const ids = Array.from(placedNodeIds.value)
+      .map((id) => Number(id))
+      .filter((n) => Number.isInteger(n))
+    if (ids.length === 0) {
+      severities.value = {}
+      return
+    }
+    severities.value = await getNodeSeverities(ids)
+  }
 
   const newView = () => {
     currentView.value = emptyView()
