@@ -134,21 +134,71 @@ const fetchPaletteNodes = async (
 }
 
 /**
- * Service stub for the topology views catalog.
+ * Topology views catalog, backed by the /api/v2/topology/views REST
+ * resource. Calls return typed data or `false`, matching the convention
+ * used by the other services in this directory.
  *
- * The backing REST resource (/api/v2/topology/views) is not implemented
- * yet -- it ships as a self-contained JAX-RS resource later in the build
- * sequence. Until then, these calls will fail with HTTP 404 and return
- * `false`, matching the pattern used by the other services in this
- * directory (return typed data or `false`).
+ * The server stores the canvas as an opaque JSON document under a
+ * `definition` field, with the catalog metadata (name, role scope,
+ * owner, timestamps) as siblings. The front-end model is flat -- nodes,
+ * edges, labels, and viewport live at the top of TopologyView -- so this
+ * service maps between the two shapes. Ids are integers on the wire and
+ * strings in the UI.
  */
 
 const viewsEndpoint = 'topology/views'
 
+/** The canvas document as stored under the server's `definition` field. */
+interface TopologyViewDefinition {
+  nodes: TopologyView['nodes']
+  edges: TopologyView['edges']
+  labels: TopologyView['labels']
+  viewport: TopologyView['viewport']
+  background?: TopologyView['background']
+}
+
+/** Wire shape of a view as returned by /api/v2/topology/views. */
+interface TopologyViewDTO {
+  id?: number
+  name: string
+  definition: TopologyViewDefinition
+  roleScope?: string
+  owner?: string
+  created?: number
+  lastModified?: number
+}
+
+const toDto = (view: TopologyView): TopologyViewDTO => ({
+  name: view.name,
+  roleScope: view.roleScope,
+  definition: {
+    nodes: view.nodes,
+    edges: view.edges,
+    labels: view.labels,
+    viewport: view.viewport,
+    background: view.background
+  }
+})
+
+const fromDto = (dto: TopologyViewDTO): TopologyView => ({
+  id: dto.id != null ? String(dto.id) : undefined,
+  name: dto.name,
+  roleScope: dto.roleScope,
+  nodes: dto.definition?.nodes ?? [],
+  edges: dto.definition?.edges ?? [],
+  labels: dto.definition?.labels ?? [],
+  viewport: dto.definition?.viewport ?? { zoom: 1, panX: 0, panY: 0 },
+  background: dto.definition?.background
+})
+
 const listViews = async (): Promise<TopologyViewSummary[] | false> => {
   try {
-    const resp = await v2.get(viewsEndpoint)
-    return resp.data
+    const resp = await v2.get<TopologyViewDTO[]>(viewsEndpoint)
+    return (resp.data ?? []).map((dto) => ({
+      id: dto.id != null ? String(dto.id) : '',
+      name: dto.name,
+      roleScope: dto.roleScope
+    }))
   } catch (err) {
     return false
   }
@@ -156,21 +206,30 @@ const listViews = async (): Promise<TopologyViewSummary[] | false> => {
 
 const getView = async (id: string): Promise<TopologyView | false> => {
   try {
-    const resp = await v2.get(`${viewsEndpoint}/${id}`)
-    return resp.data
+    const resp = await v2.get<TopologyViewDTO>(`${viewsEndpoint}/${id}`)
+    return fromDto(resp.data)
   } catch (err) {
     return false
   }
 }
 
+/**
+ * Create (POST) or update (PUT) a view. The server replies 201 with a
+ * Location header on create and 204 with no body on update, so in both
+ * cases the saved document is re-fetched to return the canonical record
+ * (server-assigned id, owner, timestamps).
+ */
 const saveView = async (view: TopologyView): Promise<TopologyView | false> => {
   try {
     if (view.id) {
-      const resp = await v2.put(`${viewsEndpoint}/${view.id}`, view)
-      return resp.data
+      await v2.put(`${viewsEndpoint}/${view.id}`, toDto(view))
+      return await getView(view.id)
     }
-    const resp = await v2.post(viewsEndpoint, view)
-    return resp.data
+    const resp = await v2.post(viewsEndpoint, toDto(view))
+    const location: string | undefined = resp.headers?.location
+    const newId = location ? location.substring(location.lastIndexOf('/') + 1) : undefined
+    if (!newId) return false
+    return await getView(newId)
   } catch (err) {
     return false
   }
