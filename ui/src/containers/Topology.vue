@@ -72,7 +72,7 @@ License.
     <div class="topology-body">
       <TopologyPalette class="topology-palette-pane" />
       <TopologyCanvas ref="canvasRef" class="topology-canvas-pane" />
-      <TopologyInspector class="topology-inspector-pane" />
+      <TopologyInspector :canvas="canvasRef" class="topology-inspector-pane" />
     </div>
 
     <ViewManager v-model:visible="managerVisible" @open="onOpen" />

@@ -79,7 +79,17 @@ License.
         <p v-else class="ti-empty">Node details unavailable.</p>
       </div>
 
-      <!-- An edge (read-only for now) -->
+      <!-- An edge between two nodes -->
+      <div v-else-if="kind === 'edge' && edge" class="ti-section">
+        <div class="ti-node-header">
+          <span class="ti-edge-endpoints">{{ edge.sourceLabel }} → {{ edge.targetLabel }}</span>
+        </div>
+        <div class="ti-field">
+          <label class="ti-label">Edge label</label>
+          <PInputText v-model="edgeLabel" class="ti-input" placeholder="(none)" />
+        </div>
+      </div>
+
       <p v-else class="ti-empty">Edge selected.</p>
     </template>
   </PCard>
@@ -99,6 +109,14 @@ import type { Node } from '@/types'
 const PCard = Card
 const PInputText = InputText
 const PInputNumber = InputNumber
+
+/** Minimal edge read/write surface the canvas exposes (via defineExpose). */
+interface CanvasEdgeApi {
+  getEdge: (id: string) => { label: string; sourceLabel: string; targetLabel: string } | null
+  setEdgeLabel: (id: string, label: string) => void
+}
+
+const props = defineProps<{ canvas: CanvasEdgeApi | null }>()
 
 const store = useTopologyStore()
 
@@ -158,6 +176,27 @@ watch(
   },
   { immediate: true }
 )
+
+/* ---- Edge editing (reads/writes the canvas graph via the exposed API) ---- */
+const edge = ref<{ label: string; sourceLabel: string; targetLabel: string } | null>(null)
+
+watch(
+  selectedId,
+  (id) => {
+    edge.value = id && kind.value === 'edge' && props.canvas ? props.canvas.getEdge(id) : null
+  },
+  { immediate: true }
+)
+
+const edgeLabel = computed<string>({
+  get: () => edge.value?.label ?? '',
+  set: (value) => {
+    const id = selectedId.value
+    if (!id || !props.canvas) return
+    props.canvas.setEdgeLabel(id, value)
+    if (edge.value) edge.value = { ...edge.value, label: value }
+  }
+})
 </script>
 
 <style scoped>
@@ -225,6 +264,11 @@ watch(
 
 .ti-node-label {
   font-weight: 600;
+}
+
+.ti-edge-endpoints {
+  font-weight: 600;
+  word-break: break-word;
 }
 
 .ti-detail {

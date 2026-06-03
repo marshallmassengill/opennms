@@ -259,7 +259,7 @@ const mountSigma = (g: Graph) => {
   }
   if (!canvasEl.value) return
   sigma = new Sigma(g, canvasEl.value, {
-    renderEdgeLabels: false,
+    renderEdgeLabels: true,
     // Color placed nodes by their node's current alarm severity (held in
     // the store, refreshed on an interval in View mode). Nodes without a
     // known severity -- decorative/mock nodes, or before a status fetch --
@@ -1146,6 +1146,32 @@ onBeforeUnmount(() => {
   }
 })
 
+/**
+ * Read an edge's label and its endpoint labels, for the inspector. Returns
+ * null if the id isn't a current edge.
+ */
+const getEdge = (id: string): { label: string; sourceLabel: string; targetLabel: string } | null => {
+  if (!graph || !graph.hasEdge(id)) return null
+  const source = graph.source(id)
+  const target = graph.target(id)
+  return {
+    label: (graph.getEdgeAttribute(id, 'label') as string) ?? '',
+    sourceLabel: (graph.getNodeAttribute(source, 'label') as string) ?? source,
+    targetLabel: (graph.getNodeAttribute(target, 'label') as string) ?? target
+  }
+}
+
+/**
+ * Set an edge's label (rendered on the canvas and persisted via serialize).
+ * Called per keystroke from the inspector, so it does not push an undo
+ * command -- edge-label edits aren't individually undoable.
+ */
+const setEdgeLabel = (id: string, label: string) => {
+  if (!graph || !graph.hasEdge(id)) return
+  graph.setEdgeAttribute(id, 'label', label)
+  sigma?.refresh()
+}
+
 defineExpose({
   fit: () => {
     if (sigma) {
@@ -1153,7 +1179,9 @@ defineExpose({
     }
   },
   serialize,
-  loadView
+  loadView,
+  getEdge,
+  setEdgeLabel
 })
 </script>
 
