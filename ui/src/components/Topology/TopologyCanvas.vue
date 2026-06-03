@@ -99,6 +99,7 @@ import Graph from 'graphology'
 import Sigma from 'sigma'
 import { PALETTE_DRAG_MIME, type PaletteDragPayload } from '@/components/Topology/dragTypes'
 import { useTopologyStore } from '@/stores/topologyStore'
+import { severityColor } from '@/components/Topology/severity'
 import type { CanvasEdge, CanvasLabel, CanvasNode, TopologyView } from '@/types/topology'
 
 const props = defineProps<{
@@ -293,6 +294,21 @@ const mountSigma = (g: Graph) => {
   if (!canvasEl.value) return
   sigma = new Sigma(g, canvasEl.value, {
     renderEdgeLabels: false,
+    // Color placed nodes by their node's current alarm severity (held in
+    // the store, refreshed on an interval in View mode). Nodes without a
+    // known severity -- decorative/mock nodes, or before a status fetch --
+    // keep their own color. The severities watcher below triggers a
+    // sigma.refresh() so color changes repaint.
+    nodeReducer: (node, attrs) => {
+      const paletteId = paletteIdFromPlacedId(node)
+      if (paletteId !== null && /^\d+$/.test(paletteId)) {
+        const severity = store.severities[Number(paletteId)]
+        if (severity) {
+          return { ...attrs, color: severityColor(severity) }
+        }
+      }
+      return attrs
+    },
     // Selected edges render highlighted in blue without us mutating
     // the edge's actual color attribute; the reducer pulls a
     // transient _selected flag we set in the selection watcher.
@@ -864,6 +880,17 @@ watch(
     })
     sigma?.refresh()
   }
+)
+
+/**
+ * Repaint when node severities change so the nodeReducer recolors. Deep
+ * watch because the store replaces the severities object on each refresh
+ * but we also want to catch in-place updates defensively.
+ */
+watch(
+  () => store.severities,
+  () => sigma?.refresh(),
+  { deep: true }
 )
 
 /**

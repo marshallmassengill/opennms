@@ -47,6 +47,18 @@ License.
       <template #end>
         <div class="toolbar-controls">
           <PButton
+            :label="store.isEditMode ? 'Mode: Edit' : 'Mode: View'"
+            :severity="store.isEditMode ? 'secondary' : 'primary'"
+            :outlined="store.isEditMode"
+            @click="store.setEditMode(!store.isEditMode)"
+          />
+          <PButton
+            label="Refresh status"
+            severity="secondary"
+            outlined
+            @click="store.refreshStatus()"
+          />
+          <PButton
             :label="store.isEdgeDrawMode ? 'Edge: ON' : 'Draw Edge'"
             :severity="store.isEdgeDrawMode ? 'primary' : 'secondary'"
             :outlined="!store.isEdgeDrawMode"
@@ -78,7 +90,7 @@ License.
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Toolbar from 'primevue/toolbar'
 import Button from 'primevue/button'
 import InputNumber from 'primevue/inputnumber'
@@ -104,6 +116,34 @@ onMounted(() => {
   if (!store.currentView) store.newView()
   store.refreshCatalog()
 })
+
+// Status auto-refresh: poll in View mode, frozen in Edit mode (so the
+// canvas doesn't repaint while arranging). The manual "Refresh status"
+// button works in either mode.
+const STATUS_INTERVAL_MS = 30000
+let statusTimer: ReturnType<typeof setInterval> | null = null
+
+const stopPolling = () => {
+  if (statusTimer !== null) {
+    clearInterval(statusTimer)
+    statusTimer = null
+  }
+}
+
+watch(
+  () => store.isEditMode,
+  (editMode) => {
+    stopPolling()
+    if (!editMode) {
+      // Entering View mode: refresh now, then on an interval.
+      store.refreshStatus()
+      statusTimer = setInterval(() => store.refreshStatus(), STATUS_INTERVAL_MS)
+    }
+  },
+  { immediate: true }
+)
+
+onBeforeUnmount(stopPolling)
 
 // The open view's name, edited in place; persisted on the next save.
 const viewName = computed<string>({
