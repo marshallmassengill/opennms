@@ -317,10 +317,11 @@ const onDelete = () => {
   flex-direction: column;
   gap: 1rem;
   padding: 1rem;
-  /* Fill the layout's main cell exactly (.main-content is a flex column) --
-     no viewport math, so no gap and no overflow past the footer. */
-  flex: 1 1 auto;
-  min-height: 0;
+  /* Self-contained full height: viewport minus the app header + footer, with
+     overflow:hidden so nothing inside (e.g. the canvas) can grow the document
+     and create a scrollbar. Internal panes scroll on their own. */
+  height: calc(100vh - 7rem);
+  overflow: hidden;
   box-sizing: border-box;
 }
 

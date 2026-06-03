@@ -1207,7 +1207,9 @@ defineExpose({
   position: relative;
   width: 100%;
   height: 100%;
-  min-height: 500px;
+  /* Fill the available height via flex; do not force a minimum that could
+     overflow the page (which now caps its own height). */
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: #fafafa;
@@ -1237,7 +1239,7 @@ defineExpose({
 .topology-canvas {
   flex: 1 1 auto;
   width: 100%;
-  min-height: 500px;
+  min-height: 0;
 }
 
 .topology-rubber-band {
