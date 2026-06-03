@@ -1173,10 +1173,17 @@ const setEdgeLabel = (id: string, label: string) => {
 }
 
 defineExpose({
+  // Reset to the default centered view, but zoomed out slightly so the
+  // edge nodes' labels aren't clipped: sigma's auto-fit bounds the node
+  // x/y positions only, not the rendered label width that extends past
+  // each node. The default reset state is { x: 0.5, y: 0.5, ratio: 1 };
+  // a ratio above 1 zooms out, leaving margin on all sides.
   fit: () => {
-    if (sigma) {
-      sigma.getCamera().animatedReset()
-    }
+    if (!sigma) return
+    sigma.getCamera().animate(
+      { x: 0.5, y: 0.5, ratio: 1.15, angle: 0 },
+      { duration: 300 }
+    )
   },
   serialize,
   loadView,
