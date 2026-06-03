@@ -38,8 +38,7 @@ License.
     @mousemove="onCanvasMouseMove"
   >
     <div class="topology-canvas-stats">
-      <span>Mock: {{ nodeCount }}</span>
-      <span>Placed: {{ placedCount }}</span>
+      <span>Nodes: {{ placedCount }}</span>
       <span>Edges: {{ edgeCount }}</span>
       <span>Labels: {{ store.labels.length }}</span>
       <span>Selected: {{ store.selectedIds.length }}</span>
@@ -101,10 +100,6 @@ import { PALETTE_DRAG_MIME, type PaletteDragPayload } from '@/components/Topolog
 import { useTopologyStore } from '@/stores/topologyStore'
 import { severityColor } from '@/components/Topology/severity'
 import type { CanvasEdge, CanvasLabel, CanvasNode, TopologyView } from '@/types/topology'
-
-const props = defineProps<{
-  nodeCount: number
-}>()
 
 const store = useTopologyStore()
 
@@ -249,38 +244,6 @@ const clearHistory = () => {
   redoStack.length = 0
 }
 
-const generateMockGraph = (n: number): Graph => {
-  const g = new Graph()
-  // Random positions in a 1000x1000 area; sigma's camera handles fit/pan/zoom.
-  for (let i = 0; i < n; i++) {
-    g.addNode(`n${i}`, {
-      label: `Node ${i}`,
-      x: Math.random() * 1000,
-      y: Math.random() * 1000,
-      size: 4 + Math.random() * 6,
-      // Sample a small palette so the canvas reads as "many distinct things"
-      // without burning CPU on random hex generation.
-      color: ['#3a78c2', '#f6b352', '#56b870', '#d62728', '#8e44ad'][i % 5]
-    })
-  }
-  // Add roughly n * 1.5 random edges; skip self-loops and duplicates.
-  const targetEdgeCount = Math.floor(n * 1.5)
-  let added = 0
-  let attempts = 0
-  while (added < targetEdgeCount && attempts < targetEdgeCount * 5) {
-    const a = Math.floor(Math.random() * n)
-    const b = Math.floor(Math.random() * n)
-    attempts++
-    if (a === b) continue
-    const sId = `n${a}`
-    const tId = `n${b}`
-    if (g.hasEdge(sId, tId) || g.hasEdge(tId, sId)) continue
-    g.addEdge(sId, tId, { size: 1, color: '#cccccc' })
-    added++
-  }
-  return g
-}
-
 /**
  * (Re)create the sigma instance over a graph, killing any prior one and
  * re-wiring interaction handlers. Shared by the mock rebuild and by
@@ -322,17 +285,18 @@ const mountSigma = (g: Graph) => {
   attachInteractionHandlers(sigma, g)
 }
 
-const rebuild = (n: number) => {
-  graph = generateMockGraph(n)
-  edgeCount.value = graph.size
+/**
+ * Start from an empty canvas. The user composes by dragging nodes from the
+ * palette; loadView replaces this when a saved view is opened.
+ */
+const initGraph = () => {
+  graph = new Graph()
+  edgeCount.value = 0
   placedCount.value = 0
   placedSequence = 0
   draggedNode = null
   dragStartPos = null
-  // Rebuild replaces the graph wholesale; previous commands reference
-  // ids that no longer exist.
   clearHistory()
-  // Re-attach selection visuals after a rebuild wipes the graph.
   store.clearSelection()
   mountSigma(graph)
 }
@@ -1177,14 +1141,9 @@ const onKeyDown = (e: KeyboardEvent) => {
 }
 
 onMounted(() => {
-  rebuild(props.nodeCount)
+  initGraph()
   window.addEventListener('keydown', onKeyDown)
 })
-
-watch(
-  () => props.nodeCount,
-  (n) => rebuild(n)
-)
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeyDown)

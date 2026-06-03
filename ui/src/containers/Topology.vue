@@ -64,17 +64,6 @@ License.
             :outlined="!store.isEdgeDrawMode"
             @click="store.setEdgeDrawMode(!store.isEdgeDrawMode)"
           />
-          <label for="node-count" class="control-label">Mock nodes:</label>
-          <PInputNumber
-            v-model="nodeCount"
-            input-id="node-count"
-            :min="10"
-            :max="2000"
-            :step="50"
-            show-buttons
-            buttonLayout="horizontal"
-            inputClass="node-count-input"
-          />
           <PButton label="Fit" severity="secondary" outlined @click="canvasRef?.fit()" />
         </div>
       </template>
@@ -82,7 +71,7 @@ License.
 
     <div class="topology-body">
       <TopologyPalette class="topology-palette-pane" />
-      <TopologyCanvas ref="canvasRef" :node-count="nodeCount" class="topology-canvas-pane" />
+      <TopologyCanvas ref="canvasRef" class="topology-canvas-pane" />
     </div>
 
     <ViewManager v-model:visible="managerVisible" @open="onOpen" />
@@ -93,7 +82,6 @@ License.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Toolbar from 'primevue/toolbar'
 import Button from 'primevue/button'
-import InputNumber from 'primevue/inputnumber'
 import InputText from 'primevue/inputtext'
 import TopologyCanvas from '@/components/Topology/TopologyCanvas.vue'
 import TopologyPalette from '@/components/Topology/TopologyPalette.vue'
@@ -102,13 +90,11 @@ import { useTopologyStore } from '@/stores/topologyStore'
 
 const PToolbar = Toolbar
 const PButton = Button
-const PInputNumber = InputNumber
 const PInputText = InputText
 
 const store = useTopologyStore()
 
 const canvasRef = ref<InstanceType<typeof TopologyCanvas> | null>(null)
-const nodeCount = ref<number>(500)
 const managerVisible = ref<boolean>(false)
 
 // Start with a blank view document and the catalog loaded.
@@ -202,14 +188,6 @@ const onOpen = async (id: string) => {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-}
-
-.control-label {
-  font-size: 0.875rem;
-}
-
-.toolbar-controls :deep(.node-count-input) {
-  width: 6rem;
 }
 
 .topology-body {
