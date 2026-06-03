@@ -120,6 +120,7 @@ import Toast from 'primevue/toast'
 import ConfirmDialog from 'primevue/confirmdialog'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
+import { useRoute, useRouter } from 'vue-router'
 import TopologyCanvas from '@/components/Topology/TopologyCanvas.vue'
 import TopologyPalette from '@/components/Topology/TopologyPalette.vue'
 import TopologyInspector from '@/components/Topology/TopologyInspector.vue'
@@ -136,6 +137,8 @@ const PConfirmDialog = ConfirmDialog
 const store = useTopologyStore()
 const toast = useToast()
 const confirm = useConfirm()
+const route = useRoute()
+const router = useRouter()
 
 const canvasRef = ref<InstanceType<typeof TopologyCanvas> | null>(null)
 
@@ -161,11 +164,22 @@ const inspectorVisible = computed<boolean>(
   () => !store.isEditMode || hasEditableSelection.value
 )
 
-// Load the catalog, then land on the seeded 'Default' view (View mode).
+// Load the catalog, then land on the view named in ?view= (or Default).
 onMounted(async () => {
+  // Only the 'custom' source exists today; normalize anything else.
+  if (route.params.source !== 'custom') {
+    router.replace({ name: 'Topology', params: { source: 'custom' }, query: route.query })
+  }
   await store.refreshCatalog()
-  await loadDefault()
+  await loadFromRoute()
 })
+
+// React to URL changes (bookmark opened, back/forward, manual edit). The
+// guard makes our own ?view= updates (syncRouteToView) no-ops here.
+watch(
+  () => route.query.view,
+  () => loadFromRoute()
+)
 
 // Status auto-refresh: poll in View mode, frozen in Edit mode (so the
 // canvas doesn't repaint while arranging). The manual "Refresh status"
@@ -226,8 +240,34 @@ const saveCurrent = async (): Promise<boolean> => {
   return ok
 }
 
+// Reflect the open view into the URL as ?view=<name> (bookmarkable). Guarded
+// so it only writes when the value actually changes.
+const syncRouteToView = () => {
+  const name = store.currentView?.name
+  const source = (route.params.source as string) || 'custom'
+  if (name && route.query.view !== name) {
+    router.replace({ name: 'Topology', params: { source }, query: { ...route.query, view: name } })
+  }
+}
+
+// Load whatever ?view= names (or Default). No-op if already showing it (so our
+// own syncRouteToView writes don't trigger a reload).
+const loadFromRoute = async (): Promise<void> => {
+  const wanted = (route.query.view as string) || 'Default'
+  if (store.currentView?.id && store.currentView.name === wanted) return
+  const match = store.catalog.find((v) => v.name === wanted)
+  if (match) {
+    await openIntoCanvas(match.id)
+  } else {
+    if (wanted !== 'Default') {
+      toast.add({ severity: 'warn', summary: 'View not found', detail: wanted, life: 4000 })
+    }
+    await loadDefault()
+  }
+}
+
 // Load a saved view by id into the canvas. No toast (used by the chooser,
-// the initial Default load, and after a delete).
+// the initial route load, and after a delete).
 const openIntoCanvas = async (id: string): Promise<boolean> => {
   const view = await store.openView(id)
   if (!view) {
@@ -235,6 +275,7 @@ const openIntoCanvas = async (id: string): Promise<boolean> => {
     return false
   }
   canvasRef.value?.loadView(view)
+  syncRouteToView()
   return true
 }
 
@@ -246,6 +287,7 @@ const loadDefault = async (): Promise<void> => {
   } else {
     store.newView()
     if (store.currentView) canvasRef.value?.loadView(store.currentView)
+    syncRouteToView()
   }
 }
 
@@ -259,6 +301,7 @@ const onNew = async () => {
   store.setEditMode(true)
   if (store.currentView) canvasRef.value?.loadView(store.currentView)
   await saveCurrent()
+  syncRouteToView()
 }
 
 const onSaveAs = async () => {
@@ -267,6 +310,7 @@ const onSaveAs = async () => {
   // Drop the id so the save creates a new catalog entry under the new name.
   store.currentView = { ...store.currentView, id: undefined, name: name.trim() }
   await saveCurrent()
+  syncRouteToView()
 }
 
 const onRename = async () => {
@@ -285,6 +329,7 @@ const onRename = async () => {
     // Unsaved view: just set the name locally (persisted on the next save).
     store.renameCurrent(name.trim())
   }
+  syncRouteToView()
 }
 
 const onDelete = () => {
