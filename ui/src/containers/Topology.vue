@@ -317,7 +317,10 @@ const onDelete = () => {
   flex-direction: column;
   gap: 1rem;
   padding: 1rem;
-  height: calc(100vh - 4rem);
+  /* Fill the layout's main area (header + footer overhead ~104px). A residual
+     ~16px page scrollbar comes from the app shell (side-menu rail / footer
+     spacer), independent of this page -- tracked separately. */
+  height: calc(100vh - 104px);
 }
 
 .topology-toolbar {
