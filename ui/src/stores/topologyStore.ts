@@ -168,6 +168,20 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     return true
   }
 
+  /**
+   * Rename a saved view by id (fetch → set name → save), without disturbing
+   * the open view unless it's the one being renamed. Used by the ViewManager.
+   */
+  const renameView = async (id: string, name: string): Promise<boolean> => {
+    const view = await getView(id)
+    if (view === false) return false
+    const renamed = await saveView({ ...view, name })
+    if (renamed === false) return false
+    if (currentView.value?.id === id) currentView.value = renamed
+    await refreshCatalog()
+    return true
+  }
+
   const setEditMode = (value: boolean) => {
     isEditMode.value = value
   }
@@ -253,6 +267,7 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     saveCurrentView,
     openView,
     removeView,
+    renameView,
     setPlacedNodeIds,
     setLabels,
     setSeverities,

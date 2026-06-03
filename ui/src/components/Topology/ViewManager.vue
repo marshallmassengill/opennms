@@ -45,10 +45,11 @@ License.
     </div>
     <PDataTable v-else :value="store.catalog" dataKey="id" :rows="10" paginator>
       <PColumn field="name" header="Name" sortable />
-      <PColumn header="" :style="{ width: '12rem' }">
+      <PColumn header="" :style="{ width: '16rem' }">
         <template #body="{ data }">
           <div class="tv-row-actions">
             <PButton label="Open" size="small" text @click="onOpen(data.id)" />
+            <PButton label="Rename" size="small" text @click="onRename(data.id, data.name)" />
             <PButton
               label="Delete"
               size="small"
@@ -109,6 +110,17 @@ watch(
 const onOpen = (id: string) => {
   emit('open', id)
   emit('update:visible', false)
+}
+
+const onRename = async (id: string, currentName: string) => {
+  const name = window.prompt('Rename view:', currentName)
+  if (!name || name.trim() === '' || name === currentName) return
+  const ok = await store.renameView(id, name.trim())
+  toast.add(
+    ok
+      ? { severity: 'success', summary: 'View renamed', detail: name.trim(), life: 3000 }
+      : { severity: 'error', summary: 'Rename failed', detail: currentName, life: 5000 }
+  )
 }
 
 const onDelete = async (id: string, name: string) => {
