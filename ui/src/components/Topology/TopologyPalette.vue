@@ -22,8 +22,7 @@ License.
 
 <!--
   Palette of OpenNMS nodes available to drag onto the canvas. Backed by
-  topologyService.fetchPaletteNodes (mock data for the Step 3 spike,
-  shape-compatible with nodeService.getNodes for swap).
+  topologyService.fetchPaletteNodes (the real /api/v2/nodes inventory).
 
   Each list item is HTML5-draggable; the drop target is the canvas, which
   reads the JSON payload from dataTransfer with the custom MIME type
@@ -54,11 +53,20 @@ License.
     </div>
 
     <div class="palette-list-container">
+      <div v-if="loading" class="palette-status">Loading nodes&hellip;</div>
+      <div v-else-if="loadError" class="palette-status">
+        <p>Couldn't load nodes.</p>
+        <PButton label="Retry" size="small" text @click="loadNodes" />
+      </div>
+      <div v-else-if="allNodes.length === 0" class="palette-status">No nodes available.</div>
+      <div v-else-if="filteredNodes.length === 0" class="palette-status">
+        No nodes match your search or filters.
+      </div>
       <PVirtualScroller
+        v-else
         :items="filteredNodes"
         :itemSize="56"
         class="palette-list"
-        showLoader
       >
         <template #item="{ item }">
           <div
@@ -78,9 +86,6 @@ License.
             </div>
           </div>
         </template>
-        <template #loader>
-          <div class="palette-loading">Loading nodes&hellip;</div>
-        </template>
       </PVirtualScroller>
     </div>
 
@@ -97,6 +102,7 @@ import InputIcon from 'primevue/inputicon'
 import InputText from 'primevue/inputtext'
 import MultiSelect from 'primevue/multiselect'
 import VirtualScroller from 'primevue/virtualscroller'
+import Button from 'primevue/button'
 import { fetchPaletteNodes } from '@/services/topologyService'
 import { PALETTE_DRAG_MIME, type PaletteDragPayload } from '@/components/Topology/dragTypes'
 import { useTopologyStore } from '@/stores/topologyStore'
@@ -107,12 +113,15 @@ const PInputIcon = InputIcon
 const PInputText = InputText
 const PMultiSelect = MultiSelect
 const PVirtualScroller = VirtualScroller
+const PButton = Button
 
 const store = useTopologyStore()
 
 const allNodes = ref<Node[]>([])
 const searchText = ref('')
 const selectedCategories = ref<string[]>([])
+const loading = ref<boolean>(true)
+const loadError = ref<boolean>(false)
 
 const availableCategories = computed<string[]>(() => {
   const set = new Set<string>()
@@ -136,10 +145,15 @@ const filteredNodes = computed<Node[]>(() => {
 })
 
 const loadNodes = async () => {
+  loading.value = true
+  loadError.value = false
   const resp = await fetchPaletteNodes({ limit: 200 })
-  if (resp !== false) {
-    allNodes.value = resp.node
+  loading.value = false
+  if (resp === false) {
+    loadError.value = true
+    return
   }
+  allNodes.value = resp.node
 }
 
 const onDragStart = (event: DragEvent, node: Node) => {
@@ -243,10 +257,10 @@ onMounted(() => {
   color: #344054;
 }
 
-.palette-loading {
+.palette-status {
   padding: 1rem;
   text-align: center;
-  color: #888;
+  color: #667085;
   font-size: 0.875rem;
 }
 

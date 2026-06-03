@@ -35,7 +35,12 @@ License.
     :style="{ width: '42rem' }"
     @update:visible="emit('update:visible', $event)"
   >
-    <div v-if="store.catalog.length === 0" class="tv-empty">
+    <div v-if="loading" class="tv-empty">Loading views&hellip;</div>
+    <div v-else-if="loadError" class="tv-empty">
+      <p>Couldn't load saved views.</p>
+      <PButton label="Retry" size="small" text @click="refresh" />
+    </div>
+    <div v-else-if="store.catalog.length === 0" class="tv-empty">
       No saved views yet. Compose a canvas and use <strong>Save</strong> to create one.
     </div>
     <PDataTable v-else :value="store.catalog" dataKey="id" :rows="10" paginator>
@@ -62,7 +67,7 @@ License.
 </template>
 
 <script setup lang="ts">
-import { watch } from 'vue'
+import { ref, watch } from 'vue'
 import Dialog from 'primevue/dialog'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
@@ -85,11 +90,22 @@ const emit = defineEmits<{
 
 const store = useTopologyStore()
 
+const loading = ref(false)
+const loadError = ref(false)
+
+const refresh = async () => {
+  loading.value = true
+  loadError.value = false
+  const ok = await store.refreshCatalog()
+  loading.value = false
+  loadError.value = !ok
+}
+
 // Refresh the catalog from the server each time the dialog opens.
 watch(
   () => props.visible,
   (open) => {
-    if (open) store.refreshCatalog()
+    if (open) refresh()
   }
 )
 
