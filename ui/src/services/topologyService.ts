@@ -69,11 +69,14 @@ const getNodeSeverities = async (nodeIds: number[]): Promise<Record<number, stri
  * used by the other services in this directory.
  *
  * The server stores the canvas as an opaque JSON document under a
- * `definition` field, with the catalog metadata (name, role scope,
- * owner, timestamps) as siblings. The front-end model is flat -- nodes,
- * edges, labels, and viewport live at the top of TopologyView -- so this
- * service maps between the two shapes. Ids are integers on the wire and
- * strings in the UI.
+ * `definition` field, with the catalog metadata (name, owner, timestamps)
+ * as siblings. The front-end model is flat -- nodes, edges, labels, and
+ * viewport live at the top of TopologyView -- so this service maps between
+ * the two shapes. Ids are integers on the wire and strings in the UI.
+ *
+ * Access control is the standard /api/v2 RBAC (any authenticated user can
+ * read; ROLE_REST or ROLE_ADMIN can write); the catalog is shared, so there
+ * is no per-view role field.
  */
 
 const viewsEndpoint = 'topology/views'
@@ -92,7 +95,6 @@ interface TopologyViewDTO {
   id?: number
   name: string
   definition: TopologyViewDefinition
-  roleScope?: string
   owner?: string
   created?: number
   lastModified?: number
@@ -100,7 +102,6 @@ interface TopologyViewDTO {
 
 const toDto = (view: TopologyView): TopologyViewDTO => ({
   name: view.name,
-  roleScope: view.roleScope,
   definition: {
     nodes: view.nodes,
     edges: view.edges,
@@ -113,7 +114,6 @@ const toDto = (view: TopologyView): TopologyViewDTO => ({
 const fromDto = (dto: TopologyViewDTO): TopologyView => ({
   id: dto.id != null ? String(dto.id) : undefined,
   name: dto.name,
-  roleScope: dto.roleScope,
   nodes: dto.definition?.nodes ?? [],
   edges: dto.definition?.edges ?? [],
   labels: dto.definition?.labels ?? [],
@@ -126,8 +126,7 @@ const listViews = async (): Promise<TopologyViewSummary[] | false> => {
     const resp = await v2.get<TopologyViewDTO[]>(viewsEndpoint)
     return (resp.data ?? []).map((dto) => ({
       id: dto.id != null ? String(dto.id) : '',
-      name: dto.name,
-      roleScope: dto.roleScope
+      name: dto.name
     }))
   } catch (err) {
     return false

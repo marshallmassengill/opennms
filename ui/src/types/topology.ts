@@ -78,8 +78,6 @@ export interface TopologyViewBackground {
 export interface TopologyView {
   id?: string
   name: string
-  /** Which OpenNMS role(s) can see/edit this view. Shared, NOT per-user. */
-  roleScope?: string
   nodes: CanvasNode[]
   edges: CanvasEdge[]
   labels: CanvasLabel[]
@@ -97,5 +95,4 @@ export interface TopologyView {
 export interface TopologyViewSummary {
   id: string
   name: string
-  roleScope?: string
 }

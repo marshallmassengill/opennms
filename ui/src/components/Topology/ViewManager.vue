@@ -45,9 +45,6 @@ License.
     </div>
     <PDataTable v-else :value="store.catalog" dataKey="id" :rows="10" paginator>
       <PColumn field="name" header="Name" sortable />
-      <PColumn header="Role scope" :style="{ width: '10rem' }">
-        <template #body="{ data }">{{ data.roleScope || '—' }}</template>
-      </PColumn>
       <PColumn header="" :style="{ width: '12rem' }">
         <template #body="{ data }">
           <div class="tv-row-actions">

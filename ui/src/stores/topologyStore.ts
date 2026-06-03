@@ -107,7 +107,7 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     placedNodeIds.value = new Set()
   }
 
-  /** Reload the catalog list (id + name + roleScope) from the server. */
+  /** Reload the catalog list (id + name) from the server. */
   const refreshCatalog = async (): Promise<boolean> => {
     const res = await listViews()
     catalog.value = res === false ? [] : res
