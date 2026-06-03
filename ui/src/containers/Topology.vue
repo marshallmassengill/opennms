@@ -317,11 +317,10 @@ const onDelete = () => {
   flex-direction: column;
   gap: 1rem;
   padding: 1rem;
-  /* Fit within the layout's main grid cell so the page doesn't overflow past
-     the header + footer (which pushed the footer below the fold and showed a
-     scrollbar). The header height is exact (Feather var); the footer is a
-     generous allowance -- erring toward a small gap over a scrollbar. */
-  height: calc(100vh - var(--feather-header-height, 3.75rem) - 5rem);
+  /* Fill the layout's main cell exactly (.main-content is a flex column) --
+     no viewport math, so no gap and no overflow past the footer. */
+  flex: 1 1 auto;
+  min-height: 0;
   box-sizing: border-box;
 }
 

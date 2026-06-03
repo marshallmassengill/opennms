@@ -70,6 +70,12 @@ html {
   overflow-x: hidden;
 }
 .main-content {
+  // Fill the layout's main grid cell (auto / minmax(0,1fr) / auto) so pages
+  // can size to the available height; min-height (not height) lets taller
+  // pages still grow and scroll as before.
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
   table {
     width: 100%;
   }
