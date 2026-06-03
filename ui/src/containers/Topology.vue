@@ -24,7 +24,25 @@ License.
   <div class="topology-page">
     <PToolbar class="topology-toolbar">
       <template #start>
-        <span class="topology-title">Topology (Preview)</span>
+        <div class="toolbar-start">
+          <span class="topology-title">Topology (Preview)</span>
+          <PInputText
+            v-model="viewName"
+            class="view-name-input"
+            placeholder="View name"
+            aria-label="View name"
+          />
+          <PButton label="New" severity="secondary" outlined @click="onNew" />
+          <PButton label="Save" :loading="store.isSaving" :disabled="!canSave" @click="onSave" />
+          <PButton
+            label="Save As"
+            severity="secondary"
+            outlined
+            :disabled="store.isSaving"
+            @click="onSaveAs"
+          />
+          <PButton label="Open" severity="secondary" outlined @click="managerVisible = true" />
+        </div>
       </template>
       <template #end>
         <div class="toolbar-controls">
@@ -54,26 +72,72 @@ License.
       <TopologyPalette class="topology-palette-pane" />
       <TopologyCanvas ref="canvasRef" :node-count="nodeCount" class="topology-canvas-pane" />
     </div>
+
+    <ViewManager v-model:visible="managerVisible" @open="onOpen" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import Toolbar from 'primevue/toolbar'
 import Button from 'primevue/button'
 import InputNumber from 'primevue/inputnumber'
+import InputText from 'primevue/inputtext'
 import TopologyCanvas from '@/components/Topology/TopologyCanvas.vue'
 import TopologyPalette from '@/components/Topology/TopologyPalette.vue'
+import ViewManager from '@/components/Topology/ViewManager.vue'
 import { useTopologyStore } from '@/stores/topologyStore'
 
 const PToolbar = Toolbar
 const PButton = Button
 const PInputNumber = InputNumber
+const PInputText = InputText
 
 const store = useTopologyStore()
 
 const canvasRef = ref<InstanceType<typeof TopologyCanvas> | null>(null)
 const nodeCount = ref<number>(500)
+const managerVisible = ref<boolean>(false)
+
+// Start with a blank view document and the catalog loaded.
+onMounted(() => {
+  if (!store.currentView) store.newView()
+  store.refreshCatalog()
+})
+
+// The open view's name, edited in place; persisted on the next save.
+const viewName = computed<string>({
+  get: () => store.currentView?.name ?? '',
+  set: (name: string) => store.renameCurrent(name)
+})
+
+const canSave = computed<boolean>(
+  () => !!store.currentView && !store.isSaving && (store.currentView?.name?.trim().length ?? 0) > 0
+)
+
+const onNew = () => {
+  store.newView()
+  if (store.currentView) canvasRef.value?.loadView(store.currentView)
+}
+
+const onSave = async () => {
+  const snapshot = canvasRef.value?.serialize()
+  if (!snapshot) return
+  await store.saveCurrentView(snapshot)
+}
+
+const onSaveAs = async () => {
+  const name = window.prompt('Save view as:', store.currentView?.name ?? 'Untitled view')
+  if (!name || !store.currentView) return
+  // Drop the id so the save creates a new catalog entry under the new name.
+  store.currentView = { ...store.currentView, id: undefined, name }
+  await onSave()
+}
+
+const onOpen = async (id: string) => {
+  const view = await store.openView(id)
+  if (view) canvasRef.value?.loadView(view)
+}
 </script>
 
 <style scoped>
