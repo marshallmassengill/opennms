@@ -21,7 +21,7 @@ License.
 -->
 
 <template>
-  <div class="topology-page">
+  <div class="topology-page" :class="store.isEditMode ? 'is-edit' : 'is-view'">
     <PToolbar class="topology-toolbar">
       <template #start>
         <div class="toolbar-start">
@@ -46,11 +46,14 @@ License.
       </template>
       <template #end>
         <div class="toolbar-controls">
-          <PButton
-            :label="store.isEditMode ? 'Mode: Edit' : 'Mode: View'"
-            :severity="store.isEditMode ? 'secondary' : 'primary'"
-            :outlined="store.isEditMode"
-            @click="store.setEditMode(!store.isEditMode)"
+          <PSelectButton
+            v-model="mode"
+            :options="modeOptions"
+            option-label="label"
+            option-value="value"
+            :allow-empty="false"
+            aria-label="View or Edit mode"
+            class="mode-select"
           />
           <PButton
             label="Refresh status"
@@ -74,10 +77,13 @@ License.
       <!-- Palette is an Edit-mode tool (compose); hidden in View. -->
       <TopologyPalette v-if="store.isEditMode" class="topology-palette-pane" />
       <TopologyCanvas ref="canvasRef" class="topology-canvas-pane" />
-      <!-- Inspector sits on the right in Edit, on the left in View (where the
-           palette would be) -- driven by flex order. -->
+      <!-- View: full read-only Inspector on the left (order -1).
+           Edit: slim Properties panel on the right, only when a label/edge
+           is selected (nodes have no editable props here). -->
       <TopologyInspector
+        v-if="inspectorVisible"
         :canvas="canvasRef"
+        :variant="store.isEditMode ? 'props' : 'full'"
         class="topology-inspector-pane"
         :style="{ order: store.isEditMode ? 0 : -1 }"
       />
@@ -93,6 +99,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Toolbar from 'primevue/toolbar'
 import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
+import SelectButton from 'primevue/selectbutton'
 import Toast from 'primevue/toast'
 import { useToast } from 'primevue/usetoast'
 import TopologyCanvas from '@/components/Topology/TopologyCanvas.vue'
@@ -100,10 +107,12 @@ import TopologyPalette from '@/components/Topology/TopologyPalette.vue'
 import TopologyInspector from '@/components/Topology/TopologyInspector.vue'
 import ViewManager from '@/components/Topology/ViewManager.vue'
 import { useTopologyStore } from '@/stores/topologyStore'
+import { nodeIdFromPlacedId } from '@/components/Topology/nodeIds'
 
 const PToolbar = Toolbar
 const PButton = Button
 const PInputText = InputText
+const PSelectButton = SelectButton
 const PToast = Toast
 
 const store = useTopologyStore()
@@ -111,6 +120,28 @@ const toast = useToast()
 
 const canvasRef = ref<InstanceType<typeof TopologyCanvas> | null>(null)
 const managerVisible = ref<boolean>(false)
+
+// Segmented View/Edit control (clear, always-visible mode indicator).
+const modeOptions = [
+  { label: 'View', value: false },
+  { label: 'Edit', value: true }
+]
+const mode = computed<boolean>({
+  get: () => store.isEditMode,
+  set: (value) => store.setEditMode(value)
+})
+
+// A single selection that has editable properties = a label or an edge
+// (i.e. not a node). Drives the Edit-mode "Properties" panel.
+const hasEditableSelection = computed<boolean>(
+  () => store.selectedIds.length === 1 && nodeIdFromPlacedId(store.selectedIds[0]) === null
+)
+
+// View: always show the full read-only Inspector. Edit: show the slim
+// Properties panel only when a label/edge is selected.
+const inspectorVisible = computed<boolean>(
+  () => !store.isEditMode || hasEditableSelection.value
+)
 
 // Start with a blank view document and the catalog loaded.
 onMounted(() => {
@@ -207,6 +238,17 @@ const onOpen = async (id: string) => {
 
 .topology-toolbar {
   flex: 0 0 auto;
+  /* Ambient mode cue: a colored top accent reinforces the segmented
+     View/Edit control so the current context is obvious at a glance. */
+  border-top: 3px solid transparent;
+}
+
+.topology-page.is-edit .topology-toolbar {
+  border-top-color: #f59e0b; /* amber = editing */
+}
+
+.topology-page.is-view .topology-toolbar {
+  border-top-color: #00bfcb; /* teal accent = viewing */
 }
 
 .topology-title {

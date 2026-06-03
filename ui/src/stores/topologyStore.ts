@@ -49,7 +49,8 @@ const emptyView = (): TopologyView => ({
 export const useTopologyStore = defineStore('topologyStore', () => {
   const catalog = ref<TopologyViewSummary[]>([])
   const currentView = ref<TopologyView | null>(null)
-  const isEditMode = ref<boolean>(true)
+  // Launch in View mode; the user explicitly switches to Edit to compose.
+  const isEditMode = ref<boolean>(false)
   /**
    * Edge-draw mode: when true, clicks on nodes capture source/target
    * instead of selecting. Driven by the toolbar Draw Edge toggle.

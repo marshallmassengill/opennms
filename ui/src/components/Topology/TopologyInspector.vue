@@ -30,16 +30,16 @@ License.
 <template>
   <PCard class="topology-inspector">
     <template #title>
-      <span class="ti-title">Inspector</span>
+      <span class="ti-title">{{ variant === 'props' ? 'Properties' : 'Inspector' }}</span>
     </template>
     <template #content>
-      <!-- Nothing selected -->
-      <p v-if="kind === 'none'" class="ti-empty">
+      <!-- Nothing selected (full/View only) -->
+      <p v-if="kind === 'none' && variant === 'full'" class="ti-empty">
         Select a node, edge, or label to see its properties.
       </p>
 
-      <!-- Multiple items -->
-      <p v-else-if="kind === 'multi'" class="ti-empty">
+      <!-- Multiple items (full/View only) -->
+      <p v-else-if="kind === 'multi' && variant === 'full'" class="ti-empty">
         {{ store.selectedIds.length }} items selected.
       </p>
 
@@ -59,8 +59,8 @@ License.
         </div>
       </div>
 
-      <!-- A placed OpenNMS node -->
-      <div v-else-if="kind === 'node'" class="ti-section">
+      <!-- A placed OpenNMS node (detail is read-only; full/View only) -->
+      <div v-else-if="kind === 'node' && variant === 'full'" class="ti-section">
         <div v-if="nodeLoading" class="ti-empty">Loading node…</div>
         <template v-else-if="nodeDetail">
           <div class="ti-node-header">
@@ -90,7 +90,7 @@ License.
         </div>
       </div>
 
-      <p v-else class="ti-empty">Edge selected.</p>
+      <p v-else-if="variant === 'full'" class="ti-empty">Edge selected.</p>
     </template>
   </PCard>
 </template>
@@ -116,7 +116,17 @@ interface CanvasEdgeApi {
   setEdgeLabel: (id: string, label: string) => void
 }
 
-const props = defineProps<{ canvas: CanvasEdgeApi | null }>()
+const props = defineProps<{
+  canvas: CanvasEdgeApi | null
+  /**
+   * 'full' (View): node detail + label/edge + empty/multi states.
+   * 'props' (Edit): only the editable label/edge property fields; the page
+   * mounts this variant solely when a label or edge is selected.
+   */
+  variant?: 'full' | 'props'
+}>()
+
+const variant = computed<'full' | 'props'>(() => props.variant ?? 'full')
 
 const store = useTopologyStore()
 
