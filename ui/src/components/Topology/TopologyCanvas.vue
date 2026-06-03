@@ -99,7 +99,7 @@ import Graph from 'graphology'
 import Sigma from 'sigma'
 import { PALETTE_DRAG_MIME, type PaletteDragPayload } from '@/components/Topology/dragTypes'
 import { useTopologyStore } from '@/stores/topologyStore'
-import type { CanvasLabel } from '@/types/topology'
+import type { CanvasEdge, CanvasLabel, CanvasNode, TopologyView } from '@/types/topology'
 
 const props = defineProps<{
   nodeCount: number
@@ -280,11 +280,33 @@ const generateMockGraph = (n: number): Graph => {
   return g
 }
 
-const rebuild = (n: number) => {
+/**
+ * (Re)create the sigma instance over a graph, killing any prior one and
+ * re-wiring interaction handlers. Shared by the mock rebuild and by
+ * loadView so the renderer options stay in one place.
+ */
+const mountSigma = (g: Graph) => {
   if (sigma) {
     sigma.kill()
     sigma = null
   }
+  if (!canvasEl.value) return
+  sigma = new Sigma(g, canvasEl.value, {
+    renderEdgeLabels: false,
+    // Selected edges render highlighted in blue without us mutating
+    // the edge's actual color attribute; the reducer pulls a
+    // transient _selected flag we set in the selection watcher.
+    edgeReducer: (_edge, attrs) => {
+      if ((attrs as { _selected?: boolean })._selected) {
+        return { ...attrs, color: '#1f5fb0', size: 3 }
+      }
+      return attrs
+    }
+  })
+  attachInteractionHandlers(sigma, g)
+}
+
+const rebuild = (n: number) => {
   graph = generateMockGraph(n)
   edgeCount.value = graph.size
   placedCount.value = 0
@@ -296,21 +318,103 @@ const rebuild = (n: number) => {
   clearHistory()
   // Re-attach selection visuals after a rebuild wipes the graph.
   store.clearSelection()
+  mountSigma(graph)
+}
 
-  if (canvasEl.value && graph) {
-    sigma = new Sigma(graph, canvasEl.value, {
-      renderEdgeLabels: false,
-      // Selected edges render highlighted in blue without us mutating
-      // the edge's actual color attribute; the reducer pulls a
-      // transient _selected flag we set in the selection watcher.
-      edgeReducer: (_edge, attrs) => {
-        if ((attrs as { _selected?: boolean })._selected) {
-          return { ...attrs, color: '#1f5fb0', size: 3 }
-        }
-        return attrs
-      }
+/**
+ * Serialize the current canvas into the flat shape persisted in a
+ * TopologyView: graph nodes/edges plus the sigma camera viewport. Labels
+ * are not included here -- they live in the store and are merged at save
+ * time. The viewport stores the sigma camera state directly (ratio as
+ * `zoom`, x/y as pan) so it round-trips exactly on load.
+ */
+const serialize = (): Pick<TopologyView, 'nodes' | 'edges' | 'viewport'> => {
+  const nodes: CanvasNode[] = []
+  const edges: CanvasEdge[] = []
+  if (graph) {
+    graph.forEachNode((id, attrs) => {
+      const paletteId = paletteIdFromPlacedId(id)
+      const nodeId = paletteId !== null && /^\d+$/.test(paletteId) ? Number(paletteId) : undefined
+      nodes.push({
+        id,
+        nodeId,
+        label: (attrs.label as string) ?? '',
+        x: attrs.x as number,
+        y: attrs.y as number,
+        color: attrs.color as string | undefined
+      })
     })
-    attachInteractionHandlers(sigma, graph)
+    graph.forEachEdge((id, attrs, source, target) => {
+      edges.push({
+        id,
+        sourceId: source,
+        targetId: target,
+        label: (attrs.label as string | undefined) || undefined,
+        origin: (attrs.origin as string) === 'discovered' ? 'discovered' : 'user'
+      })
+    })
+  }
+  const cam = sigma?.getCamera().getState()
+  const viewport = cam
+    ? { zoom: cam.ratio, panX: cam.x, panY: cam.y }
+    : { zoom: 1, panX: 0, panY: 0 }
+  return { nodes, edges, viewport }
+}
+
+/**
+ * Replace the canvas with a saved view: rebuild the graph from its
+ * nodes/edges, restore the placed-node set and labels in the store, and
+ * set the camera to the saved viewport. Clears undo/redo history (the old
+ * commands reference a graph that no longer exists).
+ */
+const loadView = (view: TopologyView) => {
+  const g = new Graph()
+  for (const n of view.nodes) {
+    if (g.hasNode(n.id)) continue
+    g.addNode(n.id, {
+      label: n.label,
+      x: n.x,
+      y: n.y,
+      size: 10,
+      color: n.color ?? '#1f5fb0'
+    })
+  }
+  for (const e of view.edges) {
+    if (
+      g.hasNode(e.sourceId) &&
+      g.hasNode(e.targetId) &&
+      !g.hasEdge(e.id) &&
+      !g.hasEdge(e.sourceId, e.targetId)
+    ) {
+      g.addEdgeWithKey(e.id, e.sourceId, e.targetId, {
+        size: 2,
+        color: '#1f5fb0',
+        origin: e.origin,
+        label: e.label
+      })
+    }
+  }
+  graph = g
+  edgeCount.value = g.size
+  draggedNode = null
+  dragStartPos = null
+  clearHistory()
+  store.clearSelection()
+
+  // Rebuild the placed-node set so the palette hides what's on the canvas.
+  const placed: string[] = []
+  for (const n of view.nodes) {
+    const pid = paletteIdFromPlacedId(n.id)
+    if (pid !== null) placed.push(pid)
+  }
+  store.setPlacedNodeIds(placed)
+  placedCount.value = placed.length
+  store.setLabels(view.labels)
+
+  mountSigma(g)
+  if (sigma) {
+    const vp = view.viewport
+    sigma.getCamera().setState({ x: vp.panX, y: vp.panY, ratio: vp.zoom, angle: 0 })
   }
 }
 
@@ -1068,7 +1172,9 @@ defineExpose({
     if (sigma) {
       sigma.getCamera().animatedReset()
     }
-  }
+  },
+  serialize,
+  loadView
 })
 </script>
 

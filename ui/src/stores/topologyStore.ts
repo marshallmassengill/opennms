@@ -22,6 +22,14 @@
 
 import { defineStore } from 'pinia'
 import type { CanvasLabel, TopologyView, TopologyViewSummary } from '@/types/topology'
+import { listViews, getView, saveView, deleteView } from '@/services/topologyService'
+
+/**
+ * The live canvas geometry the canvas component hands back on save:
+ * nodes/edges from the graphology graph plus the sigma camera viewport.
+ * Labels are not included here -- they already live in the store.
+ */
+type CanvasSnapshot = Pick<TopologyView, 'nodes' | 'edges' | 'viewport'>
 
 const emptyView = (): TopologyView => ({
   name: 'Untitled view',
@@ -61,9 +69,74 @@ export const useTopologyStore = defineStore('topologyStore', () => {
    */
   const labels = ref<CanvasLabel[]>([])
 
+  /** True while a save request is in flight; drives toolbar disabled state. */
+  const isSaving = ref<boolean>(false)
+
   const newView = () => {
     currentView.value = emptyView()
     selectedIds.value = []
+    labels.value = []
+    placedNodeIds.value = new Set()
+  }
+
+  /** Reload the catalog list (id + name + roleScope) from the server. */
+  const refreshCatalog = async (): Promise<boolean> => {
+    const res = await listViews()
+    catalog.value = res === false ? [] : res
+    return res !== false
+  }
+
+  /** Rename the open view (persisted on the next save). */
+  const renameCurrent = (name: string) => {
+    if (currentView.value) currentView.value = { ...currentView.value, name }
+  }
+
+  /**
+   * Persist the open view. The canvas component supplies the live
+   * nodes/edges/viewport; labels are merged from the store. On success the
+   * server's canonical record (id, owner, timestamps) becomes the current
+   * view and the catalog is refreshed.
+   */
+  const saveCurrentView = async (snapshot: CanvasSnapshot): Promise<boolean> => {
+    if (!currentView.value) return false
+    isSaving.value = true
+    try {
+      const view: TopologyView = {
+        ...currentView.value,
+        nodes: snapshot.nodes,
+        edges: snapshot.edges,
+        labels: labels.value.map((l) => ({ ...l })),
+        viewport: snapshot.viewport
+      }
+      const saved = await saveView(view)
+      if (saved === false) return false
+      currentView.value = saved
+      await refreshCatalog()
+      return true
+    } finally {
+      isSaving.value = false
+    }
+  }
+
+  /**
+   * Load a saved view by id and make it current. Returns the view so the
+   * caller (the page) can hand it to the canvas to render; the canvas, in
+   * turn, repopulates labels and placed-node ids in this store.
+   */
+  const openView = async (id: string): Promise<TopologyView | false> => {
+    const view = await getView(id)
+    if (view === false) return false
+    currentView.value = view
+    return view
+  }
+
+  /** Delete a view; if it was the open one, reset to a blank canvas. */
+  const removeView = async (id: string): Promise<boolean> => {
+    const ok = await deleteView(id)
+    if (!ok) return false
+    if (currentView.value?.id === id) newView()
+    await refreshCatalog()
+    return true
   }
 
   const setEditMode = (value: boolean) => {
@@ -112,6 +185,14 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     placedNodeIds.value = next
   }
 
+  const setPlacedNodeIds = (ids: Iterable<string>) => {
+    placedNodeIds.value = new Set(ids)
+  }
+
+  const setLabels = (next: CanvasLabel[]) => {
+    labels.value = next.map((l) => ({ ...l }))
+  }
+
   const addLabel = (label: CanvasLabel) => {
     labels.value = [...labels.value, label]
   }
@@ -132,10 +213,18 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     currentView,
     isEditMode,
     isEdgeDrawMode,
+    isSaving,
     selectedIds,
     placedNodeIds,
     labels,
     newView,
+    refreshCatalog,
+    renameCurrent,
+    saveCurrentView,
+    openView,
+    removeView,
+    setPlacedNodeIds,
+    setLabels,
     setEditMode,
     setEdgeDrawMode,
     selectOnly,
