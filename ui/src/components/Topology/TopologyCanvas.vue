@@ -105,7 +105,8 @@ import {
   placedIdFor,
   paletteIdFromPlacedId
 } from '@/components/Topology/nodeIds'
-import type { CanvasEdge, CanvasLabel, CanvasNode, TopologyView } from '@/types/topology'
+import { layoutDiscoveredGraph } from '@/components/Topology/layout'
+import type { CanvasEdge, CanvasLabel, CanvasNode, DiscoveredGraph, TopologyView } from '@/types/topology'
 
 const store = useTopologyStore()
 
@@ -399,6 +400,55 @@ const loadView = (view: TopologyView) => {
     const vp = view.viewport
     sigma.getCamera().setState({ x: vp.panX, y: vp.panY, ratio: vp.zoom, angle: 0 })
   }
+}
+
+/** Center + slightly zoom out so edge nodes' labels aren't clipped. */
+const fitCamera = () => {
+  if (!sigma) return
+  sigma.getCamera().animate({ x: 0.5, y: 0.5, ratio: 1.15, angle: 0 }, { duration: 300 })
+}
+
+/**
+ * Render a discovered (auto-generated) topology read-only. The Graph REST API
+ * gives no positions, so we auto-lay-out with d3-force, then build the
+ * graphology graph and mount sigma. Editing stays disabled because the page
+ * forces View mode for discovered sources (the interaction handlers are all
+ * gated on store.isEditMode); pan/zoom/select still work for exploration.
+ * Discovered edges render muted to read as "from discovery, not drawn."
+ */
+const loadDiscoveredGraph = (dg: DiscoveredGraph) => {
+  const positioned = layoutDiscoveredGraph(dg.nodes, dg.edges)
+  const g = new Graph()
+  for (const n of positioned) {
+    if (g.hasNode(n.id)) continue
+    g.addNode(n.id, {
+      label: n.label,
+      x: n.x,
+      y: n.y,
+      size: 10,
+      color: n.color ?? '#1f5fb0'
+    })
+  }
+  for (const e of dg.edges) {
+    if (
+      g.hasNode(e.sourceId) &&
+      g.hasNode(e.targetId) &&
+      !g.hasEdge(e.id) &&
+      !g.hasEdge(e.sourceId, e.targetId)
+    ) {
+      g.addEdgeWithKey(e.id, e.sourceId, e.targetId, { size: 2, color: '#9aa7b8', origin: e.origin })
+    }
+  }
+  graph = g
+  edgeCount.value = g.size
+  placedCount.value = positioned.length
+  draggedNode = null
+  dragStartPos = null
+  clearHistory()
+  store.clearSelection()
+  store.setLabels([]) // discovered topologies have no free-standing labels
+  mountSigma(g)
+  fitCamera()
 }
 
 /**
@@ -1188,15 +1238,10 @@ defineExpose({
   // x/y positions only, not the rendered label width that extends past
   // each node. The default reset state is { x: 0.5, y: 0.5, ratio: 1 };
   // a ratio above 1 zooms out, leaving margin on all sides.
-  fit: () => {
-    if (!sigma) return
-    sigma.getCamera().animate(
-      { x: 0.5, y: 0.5, ratio: 1.15, angle: 0 },
-      { duration: 300 }
-    )
-  },
+  fit: fitCamera,
   serialize,
   loadView,
+  loadDiscoveredGraph,
   getEdge,
   setEdgeLabel
 })

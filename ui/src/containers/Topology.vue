@@ -26,43 +26,58 @@ License.
       <template #start>
         <div class="toolbar-start">
           <span class="topology-title">Topology (Preview)</span>
+          <!-- View-source dimension (above Edit/View): Custom vs discovered. -->
           <PSelect
-            v-model="currentViewId"
-            :options="store.catalog"
-            option-label="name"
-            option-value="id"
-            placeholder="Select a view"
-            class="view-chooser"
-            aria-label="Choose a topology view"
+            v-model="selectedSource"
+            :options="sourceOptions"
+            option-label="label"
+            option-value="slug"
+            class="source-chooser"
+            aria-label="Topology source"
           />
-          <PButton label="New" severity="secondary" outlined @click="onNew" />
-          <PButton label="Save" :loading="store.isSaving" :disabled="!canSave" @click="onSave" />
-          <PButton
-            label="Save As"
-            severity="secondary"
-            outlined
-            :disabled="store.isSaving"
-            @click="onSaveAs"
-          />
-          <PButton
-            label="Rename"
-            severity="secondary"
-            outlined
-            :disabled="!store.currentView"
-            @click="onRename"
-          />
-          <PButton
-            label="Delete"
-            severity="danger"
-            outlined
-            :disabled="!canDelete"
-            @click="onDelete"
-          />
+          <!-- Custom-view management (hidden for read-only discovered sources). -->
+          <template v-if="!isDiscovered">
+            <PSelect
+              v-model="currentViewId"
+              :options="store.catalog"
+              option-label="name"
+              option-value="id"
+              placeholder="Select a view"
+              class="view-chooser"
+              aria-label="Choose a topology view"
+            />
+            <PButton label="New" severity="secondary" outlined @click="onNew" />
+            <PButton label="Save" :loading="store.isSaving" :disabled="!canSave" @click="onSave" />
+            <PButton
+              label="Save As"
+              severity="secondary"
+              outlined
+              :disabled="store.isSaving"
+              @click="onSaveAs"
+            />
+            <PButton
+              label="Rename"
+              severity="secondary"
+              outlined
+              :disabled="!store.currentView"
+              @click="onRename"
+            />
+            <PButton
+              label="Delete"
+              severity="danger"
+              outlined
+              :disabled="!canDelete"
+              @click="onDelete"
+            />
+          </template>
+          <span v-else class="discovered-hint">{{ discoveredHint }}</span>
         </div>
       </template>
       <template #end>
         <div class="toolbar-controls">
+          <!-- Discovered sources are read-only: no Edit mode. -->
           <PSelectButton
+            v-if="!isDiscovered"
             v-model="mode"
             :options="modeOptions"
             option-label="label"
@@ -71,6 +86,36 @@ License.
             aria-label="View or Edit mode"
             class="mode-select"
           />
+          <!-- Discovered-view focus + Semantic Zoom Level. -->
+          <template v-if="isDiscovered">
+            <PButton
+              v-if="!store.focusNodeId"
+              label="Focus"
+              severity="secondary"
+              outlined
+              :disabled="!selectedNodeId"
+              @click="focusOnSelection"
+            />
+            <span v-else class="szl-control">
+              <PButton
+                label="−"
+                severity="secondary"
+                outlined
+                :disabled="store.semanticZoomLevel <= 0"
+                aria-label="Decrease zoom level"
+                @click="stepSzl(-1)"
+              />
+              <span class="szl-value">{{ store.semanticZoomLevel }} hop{{ store.semanticZoomLevel === 1 ? '' : 's' }}</span>
+              <PButton
+                label="+"
+                severity="secondary"
+                outlined
+                aria-label="Increase zoom level"
+                @click="stepSzl(1)"
+              />
+              <PButton label="Show all" severity="secondary" outlined @click="showAll" />
+            </span>
+          </template>
           <PButton
             label="Refresh status"
             severity="secondary"
@@ -90,8 +135,9 @@ License.
     </PToolbar>
 
     <div class="topology-body">
-      <!-- Palette is an Edit-mode tool (compose); hidden in View. -->
-      <TopologyPalette v-if="store.isEditMode" class="topology-palette-pane" />
+      <!-- Palette is an Edit-mode tool (compose); hidden in View and for
+           read-only discovered sources. -->
+      <TopologyPalette v-if="store.isEditMode && !isDiscovered" class="topology-palette-pane" />
       <TopologyCanvas ref="canvasRef" class="topology-canvas-pane" />
       <!-- View: full read-only Inspector on the left (order -1).
            Edit: slim Properties panel on the right, only when a label/edge
@@ -126,6 +172,13 @@ import TopologyPalette from '@/components/Topology/TopologyPalette.vue'
 import TopologyInspector from '@/components/Topology/TopologyInspector.vue'
 import { useTopologyStore } from '@/stores/topologyStore'
 import { nodeIdFromPlacedId } from '@/components/Topology/nodeIds'
+import {
+  CUSTOM_SOURCE_SLUG,
+  TOPOLOGY_SOURCES,
+  isDiscoveredSlug,
+  sourceForSlug
+} from '@/components/Topology/sources'
+import { focusSubgraph } from '@/components/Topology/focus'
 
 const PToolbar = Toolbar
 const PButton = Button
@@ -141,6 +194,25 @@ const route = useRoute()
 const router = useRouter()
 
 const canvasRef = ref<InstanceType<typeof TopologyCanvas> | null>(null)
+
+// View-source dimension (the route's :source param). 'custom' is the
+// hand-composed catalog; the rest are discovered (read-only) topologies.
+const sourceOptions = TOPOLOGY_SOURCES
+const sourceSlug = computed<string>(() => (route.params.source as string) || CUSTOM_SOURCE_SLUG)
+const isDiscovered = computed<boolean>(() => isDiscoveredSlug(sourceSlug.value))
+
+const selectedSource = computed<string>({
+  get: () => sourceSlug.value,
+  set: (slug) => {
+    if (slug !== sourceSlug.value) router.push({ name: 'Topology', params: { source: slug } })
+  }
+})
+
+const discoveredHint = computed<string>(() => {
+  if (store.isDiscoveredLoading) return 'Loading…'
+  if (store.discoveredError) return 'Load failed'
+  return store.discoveredGraph ? `${store.discoveredGraph.label} · read-only` : 'read-only'
+})
 
 // Segmented View/Edit control (clear, always-visible mode indicator).
 const modeOptions = [
@@ -164,21 +236,79 @@ const inspectorVisible = computed<boolean>(
   () => !store.isEditMode || hasEditableSelection.value
 )
 
-// Load the catalog, then land on the view named in ?view= (or Default).
-onMounted(async () => {
-  // Only the 'custom' source exists today; normalize anything else.
-  if (route.params.source !== 'custom') {
-    router.replace({ name: 'Topology', params: { source: 'custom' }, query: route.query })
+// Load whatever the route's :source points at -- the custom catalog or a
+// discovered topology. Re-runs whenever the source changes.
+const loadSource = async (): Promise<void> => {
+  const option = sourceForSlug(sourceSlug.value)
+  if (!option) {
+    // Unknown source -> fall back to custom.
+    router.replace({ name: 'Topology', params: { source: CUSTOM_SOURCE_SLUG } })
+    return
   }
+  if (option.kind === 'discovered' && option.graph) {
+    // Discovered topologies are read-only; force View mode and load the graph.
+    store.setEditMode(false)
+    const graph = await store.loadDiscoveredSource(option.graph)
+    if (graph && store.discoveredGraph) {
+      renderDiscovered()
+      store.refreshStatus()
+    } else {
+      toast.add({
+        severity: 'error',
+        summary: 'Load failed',
+        detail: `Could not load ${option.label}.`,
+        life: 5000
+      })
+    }
+    return
+  }
+  // Custom source: clear any discovered graph, load the catalog + the ?view=.
+  store.clearDiscovered()
   await store.refreshCatalog()
   await loadFromRoute()
-})
+}
 
-// React to URL changes (bookmark opened, back/forward, manual edit). The
-// guard makes our own ?view= updates (syncRouteToView) no-ops here.
+onMounted(loadSource)
+
+// React to source switches (selector, deep link, back/forward).
+watch(sourceSlug, () => loadSource())
+
+// --- Discovered-view focus + Semantic Zoom Level ---------------------------
+
+// The single selected node (the Focus action's target), or null.
+const selectedNodeId = computed<string | null>(() =>
+  store.selectedIds.length === 1 ? store.selectedIds[0] : null
+)
+
+// Render the discovered graph, reduced to the focus node + SZL hops when a
+// focus is set (else the whole graph). Re-runs the auto-layout each time.
+const renderDiscovered = () => {
+  if (!store.discoveredGraph) return
+  const graph = focusSubgraph(store.discoveredGraph, store.focusNodeId, store.semanticZoomLevel)
+  canvasRef.value?.loadDiscoveredGraph(graph)
+}
+
+const focusOnSelection = () => {
+  if (selectedNodeId.value) store.setFocusNode(selectedNodeId.value)
+}
+const showAll = () => store.setFocusNode(null)
+const stepSzl = (delta: number) => store.setSemanticZoomLevel(store.semanticZoomLevel + delta)
+
+// Re-render the focused subgraph when focus or the zoom level changes.
+watch(
+  () => [store.focusNodeId, store.semanticZoomLevel],
+  () => {
+    if (isDiscovered.value) renderDiscovered()
+  }
+)
+
+// React to ?view= changes -- custom source only (discovered has no views).
+// The loadFromRoute guard makes our own syncRouteToView writes no-ops here.
 watch(
   () => route.query.view,
-  () => loadFromRoute()
+  () => {
+    if (!isDiscovered.value) loadFromRoute()
+  }
 )
 
 // Status auto-refresh: poll in View mode, frozen in Edit mode (so the
@@ -431,14 +561,36 @@ const onDelete = () => {
   gap: 0.5rem;
 }
 
+.source-chooser {
+  min-width: 12rem;
+}
+
 .view-chooser {
   min-width: 12rem;
+}
+
+.discovered-hint {
+  font-size: 0.85rem;
+  font-style: italic;
+  color: #6b7280;
 }
 
 .toolbar-controls {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+
+.szl-control {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.szl-value {
+  min-width: 3.5rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 .topology-body {

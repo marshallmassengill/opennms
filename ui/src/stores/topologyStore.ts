@@ -21,8 +21,21 @@
 ///
 
 import { defineStore } from 'pinia'
-import type { CanvasLabel, TopologyView, TopologyViewSummary } from '@/types/topology'
-import { listViews, getView, saveView, deleteView, getNodeSeverities } from '@/services/topologyService'
+import type {
+  CanvasLabel,
+  DiscoveredGraph,
+  DiscoveredGraphSource,
+  TopologyView,
+  TopologyViewSummary
+} from '@/types/topology'
+import {
+  listViews,
+  getView,
+  saveView,
+  deleteView,
+  getNodeSeverities,
+  loadDiscoveredGraph
+} from '@/services/topologyService'
 
 /**
  * The live canvas geometry the canvas component hands back on save:
@@ -74,6 +87,24 @@ export const useTopologyStore = defineStore('topologyStore', () => {
   const isSaving = ref<boolean>(false)
 
   /**
+   * Discovered (auto-generated) topology state -- the "view source" dimension
+   * beside the custom catalog. Holds the raw graph from the Graph REST API
+   * (the canvas auto-lays-out and renders it read-only). Separate from
+   * currentView, which is custom-only.
+   */
+  const discoveredGraph = ref<DiscoveredGraph | null>(null)
+  const isDiscoveredLoading = ref<boolean>(false)
+  const discoveredError = ref<boolean>(false)
+  /**
+   * Focus + Semantic Zoom Level for discovered topologies: when a focus node
+   * is set, the canvas renders only that node plus everything within
+   * `semanticZoomLevel` hops, keeping large graphs legible. Null focus = show
+   * the whole graph. Both reset whenever a new source loads.
+   */
+  const focusNodeId = ref<string | null>(null)
+  const semanticZoomLevel = ref<number>(2)
+
+  /**
    * Latest alarm status for placed nodes, keyed by real OnmsNode id. The
    * canvas colors nodes from this map. Empty until a status refresh runs;
    * refreshes are driven by the page (interval in View mode, manual in
@@ -106,6 +137,55 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     selectedIds.value = []
     labels.value = []
     placedNodeIds.value = new Set()
+  }
+
+  /**
+   * Load a discovered topology from the Graph REST API into discoveredGraph.
+   * The canvas watches this and renders it (auto-layout + read-only). Also
+   * seeds placedNodeIds with the graph's real node ids so refreshStatus colors
+   * them by severity. Returns the graph (raw, unpositioned) or false.
+   */
+  const loadDiscoveredSource = async (
+    source: DiscoveredGraphSource
+  ): Promise<DiscoveredGraph | false> => {
+    isDiscoveredLoading.value = true
+    discoveredError.value = false
+    focusNodeId.value = null
+    try {
+      const graph = await loadDiscoveredGraph(source)
+      if (graph === false) {
+        discoveredError.value = true
+        discoveredGraph.value = null
+        return false
+      }
+      discoveredGraph.value = graph
+      // refreshStatus keys off placedNodeIds (bare node-id strings).
+      const nodeIds = graph.nodes
+        .map((n) => n.nodeId)
+        .filter((id): id is number => id != null)
+        .map(String)
+      placedNodeIds.value = new Set(nodeIds)
+      selectedIds.value = []
+      return graph
+    } finally {
+      isDiscoveredLoading.value = false
+    }
+  }
+
+  /** Clear discovered state when switching back to a custom source. */
+  const clearDiscovered = () => {
+    discoveredGraph.value = null
+    discoveredError.value = false
+    focusNodeId.value = null
+  }
+
+  const setFocusNode = (id: string | null) => {
+    focusNodeId.value = id
+  }
+
+  // Clamp to a sane range so the stepper can't go negative or absurdly high.
+  const setSemanticZoomLevel = (level: number) => {
+    semanticZoomLevel.value = Math.max(0, Math.min(10, Math.round(level)))
   }
 
   /** Reload the catalog list (id + name) from the server. */
@@ -289,6 +369,15 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     isEditMode,
     isEdgeDrawMode,
     isSaving,
+    discoveredGraph,
+    isDiscoveredLoading,
+    discoveredError,
+    focusNodeId,
+    semanticZoomLevel,
+    loadDiscoveredSource,
+    clearDiscovered,
+    setFocusNode,
+    setSemanticZoomLevel,
     severities,
     selectedIds,
     placedNodeIds,
