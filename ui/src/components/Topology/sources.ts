@@ -42,32 +42,27 @@ export interface TopologySourceOption {
 
 export const CUSTOM_SOURCE_SLUG = 'custom'
 
+// Discovered enlinkd namespaces exposed by the Graph REST API
+// (/api/v2/graphs/enlinkd/<namespace>), mirroring the legacy topology
+// providers. `All` is the combined map; the rest are per-protocol/per-view.
+const enlinkd = (slug: string, label: string, namespace: string): TopologySourceOption => ({
+  slug,
+  label: `Discovered · ${label}`,
+  kind: 'discovered',
+  graph: { container: 'enlinkd', namespace }
+})
+
 export const TOPOLOGY_SOURCES: TopologySourceOption[] = [
   { slug: CUSTOM_SOURCE_SLUG, label: 'Custom', kind: 'custom' },
-  {
-    slug: 'enlinkd-l2',
-    label: 'Discovered · Layer 2',
-    kind: 'discovered',
-    graph: { container: 'enlinkd', namespace: 'nodes:Layer2' }
-  },
-  {
-    slug: 'enlinkd-l3',
-    label: 'Discovered · Layer 3',
-    kind: 'discovered',
-    graph: { container: 'enlinkd', namespace: 'nodes:Layer3' }
-  },
-  {
-    slug: 'enlinkd-lldp',
-    label: 'Discovered · LLDP',
-    kind: 'discovered',
-    graph: { container: 'enlinkd', namespace: 'nodes:Lldp' }
-  },
-  {
-    slug: 'enlinkd-cdp',
-    label: 'Discovered · CDP',
-    kind: 'discovered',
-    graph: { container: 'enlinkd', namespace: 'nodes:Cdp' }
-  }
+  enlinkd('enlinkd-l2', 'Layer 2', 'nodes:Layer2'),
+  enlinkd('enlinkd-l3', 'Layer 3', 'nodes:Layer3'),
+  enlinkd('enlinkd-lldp', 'LLDP', 'nodes:Lldp'),
+  enlinkd('enlinkd-cdp', 'CDP', 'nodes:Cdp'),
+  enlinkd('enlinkd-ospf', 'OSPF', 'nodes:Ospf'),
+  enlinkd('enlinkd-ospf-area', 'OSPF Areas', 'nodes:OspfArea'),
+  enlinkd('enlinkd-isis', 'IS-IS', 'nodes:Isis'),
+  enlinkd('enlinkd-bridge', 'Bridge', 'nodes:Bridge'),
+  enlinkd('enlinkd-routers', 'Routers & Subnets', 'nodes:NetworkRouter')
 ]
 
 export const sourceForSlug = (slug: string | undefined): TopologySourceOption | undefined =>

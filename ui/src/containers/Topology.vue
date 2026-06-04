@@ -26,15 +26,21 @@ License.
       <template #start>
         <div class="toolbar-start">
           <span class="topology-title">Topology (Preview)</span>
-          <!-- View-source dimension (above Edit/View): Custom vs discovered. -->
-          <PSelect
-            v-model="selectedSource"
-            :options="sourceOptions"
-            option-label="label"
-            option-value="slug"
-            class="source-chooser"
-            aria-label="Topology source"
+          <!-- View-source dimension (above Edit/View): Custom vs discovered.
+               A compact menu button so the toolbar stays uncluttered and new
+               providers slot in as submenus. Each choice navigates the route
+               (/topology/:source), so every source stays bookmarkable. -->
+          <PButton
+            :label="`Source: ${currentSourceShort}`"
+            icon="pi pi-chevron-down"
+            icon-pos="right"
+            severity="secondary"
+            outlined
+            aria-haspopup="true"
+            class="source-button"
+            @click="sourceMenuRef?.toggle($event)"
           />
+          <PTieredMenu ref="sourceMenuRef" :model="sourceMenuModel" popup />
           <!-- Custom-view management (hidden for read-only discovered sources). -->
           <template v-if="!isDiscovered">
             <PSelect
@@ -138,7 +144,19 @@ License.
       <!-- Palette is an Edit-mode tool (compose); hidden in View and for
            read-only discovered sources. -->
       <TopologyPalette v-if="store.isEditMode && !isDiscovered" class="topology-palette-pane" />
-      <TopologyCanvas ref="canvasRef" class="topology-canvas-pane" />
+      <div class="topology-canvas-wrap">
+        <TopologyCanvas
+          ref="canvasRef"
+          class="topology-canvas-pane"
+          @node-contextmenu="onNodeContextMenu"
+        />
+        <!-- Many discovered sources (OSPF, IS-IS, Bridge, …) have no links
+             unless that protocol was discovered; explain the empty canvas. -->
+        <div v-if="discoveredEmpty" class="discovered-empty">
+          <p>No discovered topology for <strong>{{ store.discoveredGraph?.label }}</strong>.</p>
+          <p class="discovered-empty-hint">Nothing was found from current discovery data for this source.</p>
+        </div>
+      </div>
       <!-- View: full read-only Inspector on the left (order -1).
            Edit: slim Properties panel on the right, only when a label/edge
            is selected (nodes have no editable props here). -->
@@ -151,6 +169,7 @@ License.
       />
     </div>
 
+    <PContextMenu ref="nodeMenuRef" :model="nodeMenuItems" />
     <PConfirmDialog />
     <PToast position="bottom-right" />
   </div>
@@ -164,6 +183,9 @@ import Select from 'primevue/select'
 import SelectButton from 'primevue/selectbutton'
 import Toast from 'primevue/toast'
 import ConfirmDialog from 'primevue/confirmdialog'
+import ContextMenu from 'primevue/contextmenu'
+import TieredMenu from 'primevue/tieredmenu'
+import type { MenuItem } from 'primevue/menuitem'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
 import { useRoute, useRouter } from 'vue-router'
@@ -179,10 +201,13 @@ import {
   sourceForSlug
 } from '@/components/Topology/sources'
 import { focusSubgraph } from '@/components/Topology/focus'
+import { nodeActionLinks } from '@/components/Topology/nodeActions'
 
 const PToolbar = Toolbar
 const PButton = Button
 const PSelect = Select
+const PContextMenu = ContextMenu
+const PTieredMenu = TieredMenu
 const PSelectButton = SelectButton
 const PToast = Toast
 const PConfirmDialog = ConfirmDialog
@@ -197,15 +222,33 @@ const canvasRef = ref<InstanceType<typeof TopologyCanvas> | null>(null)
 
 // View-source dimension (the route's :source param). 'custom' is the
 // hand-composed catalog; the rest are discovered (read-only) topologies.
-const sourceOptions = TOPOLOGY_SOURCES
 const sourceSlug = computed<string>(() => (route.params.source as string) || CUSTOM_SOURCE_SLUG)
 const isDiscovered = computed<boolean>(() => isDiscoveredSlug(sourceSlug.value))
 
-const selectedSource = computed<string>({
-  get: () => sourceSlug.value,
-  set: (slug) => {
-    if (slug !== sourceSlug.value) router.push({ name: 'Topology', params: { source: slug } })
-  }
+// Navigate to a source via the route so every source stays bookmarkable.
+const goToSource = (slug: string) => {
+  if (slug !== sourceSlug.value) router.push({ name: 'Topology', params: { source: slug } })
+}
+
+// Compact label for the source button (drop the "Discovered · " prefix).
+const currentSourceShort = computed<string>(
+  () => (sourceForSlug(sourceSlug.value)?.label ?? 'Custom').replace(/^Discovered · /, '')
+)
+
+// Grouped source menu: Custom as a leaf, discovered sources under a submenu
+// (new providers slot in as further submenus). Each command navigates the
+// route. The active source is marked.
+const sourceMenuRef = ref<{ toggle: (event: Event) => void } | null>(null)
+const sourceMenuModel = computed<MenuItem[]>(() => {
+  const item = (slug: string, label: string): MenuItem => ({
+    label,
+    class: slug === sourceSlug.value ? 'source-item-active' : undefined,
+    command: () => goToSource(slug)
+  })
+  const discovered = TOPOLOGY_SOURCES.filter((s) => s.kind === 'discovered').map((s) =>
+    item(s.slug, s.label.replace(/^Discovered · /, ''))
+  )
+  return [item(CUSTOM_SOURCE_SLUG, 'Custom'), { label: 'Discovered', items: discovered }]
 })
 
 const discoveredHint = computed<string>(() => {
@@ -213,6 +256,39 @@ const discoveredHint = computed<string>(() => {
   if (store.discoveredError) return 'Load failed'
   return store.discoveredGraph ? `${store.discoveredGraph.label} · read-only` : 'read-only'
 })
+
+// A discovered source that loaded successfully but has no vertices.
+const discoveredEmpty = computed<boolean>(
+  () =>
+    isDiscovered.value &&
+    !store.isDiscoveredLoading &&
+    !store.discoveredError &&
+    !!store.discoveredGraph &&
+    store.discoveredGraph.nodes.length === 0
+)
+
+// Right-click a node -> context menu of node-data cross-links (Node Details,
+// Resource Graphs, Events, Alarms), plus "Set as focus point" in discovered
+// views. Built per-click for the targeted node.
+const nodeMenuRef = ref<{ show: (event: Event) => void } | null>(null)
+const nodeMenuItems = ref<MenuItem[]>([])
+
+const onNodeContextMenu = (payload: { event: MouseEvent; nodeId: number | null; nodeKey: string }) => {
+  const { event, nodeId, nodeKey } = payload
+  const items: MenuItem[] = []
+  if (nodeId != null) {
+    for (const link of nodeActionLinks(nodeId)) {
+      items.push({ label: link.label, command: () => window.open(link.url, '_blank', 'noopener') })
+    }
+  }
+  if (isDiscovered.value) {
+    if (items.length) items.push({ separator: true })
+    items.push({ label: 'Set as focus point', command: () => store.setFocusNode(nodeKey) })
+  }
+  if (items.length === 0) return
+  nodeMenuItems.value = items
+  nodeMenuRef.value?.show(event)
+}
 
 // Segmented View/Edit control (clear, always-visible mode indicator).
 const modeOptions = [
@@ -263,9 +339,11 @@ const loadSource = async (): Promise<void> => {
     return
   }
   // Custom source: clear any discovered graph, load the catalog + the ?view=.
+  // force=true so the custom view re-renders even when currentView already names
+  // it (the canvas was showing a discovered graph until now).
   store.clearDiscovered()
   await store.refreshCatalog()
-  await loadFromRoute()
+  await loadFromRoute(true)
 }
 
 onMounted(loadSource)
@@ -380,11 +458,14 @@ const syncRouteToView = () => {
   }
 }
 
-// Load whatever ?view= names (or Default). No-op if already showing it (so our
-// own syncRouteToView writes don't trigger a reload).
-const loadFromRoute = async (): Promise<void> => {
+// Load whatever ?view= names (or Default). The "already showing it" short-circuit
+// avoids reloading on our own syncRouteToView writes -- but it must be bypassed
+// when arriving from a discovered source, where currentView still names the last
+// custom view even though the canvas is showing the discovered graph. Callers on
+// a source switch pass force=true so the custom view actually re-renders.
+const loadFromRoute = async (force = false): Promise<void> => {
   const wanted = (route.query.view as string) || 'Default'
-  if (store.currentView?.id && store.currentView.name === wanted) return
+  if (!force && store.currentView?.id && store.currentView.name === wanted) return
   const match = store.catalog.find((v) => v.name === wanted)
   if (match) {
     await openIntoCanvas(match.id)
@@ -561,8 +642,14 @@ const onDelete = () => {
   gap: 0.5rem;
 }
 
-.source-chooser {
-  min-width: 12rem;
+.source-button {
+  white-space: nowrap;
+}
+
+/* Mark the active source in the menu. */
+:deep(.source-item-active) > .p-tieredmenu-item-link,
+:deep(.source-item-active) > .p-menuitem-link {
+  font-weight: 700;
 }
 
 .view-chooser {
@@ -605,9 +692,34 @@ const onDelete = () => {
   flex: 0 0 auto;
 }
 
+/* Wraps the canvas so the discovered empty-state can overlay it. */
+.topology-canvas-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+  position: relative;
+  display: flex;
+}
+
 .topology-canvas-pane {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.discovered-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  pointer-events: none;
+  text-align: center;
+  color: #6b7280;
+}
+
+.discovered-empty-hint {
+  font-size: 0.85rem;
 }
 
 .topology-inspector-pane {
