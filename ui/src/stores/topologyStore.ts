@@ -148,6 +148,38 @@ export const useTopologyStore = defineStore('topologyStore', () => {
   }
 
   /**
+   * Save the current canvas as a NEW catalog entry under `name` (Save As).
+   * Builds a fresh candidate (no id) from the open view + snapshot and only
+   * adopts it as the current view when the save succeeds. This is the key
+   * difference from the old inline Save As: a failed Save As -- most commonly
+   * a duplicate name (the server replies 409) -- leaves the currently-open
+   * view untouched, rather than detaching it (losing its id) and renaming it
+   * to the conflicting name.
+   */
+  const saveCurrentViewAs = async (name: string, snapshot: CanvasSnapshot): Promise<boolean> => {
+    if (!currentView.value) return false
+    isSaving.value = true
+    try {
+      const candidate: TopologyView = {
+        ...currentView.value,
+        id: undefined,
+        name,
+        nodes: snapshot.nodes,
+        edges: snapshot.edges,
+        labels: labels.value.map((l) => ({ ...l })),
+        viewport: snapshot.viewport
+      }
+      const saved = await saveView(candidate)
+      if (saved === false) return false
+      currentView.value = saved
+      await refreshCatalog()
+      return true
+    } finally {
+      isSaving.value = false
+    }
+  }
+
+  /**
    * Load a saved view by id and make it current. Returns the view so the
    * caller (the page) can hand it to the canvas to render; the canvas, in
    * turn, repopulates labels and placed-node ids in this store.
@@ -265,6 +297,7 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     refreshCatalog,
     renameCurrent,
     saveCurrentView,
+    saveCurrentViewAs,
     openView,
     removeView,
     renameView,

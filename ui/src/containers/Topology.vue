@@ -293,11 +293,29 @@ const loadDefault = async (): Promise<void> => {
 
 const onSave = () => saveCurrent()
 
+// View names are unique in the catalog. Catch a collision up front so New /
+// Save As give a clear message instead of a doomed request -- and, for Save
+// As, so we never mutate the open view before a save that will fail.
+const nameInUse = (name: string): boolean => store.catalog.some((v) => v.name === name)
+
+const warnNameInUse = (name: string) =>
+  toast.add({
+    severity: 'warn',
+    summary: 'Name already in use',
+    detail: `A view named "${name}" already exists. Choose a different name.`,
+    life: 5000
+  })
+
 const onNew = async () => {
   const name = window.prompt('Name the new view:', '')
   if (!name || !name.trim()) return
+  const trimmed = name.trim()
+  if (nameInUse(trimmed)) {
+    warnNameInUse(trimmed)
+    return
+  }
   store.newView()
-  store.renameCurrent(name.trim())
+  store.renameCurrent(trimmed)
   store.setEditMode(true)
   if (store.currentView) canvasRef.value?.loadView(store.currentView)
   await saveCurrent()
@@ -305,12 +323,31 @@ const onNew = async () => {
 }
 
 const onSaveAs = async () => {
-  const name = window.prompt('Save view as:', store.currentView?.name ?? 'Untitled view')
-  if (!name || !name.trim() || !store.currentView) return
-  // Drop the id so the save creates a new catalog entry under the new name.
-  store.currentView = { ...store.currentView, id: undefined, name: name.trim() }
-  await saveCurrent()
-  syncRouteToView()
+  if (!store.currentView) return
+  const name = window.prompt('Save view as:', store.currentView.name)
+  if (!name || !name.trim()) return
+  const trimmed = name.trim()
+  // Up-front collision check: Save As must create a new entry, so an existing
+  // name (including the current view's own) is always a conflict.
+  if (nameInUse(trimmed)) {
+    warnNameInUse(trimmed)
+    return
+  }
+  const snapshot = canvasRef.value?.serialize()
+  if (!snapshot) return
+  // Non-destructive: the open view is replaced only if the save succeeds.
+  const ok = await store.saveCurrentViewAs(trimmed, snapshot)
+  toast.add(
+    ok
+      ? { severity: 'success', summary: 'View saved', detail: trimmed, life: 3000 }
+      : {
+          severity: 'error',
+          summary: 'Save failed',
+          detail: 'Could not save the view; the name may already be in use.',
+          life: 5000
+        }
+  )
+  if (ok) syncRouteToView()
 }
 
 const onRename = async () => {
