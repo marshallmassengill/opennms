@@ -36,6 +36,7 @@ License.
     @dragleave="onDragLeave"
     @drop.prevent="onDrop"
     @mousemove="onCanvasMouseMove"
+    @contextmenu.prevent
   >
     <div class="topology-canvas-stats">
       <span>Nodes: {{ placedCount }}</span>
@@ -103,12 +104,23 @@ import {
   LABEL_PREFIX,
   isLabelId,
   placedIdFor,
-  paletteIdFromPlacedId
+  paletteIdFromPlacedId,
+  nodeIdFromPlacedId
 } from '@/components/Topology/nodeIds'
 import { layoutDiscoveredGraph } from '@/components/Topology/layout'
 import type { CanvasEdge, CanvasLabel, CanvasNode, DiscoveredGraph, TopologyView } from '@/types/topology'
 
 const store = useTopologyStore()
+
+/**
+ * Right-click on a node bubbles up to the page, which hosts the context menu
+ * (it owns the router/source context for the actions). Payload carries the
+ * native event (for positioning), the real OnmsNode id (null for decorative
+ * nodes), and the canvas node key (for focus).
+ */
+const emit = defineEmits<{
+  (e: 'node-contextmenu', payload: { event: MouseEvent; nodeId: number | null; nodeKey: string }): void
+}>()
 
 const canvasEl = ref<HTMLDivElement>()
 const edgeCount = ref(0)
@@ -625,6 +637,17 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
     } else {
       store.selectOnly(e.node)
     }
+  })
+
+  s.on('rightClickNode', (e) => {
+    const original = e.event.original as MouseEvent | undefined
+    if (!original) return
+    original.preventDefault()
+    emit('node-contextmenu', {
+      event: original,
+      nodeId: nodeIdFromPlacedId(e.node),
+      nodeKey: e.node
+    })
   })
 
   s.on('clickEdge', (e) => {
