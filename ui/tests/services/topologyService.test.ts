@@ -21,7 +21,16 @@
 ///
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { listViews, getView, saveView, deleteView } from '@/services/topologyService'
+import {
+  listViews,
+  getView,
+  saveView,
+  deleteView,
+  getNodeNeighbors,
+  parseEnlinkdNeighbors,
+  loadDiscoveredGraph,
+  mapDiscoveredGraph
+} from '@/services/topologyService'
 import { v2 } from '@/services/axiosInstances'
 import type { TopologyView } from '@/types/topology'
 
@@ -180,6 +189,197 @@ describe('topologyService views catalog', () => {
     it('returns false on failure', async () => {
       vi.mocked(v2.delete).mockRejectedValue(new Error('nope'))
       expect(await deleteView('7')).toBe(false)
+    })
+  })
+})
+
+// Shape captured from a live /api/v2/enlinkd/{nodeId} response for a
+// distribution node: two core uplinks plus an access downlink over LLDP.
+const enlinkdResponse = {
+  lldpLinkNodes: [
+    {
+      lldpLocalPort: 'eth1(interfaceName:port-100011-1)',
+      lldpRemChassisId: 'core-01(macAddress:cs-100001)',
+      lldpRemChassisIdUrl: 'element/linkednode.jsp?node=100001',
+      lldpRemInfo: 'core-01',
+      ldpRemPort: 'eth-to-100011(interfaceName:port-100001)'
+    },
+    {
+      lldpLocalPort: 'eth2(interfaceName:port-100011-2)',
+      lldpRemChassisId: 'core-02(macAddress:cs-100002)',
+      lldpRemChassisIdUrl: 'element/linkednode.jsp?node=100002',
+      lldpRemInfo: 'core-02',
+      ldpRemPort: 'eth-to-100011(interfaceName:port-100002)'
+    },
+    {
+      lldpLocalPort: 'eth3(interfaceName:port-100011-3)',
+      lldpRemChassisId: 'access-01(macAddress:cs-100101)',
+      lldpRemChassisIdUrl: 'element/linkednode.jsp?node=100101',
+      lldpRemInfo: 'access-01',
+      ldpRemPort: 'eth-to-100011(interfaceName:port-100101)'
+    }
+  ],
+  bridgeLinkNodes: [],
+  cdpLinkNodes: [],
+  ospfLinkNodes: [],
+  isisLinkNodes: []
+}
+
+describe('topologyService discovered neighbors', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  describe('parseEnlinkdNeighbors', () => {
+    it('flattens LLDP links into normalized neighbors with parsed node ids', () => {
+      const neighbors = parseEnlinkdNeighbors(enlinkdResponse, 100011)
+      expect(neighbors).toEqual([
+        {
+          neighborNodeId: 100001,
+          neighborLabel: 'core-01',
+          linkType: 'lldp',
+          localPort: 'eth1(interfaceName:port-100011-1)',
+          remotePort: 'eth-to-100011(interfaceName:port-100001)'
+        },
+        {
+          neighborNodeId: 100002,
+          neighborLabel: 'core-02',
+          linkType: 'lldp',
+          localPort: 'eth2(interfaceName:port-100011-2)',
+          remotePort: 'eth-to-100011(interfaceName:port-100002)'
+        },
+        {
+          neighborNodeId: 100101,
+          neighborLabel: 'access-01',
+          linkType: 'lldp',
+          localPort: 'eth3(interfaceName:port-100011-3)',
+          remotePort: 'eth-to-100011(interfaceName:port-100101)'
+        }
+      ])
+    })
+
+    it('drops self-links and collapses a neighbor reached over multiple ports', () => {
+      const data = {
+        lldpLinkNodes: [
+          { lldpRemChassisIdUrl: 'element/linkednode.jsp?node=100011', lldpRemInfo: 'self' },
+          { lldpRemChassisIdUrl: 'element/linkednode.jsp?node=100001', lldpRemInfo: 'core-01' },
+          { lldpRemChassisIdUrl: 'element/linkednode.jsp?node=100001', lldpRemInfo: 'core-01' }
+        ]
+      }
+      const neighbors = parseEnlinkdNeighbors(data, 100011)
+      expect(neighbors).toHaveLength(1)
+      expect(neighbors[0].neighborNodeId).toBe(100001)
+    })
+
+    it('falls back to a generated label when no remote name field is present', () => {
+      const data = { cdpLinkNodes: [{ cdpCacheAddressUrl: 'element/linkednode.jsp?node=42' }] }
+      const neighbors = parseEnlinkdNeighbors(data, 1)
+      expect(neighbors).toEqual([
+        { neighborNodeId: 42, neighborLabel: 'Node 42', linkType: 'cdp', localPort: undefined, remotePort: undefined }
+      ])
+    })
+
+    it('returns an empty array for empty or missing data', () => {
+      expect(parseEnlinkdNeighbors(null, 1)).toEqual([])
+      expect(parseEnlinkdNeighbors({}, 1)).toEqual([])
+      expect(parseEnlinkdNeighbors({ lldpLinkNodes: [] }, 1)).toEqual([])
+    })
+  })
+
+  describe('getNodeNeighbors', () => {
+    it('GETs the enlinkd endpoint and returns parsed neighbors', async () => {
+      vi.mocked(v2.get).mockResolvedValue({ data: enlinkdResponse })
+      const neighbors = await getNodeNeighbors(100011)
+      expect(v2.get).toHaveBeenCalledWith('enlinkd/100011')
+      expect(neighbors.map((n) => n.neighborNodeId)).toEqual([100001, 100002, 100101])
+    })
+
+    it('returns an empty array on request failure', async () => {
+      vi.mocked(v2.get).mockRejectedValue(new Error('boom'))
+      expect(await getNodeNeighbors(100011)).toEqual([])
+    })
+  })
+})
+
+// Shape captured from a live /api/v2/graphs/enlinkd/nodes:Layer2 response.
+const layer2Source = { container: 'enlinkd', namespace: 'nodes:Layer2' }
+const graphApiResponse = {
+  label: 'Layer2',
+  namespace: 'nodes:Layer2',
+  vertices: [
+    { id: '100001', label: 'core-01', nodeID: '100001', iconKey: 'linkd.system', x: '0', y: '0' },
+    { id: '100002', label: 'core-02', nodeID: '100002', iconKey: 'linkd.system', x: '0', y: '0' }
+  ],
+  edges: [
+    {
+      id: '572|581',
+      label: 'nodes:Layer2:572|581',
+      source: { namespace: 'nodes:Layer2', id: '100001' },
+      target: { namespace: 'nodes:Layer2', id: '100002' }
+    }
+  ]
+}
+
+describe('topologyService discovered graph (Graph REST API)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  describe('mapDiscoveredGraph', () => {
+    it('maps node vertices to placed-<nodeId> CanvasNodes and edges to discovered CanvasEdges', () => {
+      const graph = mapDiscoveredGraph(graphApiResponse, layer2Source)
+      expect(graph.label).toBe('Layer2')
+      expect(graph.source).toEqual(layer2Source)
+      // Real node vertices reuse the custom-view placed-<nodeId> convention so
+      // they inherit severity coloring + inspector detail.
+      expect(graph.nodes).toEqual([
+        { id: 'placed-100001', nodeId: 100001, label: 'core-01', x: 0, y: 0, icon: 'linkd.system' },
+        { id: 'placed-100002', nodeId: 100002, label: 'core-02', x: 0, y: 0, icon: 'linkd.system' }
+      ])
+      expect(graph.edges).toEqual([
+        { id: '572|581', sourceId: 'placed-100001', targetId: 'placed-100002', origin: 'discovered' }
+      ])
+    })
+
+    it('drops edges whose endpoints are not present as vertices', () => {
+      const data = {
+        vertices: [{ id: '100001', label: 'core-01', nodeID: '100001' }],
+        edges: [{ id: 'e1', source: { id: '100001' }, target: { id: '999' } }]
+      }
+      expect(mapDiscoveredGraph(data, layer2Source).edges).toEqual([])
+    })
+
+    it('falls back to a disc- id and undefined nodeId for a non-node vertex', () => {
+      const data = { vertices: [{ id: 'group-a', label: 'Group A' }], edges: [] }
+      const graph = mapDiscoveredGraph(data, layer2Source)
+      expect(graph.nodes[0]).toEqual({ id: 'disc-group-a', nodeId: undefined, label: 'Group A', x: 0, y: 0, icon: undefined })
+    })
+
+    it('handles an empty graph', () => {
+      expect(mapDiscoveredGraph({}, layer2Source)).toEqual({
+        source: layer2Source,
+        label: 'nodes:Layer2',
+        nodes: [],
+        edges: []
+      })
+    })
+  })
+
+  describe('loadDiscoveredGraph', () => {
+    it('GETs the container/namespace and returns the mapped graph', async () => {
+      vi.mocked(v2.get).mockResolvedValue({ data: graphApiResponse })
+      const graph = await loadDiscoveredGraph(layer2Source)
+      expect(v2.get).toHaveBeenCalledWith('graphs/enlinkd/nodes:Layer2')
+      expect(graph).not.toBe(false)
+      const g = graph as Exclude<typeof graph, false>
+      expect(g.nodes).toHaveLength(2)
+      expect(g.edges).toHaveLength(1)
+      expect(g.nodes[0].id).toBe('placed-100001')
+    })
+
+    it('returns false on request failure', async () => {
+      vi.mocked(v2.get).mockRejectedValue(new Error('boom'))
+      expect(await loadDiscoveredGraph(layer2Source)).toBe(false)
     })
   })
 })

@@ -22,7 +22,17 @@
 
 import { v2 } from './axiosInstances'
 import { getNodes } from './nodeService'
-import type { TopologyView, TopologyViewSummary } from '@/types/topology'
+import { placedIdFor } from '@/components/Topology/nodeIds'
+import type {
+  CanvasEdge,
+  CanvasNode,
+  DiscoveredGraph,
+  DiscoveredGraphSource,
+  DiscoveredLinkType,
+  DiscoveredNeighbor,
+  TopologyView,
+  TopologyViewSummary
+} from '@/types/topology'
 import type { NodeApiResponse, QueryParameters } from '@/types'
 import { aggregateNodeSeverities } from '@/components/Topology/severity'
 
@@ -173,11 +183,217 @@ const deleteView = async (id: string): Promise<boolean> => {
   }
 }
 
+/**
+ * Discovered-topology neighbors for a node, from /api/v2/enlinkd/{nodeId}.
+ *
+ * That endpoint returns one array per discovery protocol (LLDP, CDP, OSPF,
+ * IS-IS, bridge), each with protocol-specific field names. Phase 2 (assisted
+ * composition) only needs, per neighbor: which node it is, a display label,
+ * and how the link was found -- so this flattens all the protocol lists into
+ * one normalized DiscoveredNeighbor[].
+ *
+ * The remote node id is not a first-class field on the wire; it is embedded
+ * in the `...Url` fields (e.g. "element/linkednode.jsp?node=123"), so it is
+ * parsed out of whichever Url field carries it. Links whose remote node can't
+ * be resolved to an id -- or that point back at the node itself -- are
+ * dropped (they can't be placed or matched on the canvas), and a neighbor
+ * reached over several ports collapses to a single entry per protocol.
+ */
+const enlinkdEndpoint = 'enlinkd'
+
+const PROTOCOL_LINK_FIELDS: Array<{ field: string; type: DiscoveredLinkType }> = [
+  { field: 'lldpLinkNodes', type: 'lldp' },
+  { field: 'cdpLinkNodes', type: 'cdp' },
+  { field: 'ospfLinkNodes', type: 'ospf' },
+  { field: 'isisLinkNodes', type: 'isis' },
+  { field: 'bridgeLinkNodes', type: 'bridge' }
+]
+
+const NODE_URL_RE = /node=(\d+)/
+// Field-name fragments (lowercased) that tend to carry a human-readable
+// remote node name across the various protocol DTOs.
+const REMOTE_LABEL_HINTS = ['reminfo', 'remsysname', 'cachedeviceid', 'remrouterid', 'neighsysid']
+const LOCAL_PORT_HINT = 'localport'
+const REMOTE_PORT_HINT = 'remport'
+
+const firstStringField = (
+  link: Record<string, unknown>,
+  predicate: (lowerKey: string, value: string) => boolean
+): string | undefined => {
+  for (const [key, value] of Object.entries(link)) {
+    if (typeof value === 'string' && value && predicate(key.toLowerCase(), value)) {
+      return value
+    }
+  }
+  return undefined
+}
+
+const parseNeighborNodeId = (link: Record<string, unknown>): number | undefined => {
+  const urlValue = firstStringField(link, (k, v) => k.includes('url') && NODE_URL_RE.test(v))
+  if (!urlValue) return undefined
+  const match = NODE_URL_RE.exec(urlValue)
+  return match ? Number(match[1]) : undefined
+}
+
+/**
+ * Pure transform of an enlinkd response into normalized neighbors. Exported
+ * so it can be unit-tested against captured payloads without HTTP.
+ */
+const parseEnlinkdNeighbors = (
+  data: Record<string, unknown> | null | undefined,
+  nodeId: number
+): DiscoveredNeighbor[] => {
+  if (!data) return []
+  const neighbors: DiscoveredNeighbor[] = []
+  const seen = new Set<number>()
+  for (const { field, type } of PROTOCOL_LINK_FIELDS) {
+    const links = data[field]
+    if (!Array.isArray(links)) continue
+    for (const raw of links) {
+      if (!raw || typeof raw !== 'object') continue
+      const link = raw as Record<string, unknown>
+      const neighborNodeId = parseNeighborNodeId(link)
+      if (neighborNodeId == null || neighborNodeId === nodeId || seen.has(neighborNodeId)) continue
+      seen.add(neighborNodeId)
+      neighbors.push({
+        neighborNodeId,
+        neighborLabel:
+          firstStringField(link, (k) => REMOTE_LABEL_HINTS.some((h) => k.includes(h))) ??
+          `Node ${neighborNodeId}`,
+        linkType: type,
+        localPort: firstStringField(link, (k) => k.includes(LOCAL_PORT_HINT)),
+        remotePort: firstStringField(link, (k) => k.includes(REMOTE_PORT_HINT))
+      })
+    }
+  }
+  return neighbors
+}
+
+const getNodeNeighbors = async (nodeId: number): Promise<DiscoveredNeighbor[]> => {
+  try {
+    const resp = await v2.get<Record<string, unknown>>(`${enlinkdEndpoint}/${nodeId}`)
+    return parseEnlinkdNeighbors(resp.data, nodeId)
+  } catch (err) {
+    return []
+  }
+}
+
+/**
+ * Discovered (auto-generated) topology graph from the Graph REST API
+ * /api/v2/graphs/{container}/{namespace} (e.g. enlinkd L2 =
+ * enlinkd/nodes:Layer2). This is the source for the *discovered* view type;
+ * it's provider-agnostic, so BSM/VMware/GraphML are just other
+ * container/namespace pairs.
+ *
+ * The wire shape: a vertex carries `id` (vertex id, = node id for node
+ * vertices), `label`, `nodeID` (the real OnmsNode id), `iconKey`, and x/y that
+ * are always "0" (no stored layout -- the front-end auto-lays-out). An edge
+ * carries `id` plus `source`/`target` refs whose `id` is a vertex id. We map
+ * vertices -> CanvasNode and edges -> CanvasEdge (origin:'discovered'),
+ * dropping any edge whose endpoints aren't present as vertices.
+ */
+const graphsEndpoint = 'graphs'
+
+interface GraphApiVertex {
+  id: string
+  label?: string
+  nodeID?: string
+  iconKey?: string
+  tooltipText?: string
+}
+
+interface GraphApiEdgeRef {
+  namespace?: string
+  id: string
+}
+
+interface GraphApiEdge {
+  id: string
+  label?: string
+  source?: GraphApiEdgeRef
+  target?: GraphApiEdgeRef
+}
+
+interface GraphApiResponse {
+  vertices?: GraphApiVertex[]
+  edges?: GraphApiEdge[]
+  label?: string
+  namespace?: string
+}
+
+/**
+ * Canvas id for a discovered vertex. When the vertex maps to a real OnmsNode
+ * we reuse the custom-view `placed-<nodeId>` convention, so discovered nodes
+ * inherit severity coloring and the inspector's node detail for free. A vertex
+ * without a numeric node id (e.g. a group/category vertex from another
+ * provider) falls back to a `disc-` prefix so it can't collide or be mistaken
+ * for a node.
+ */
+const discoveredNodeCanvasId = (vertex: GraphApiVertex): string =>
+  vertex.nodeID != null && /^\d+$/.test(vertex.nodeID)
+    ? placedIdFor(vertex.nodeID)
+    : `disc-${vertex.id}`
+
+/**
+ * Pure transform of a Graph REST API response into a normalized
+ * DiscoveredGraph. Exported for unit testing against captured payloads.
+ * Positions are zeroed -- the caller auto-lays-out before rendering.
+ */
+const mapDiscoveredGraph = (
+  data: GraphApiResponse,
+  source: DiscoveredGraphSource
+): DiscoveredGraph => {
+  const vertices = data.vertices ?? []
+  // vertex id (the id edges reference) -> canvas node id
+  const canvasIdByVertexId = new Map(vertices.map((v) => [v.id, discoveredNodeCanvasId(v)]))
+  const nodes: CanvasNode[] = vertices.map((v) => ({
+    id: canvasIdByVertexId.get(v.id) as string,
+    nodeId: v.nodeID != null && /^\d+$/.test(v.nodeID) ? Number(v.nodeID) : undefined,
+    label: v.label ?? v.id,
+    x: 0,
+    y: 0,
+    icon: v.iconKey
+  }))
+  const edges: CanvasEdge[] = (data.edges ?? [])
+    .filter(
+      (e) =>
+        e.source &&
+        e.target &&
+        canvasIdByVertexId.has(e.source.id) &&
+        canvasIdByVertexId.has(e.target.id)
+    )
+    .map((e) => ({
+      id: e.id,
+      sourceId: canvasIdByVertexId.get(e.source!.id) as string,
+      targetId: canvasIdByVertexId.get(e.target!.id) as string,
+      origin: 'discovered' as const
+    }))
+  return { source, label: data.label ?? source.namespace, nodes, edges }
+}
+
+const loadDiscoveredGraph = async (
+  source: DiscoveredGraphSource
+): Promise<DiscoveredGraph | false> => {
+  try {
+    const resp = await v2.get<GraphApiResponse>(
+      `${graphsEndpoint}/${source.container}/${source.namespace}`
+    )
+    if (!resp.data) return false
+    return mapDiscoveredGraph(resp.data, source)
+  } catch (err) {
+    return false
+  }
+}
+
 export {
   fetchPaletteNodes,
   getNodeSeverities,
   listViews,
   getView,
   saveView,
-  deleteView
+  deleteView,
+  getNodeNeighbors,
+  parseEnlinkdNeighbors,
+  loadDiscoveredGraph,
+  mapDiscoveredGraph
 }

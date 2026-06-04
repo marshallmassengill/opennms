@@ -96,3 +96,51 @@ export interface TopologyViewSummary {
   id: string
   name: string
 }
+
+/**
+ * The discovery protocol a link was learned from. Phase 2 (assisted
+ * composition) treats all of these uniformly; the value is kept so the UI
+ * can label/tooltip a discovered link by how it was found.
+ */
+export type DiscoveredLinkType = 'lldp' | 'cdp' | 'ospf' | 'isis' | 'bridge'
+
+/**
+ * A discovered neighbor of a node, normalized from the per-protocol link
+ * lists returned by /api/v2/enlinkd/{nodeId}. The neighbor's node id is the
+ * key the canvas needs to place it or match a ghost link; `label` and the
+ * optional port fields are for display. Phase 2 uses these for the neighbor
+ * tray and ghost-edge link hints.
+ */
+export interface DiscoveredNeighbor {
+  neighborNodeId: number
+  neighborLabel: string
+  linkType: DiscoveredLinkType
+  localPort?: string
+  remotePort?: string
+}
+
+/**
+ * Identifies a discovered (auto-generated) topology to load from the Graph
+ * REST API: a container plus a namespace. E.g. enlinkd L2 is
+ * { container: 'enlinkd', namespace: 'nodes:Layer2' }. This is the "view
+ * source" dimension that sits above the custom Edit/View modes; new providers
+ * (BSM, VMware, GraphML) are just other container/namespace pairs.
+ */
+export interface DiscoveredGraphSource {
+  container: string
+  namespace: string
+}
+
+/**
+ * A discovered topology graph, normalized into the canvas model. Unlike a
+ * custom view, the structure is read-only (it comes from discovery) and the
+ * Graph API returns no meaningful positions (x/y = 0), so the front-end
+ * auto-lays-out the nodes. Node `nodeId` carries the real OnmsNode id (for
+ * status coloring + inspector); edges are all origin:'discovered'.
+ */
+export interface DiscoveredGraph {
+  source: DiscoveredGraphSource
+  label: string
+  nodes: CanvasNode[]
+  edges: CanvasEdge[]
+}
