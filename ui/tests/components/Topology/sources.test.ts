@@ -25,42 +25,84 @@ import {
   TOPOLOGY_SOURCES,
   CUSTOM_SOURCE_SLUG,
   sourceForSlug,
-  isDiscoveredSlug
+  isDiscoveredSlug,
+  variantForKey,
+  graphSourceFor
 } from '@/components/Topology/sources'
 
 describe('topology sources registry', () => {
-  it('has unique slugs', () => {
+  it('has unique slugs and a short discovered menu (Custom + Layer 2 + Layer 3)', () => {
     const slugs = TOPOLOGY_SOURCES.map((s) => s.slug)
     expect(new Set(slugs).size).toBe(slugs.length)
+    expect(slugs).toEqual([CUSTOM_SOURCE_SLUG, 'layer2', 'layer3'])
   })
 
-  it('every discovered source carries a Graph API container + namespace; custom does not', () => {
+  it('discovered groups carry a container + variants (variants[0] = default); custom does not', () => {
     for (const s of TOPOLOGY_SOURCES) {
       if (s.kind === 'discovered') {
-        expect(s.graph?.container).toBeTruthy()
-        expect(s.graph?.namespace).toBeTruthy()
+        expect(s.container).toBe('enlinkd')
+        expect(s.variants?.length).toBeGreaterThan(1)
+        for (const v of s.variants!) expect(v.namespace).toMatch(/^nodes/)
       } else {
-        expect(s.graph).toBeUndefined()
+        expect(s.container).toBeUndefined()
+        expect(s.variants).toBeUndefined()
       }
     }
   })
 
-  it('includes the custom source and the enlinkd Layer 2 map', () => {
-    expect(sourceForSlug(CUSTOM_SOURCE_SLUG)?.kind).toBe('custom')
-    expect(sourceForSlug('enlinkd-l2')?.graph).toEqual({ container: 'enlinkd', namespace: 'nodes:Layer2' })
+  it('Layer 2 / Layer 3 cover the expected enlinkd namespaces as variants', () => {
+    const ns = (slug: string) => sourceForSlug(slug)!.variants!.map((v) => v.namespace)
+    expect(ns('layer2')).toEqual(['nodes:Layer2', 'nodes:Lldp', 'nodes:Cdp', 'nodes:Bridge'])
+    expect(ns('layer3')).toEqual([
+      'nodes:Layer3',
+      'nodes:Ospf',
+      'nodes:OspfArea',
+      'nodes:Isis',
+      'nodes:NetworkRouter'
+    ])
   })
 
   it('classifies slugs as discovered or not', () => {
-    expect(isDiscoveredSlug('enlinkd-l2')).toBe(true)
+    expect(isDiscoveredSlug('layer2')).toBe(true)
     expect(isDiscoveredSlug(CUSTOM_SOURCE_SLUG)).toBe(false)
     expect(isDiscoveredSlug('nonexistent')).toBe(false)
     expect(isDiscoveredSlug(undefined)).toBe(false)
   })
 
-  it('covers the enlinkd namespaces exposed by the Graph API', () => {
-    const namespaces = TOPOLOGY_SOURCES.filter((s) => s.kind === 'discovered').map((s) => s.graph!.namespace)
-    for (const ns of ['nodes:Layer2', 'nodes:Layer3', 'nodes:Lldp', 'nodes:Cdp', 'nodes:Ospf', 'nodes:OspfArea', 'nodes:Isis', 'nodes:Bridge', 'nodes:NetworkRouter']) {
-      expect(namespaces).toContain(ns)
-    }
+  describe('variantForKey', () => {
+    const layer2 = sourceForSlug('layer2')
+
+    it('resolves a known variant', () => {
+      expect(variantForKey(layer2, 'lldp')?.namespace).toBe('nodes:Lldp')
+    })
+
+    it('falls back to the default (variants[0]) for a missing/unknown key', () => {
+      expect(variantForKey(layer2, undefined)?.namespace).toBe('nodes:Layer2')
+      expect(variantForKey(layer2, 'bogus')?.namespace).toBe('nodes:Layer2')
+    })
+
+    it('returns undefined for a non-discovered source', () => {
+      expect(variantForKey(sourceForSlug(CUSTOM_SOURCE_SLUG), 'x')).toBeUndefined()
+    })
+  })
+
+  describe('graphSourceFor', () => {
+    it('builds the Graph API source for a (group, variant)', () => {
+      expect(graphSourceFor(sourceForSlug('layer3'), 'ospf-area')).toEqual({
+        container: 'enlinkd',
+        namespace: 'nodes:OspfArea'
+      })
+    })
+
+    it('uses the default variant when the key is absent', () => {
+      expect(graphSourceFor(sourceForSlug('layer3'), undefined)).toEqual({
+        container: 'enlinkd',
+        namespace: 'nodes:Layer3'
+      })
+    })
+
+    it('returns undefined for the custom source', () => {
+      expect(graphSourceFor(sourceForSlug(CUSTOM_SOURCE_SLUG), undefined)).toBeUndefined()
+    })
   })
 })

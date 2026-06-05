@@ -76,7 +76,21 @@ License.
               @click="onDelete"
             />
           </template>
-          <span v-else class="discovered-hint">{{ discoveredHint }}</span>
+          <template v-else>
+            <!-- Variant picker: which representation of this discovered source
+                 (Combined / a single protocol / OSPF-by-area). Bookmarkable
+                 via ?variant=. -->
+            <PSelect
+              v-if="variantOptions.length > 1"
+              v-model="selectedVariant"
+              :options="variantOptions"
+              option-label="label"
+              option-value="key"
+              class="variant-chooser"
+              aria-label="Topology representation"
+            />
+            <span class="discovered-hint">{{ discoveredHint }}</span>
+          </template>
         </div>
       </template>
       <template #end>
@@ -198,7 +212,9 @@ import {
   CUSTOM_SOURCE_SLUG,
   TOPOLOGY_SOURCES,
   isDiscoveredSlug,
-  sourceForSlug
+  sourceForSlug,
+  variantForKey,
+  graphSourceFor
 } from '@/components/Topology/sources'
 import { focusSubgraph } from '@/components/Topology/focus'
 import { nodeActionLinks } from '@/components/Topology/nodeActions'
@@ -225,15 +241,35 @@ const canvasRef = ref<InstanceType<typeof TopologyCanvas> | null>(null)
 const sourceSlug = computed<string>(() => (route.params.source as string) || CUSTOM_SOURCE_SLUG)
 const isDiscovered = computed<boolean>(() => isDiscoveredSlug(sourceSlug.value))
 
+const currentSource = computed(() => sourceForSlug(sourceSlug.value))
+
 // Navigate to a source via the route so every source stays bookmarkable.
+// Dropping the query resets the variant to the group's default.
 const goToSource = (slug: string) => {
   if (slug !== sourceSlug.value) router.push({ name: 'Topology', params: { source: slug } })
 }
 
-// Compact label for the source button (drop the "Discovered · " prefix).
-const currentSourceShort = computed<string>(
-  () => (sourceForSlug(sourceSlug.value)?.label ?? 'Custom').replace(/^Discovered · /, '')
-)
+// Compact label for the source button.
+const currentSourceShort = computed<string>(() => currentSource.value?.label ?? 'Custom')
+
+// --- Discovered-source variant (representation) ----------------------------
+// The variant (Combined / a single protocol / OSPF-by-area …) is a bookmarkable
+// `?variant=<key>` query; absent => the group's default (variants[0]).
+const variantKey = computed<string | undefined>(() => {
+  const v = route.query.variant
+  return typeof v === 'string' ? v : undefined
+})
+const variantOptions = computed(() => currentSource.value?.variants ?? [])
+const selectedVariant = computed<string>({
+  get: () => variantForKey(currentSource.value, variantKey.value)?.key ?? '',
+  set: (key) => {
+    const variants = currentSource.value?.variants
+    if (!variants) return
+    // Clean URL for the default variant; explicit ?variant otherwise.
+    const query = key === variants[0].key ? {} : { variant: key }
+    router.push({ name: 'Topology', params: { source: sourceSlug.value }, query })
+  }
+})
 
 // Grouped source menu: Custom as a leaf, discovered sources under a submenu
 // (new providers slot in as further submenus). Each command navigates the
@@ -254,7 +290,7 @@ const sourceMenuModel = computed<MenuItem[]>(() => {
 const discoveredHint = computed<string>(() => {
   if (store.isDiscoveredLoading) return 'Loading…'
   if (store.discoveredError) return 'Load failed'
-  return store.discoveredGraph ? `${store.discoveredGraph.label} · read-only` : 'read-only'
+  return 'read-only'
 })
 
 // A discovered source that loaded successfully but has no vertices.
@@ -321,10 +357,12 @@ const loadSource = async (): Promise<void> => {
     router.replace({ name: 'Topology', params: { source: CUSTOM_SOURCE_SLUG } })
     return
   }
-  if (option.kind === 'discovered' && option.graph) {
-    // Discovered topologies are read-only; force View mode and load the graph.
+  if (option.kind === 'discovered') {
+    // Discovered topologies are read-only; force View mode and load the graph
+    // for the selected variant (or the group's default).
     store.setEditMode(false)
-    const graph = await store.loadDiscoveredSource(option.graph)
+    const gs = graphSourceFor(option, variantKey.value)
+    const graph = gs ? await store.loadDiscoveredSource(gs) : false
     if (graph && store.discoveredGraph) {
       renderDiscovered()
       store.refreshStatus()
@@ -348,8 +386,11 @@ const loadSource = async (): Promise<void> => {
 
 onMounted(loadSource)
 
-// React to source switches (selector, deep link, back/forward).
-watch(sourceSlug, () => loadSource())
+// React to source or variant changes (selector, deep link, back/forward).
+// One watcher over both so a group switch (which changes the slug and clears
+// the variant in the same tick) reloads only once. loadSource handles the
+// custom vs discovered branch; ?view= changes on custom are handled separately.
+watch([sourceSlug, variantKey], () => loadSource())
 
 // --- Discovered-view focus + Semantic Zoom Level ---------------------------
 
@@ -644,6 +685,10 @@ const onDelete = () => {
 
 .source-button {
   white-space: nowrap;
+}
+
+.variant-chooser {
+  min-width: 12rem;
 }
 
 /* Mark the active source in the menu. */
