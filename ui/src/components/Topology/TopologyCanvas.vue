@@ -97,9 +97,11 @@ License.
 import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import Graph from 'graphology'
 import Sigma from 'sigma'
+import { createNodeImageProgram } from '@sigma/node-image'
 import { PALETTE_DRAG_MIME, type PaletteDragPayload } from '@/components/Topology/dragTypes'
 import { useTopologyStore } from '@/stores/topologyStore'
 import { severityColor } from '@/components/Topology/severity'
+import { DEVICE_ICON_SVG } from '@/components/Topology/deviceIcons'
 import {
   LABEL_PREFIX,
   isLabelId,
@@ -284,20 +286,28 @@ const mountSigma = (g: Graph) => {
     // so a node stays exactly where it's dropped/saved regardless of how many
     // other nodes are present. Framing is handled explicitly by fitCamera().
     autoRescale: false,
+    // Recognized device types render as a glyph (drawn over the node's color
+    // disc) via the image node program; everything else stays a plain circle.
+    nodeProgramClasses: {
+      image: createNodeImageProgram({ drawingMode: 'background', padding: 0.15 })
+    },
     // Color placed nodes by their node's current alarm severity (held in
     // the store, refreshed on an interval in View mode). Nodes without a
     // known severity -- decorative/mock nodes, or before a status fetch --
-    // keep their own color. The severities watcher below triggers a
-    // sigma.refresh() so color changes repaint.
+    // keep their own color. A known device type additionally renders an icon
+    // (sysObjectId-derived; store.nodeIconIds). The severities/nodeIconIds
+    // watchers below trigger a sigma.refresh() so changes repaint.
     nodeReducer: (node, attrs) => {
       const paletteId = paletteIdFromPlacedId(node)
+      let res = attrs
       if (paletteId !== null && /^\d+$/.test(paletteId)) {
-        const severity = store.severities[Number(paletteId)]
-        if (severity) {
-          return { ...attrs, color: severityColor(severity) }
-        }
+        const nid = Number(paletteId)
+        const severity = store.severities[nid]
+        if (severity) res = { ...res, color: severityColor(severity) }
+        const iconId = store.nodeIconIds[nid]
+        if (iconId) res = { ...res, type: 'image', image: DEVICE_ICON_SVG[iconId] }
       }
-      return attrs
+      return res
     },
     // Selected edges render highlighted in blue without us mutating
     // the edge's actual color attribute; the reducer pulls a
@@ -1020,6 +1030,13 @@ watch(
  */
 watch(
   () => store.severities,
+  () => sigma?.refresh(),
+  { deep: true }
+)
+
+// Repaint when device icons resolve (fetched when the placed-node set changes).
+watch(
+  () => store.nodeIconIds,
   () => sigma?.refresh(),
   { deep: true }
 )

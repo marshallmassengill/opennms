@@ -34,8 +34,10 @@ import {
   saveView,
   deleteView,
   getNodeSeverities,
+  getNodeIconIds,
   loadDiscoveredGraph
 } from '@/services/topologyService'
+import type { DeviceIconId } from '@/components/Topology/deviceIcons'
 
 /**
  * The live canvas geometry the canvas component hands back on save:
@@ -131,6 +133,29 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     }
     severities.value = await getNodeSeverities(ids)
   }
+
+  /**
+   * Device-icon id per placed node (by real OnmsNode id), resolved from each
+   * node's sysObjectId the legacy way. The canvas renders a glyph for nodes in
+   * this map; others stay plain circles. Unlike severity, icons are static, so
+   * this is refreshed when the placed-node set changes (below) rather than on
+   * the status poll -- so icons show in Edit mode too.
+   */
+  const nodeIconIds = ref<Record<number, DeviceIconId>>({})
+
+  const refreshDeviceIcons = async (): Promise<void> => {
+    const ids = Array.from(placedNodeIds.value)
+      .map((id) => Number(id))
+      .filter((n) => Number.isInteger(n))
+    nodeIconIds.value = ids.length === 0 ? {} : await getNodeIconIds(ids)
+  }
+
+  // Whenever the placed-node set is replaced (view load, discovered load, a
+  // palette drop), refresh the icon map. placedNodeIds is always reassigned
+  // (never mutated in place), so a shallow watch fires on every change.
+  watch(placedNodeIds, () => {
+    void refreshDeviceIcons()
+  })
 
   const newView = () => {
     currentView.value = emptyView()
@@ -394,6 +419,8 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     setLabels,
     setSeverities,
     refreshStatus,
+    nodeIconIds,
+    refreshDeviceIcons,
     setEditMode,
     setEdgeDrawMode,
     selectOnly,

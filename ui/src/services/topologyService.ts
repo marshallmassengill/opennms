@@ -35,6 +35,7 @@ import type {
 } from '@/types/topology'
 import type { NodeApiResponse, QueryParameters } from '@/types'
 import { aggregateNodeSeverities } from '@/components/Topology/severity'
+import { deviceIconForSysObjectId, type DeviceIconId } from '@/components/Topology/deviceIcons'
 
 /**
  * Palette node source: the real OpenNMS node inventory from
@@ -403,6 +404,32 @@ const infopanelEndpoint = 'topology/infopanel'
  * Returns [] on any error or when the install has no etc/infopanel templates --
  * the Inspector simply shows nothing extra.
  */
+/**
+ * Device-icon ids for a set of nodes, keyed by node id. Resolves each node's
+ * sysObjectId to a device type the way the legacy map does (see deviceIcons).
+ * Only recognized device types are returned -- unresolved nodes are omitted so
+ * the canvas leaves them as plain circles. Mirrors getNodeSeverities' bulk FIQL
+ * lookup; returns {} on error.
+ */
+const getNodeIconIds = async (nodeIds: number[]): Promise<Record<number, DeviceIconId>> => {
+  if (nodeIds.length === 0) return {}
+  // The /nodes endpoint filters on `id` (the /alarms endpoint uses `node.id`).
+  const fiql = nodeIds.map((id) => `id==${id}`).join(',')
+  try {
+    const resp = await getNodes({ _s: fiql, limit: 1000 })
+    if (!resp || !resp.node) return {}
+    const out: Record<number, DeviceIconId> = {}
+    for (const n of resp.node) {
+      const icon = deviceIconForSysObjectId(n.sysObjectId)
+      const id = Number(n.id)
+      if (icon && Number.isFinite(id)) out[id] = icon
+    }
+    return out
+  } catch (err) {
+    return {}
+  }
+}
+
 const getNodeInfoPanel = async (nodeId: number): Promise<NodeInfoPanelItem[]> => {
   try {
     const resp = await v2.get<NodeInfoPanelItem[]>(infopanelEndpoint, { params: { nodeId } })
@@ -423,5 +450,6 @@ export {
   parseEnlinkdNeighbors,
   loadDiscoveredGraph,
   mapDiscoveredGraph,
-  getNodeInfoPanel
+  getNodeInfoPanel,
+  getNodeIconIds
 }
