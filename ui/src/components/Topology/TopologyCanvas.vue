@@ -151,6 +151,11 @@ const rubberBandStyle = computed(() => {
 })
 let sigma: Sigma | null = null
 let graph: Graph | null = null
+// Half-extent of the fixed coordinate frame used when there's no content to
+// frame yet (empty canvas). Only its stability matters for placement -- drops
+// land under the cursor because the frame doesn't move between viewportToGraph
+// and render; fitCamera/setContentBBox narrow it to the content once present.
+const DEFAULT_BBOX = 500
 let placedSequence = 0
 let draggedNode: string | null = null
 let dragStartPos: { x: number; y: number } | null = null
@@ -273,6 +278,12 @@ const mountSigma = (g: Graph) => {
   if (!canvasEl.value) return
   sigma = new Sigma(g, canvasEl.value, {
     renderEdgeLabels: true,
+    // This is a positioning editor: node x/y are absolute graph coordinates we
+    // persist and expect to render consistently. Disable sigma's auto-rescale
+    // (which re-normalizes coordinates to fit the node extent on every change)
+    // so a node stays exactly where it's dropped/saved regardless of how many
+    // other nodes are present. Framing is handled explicitly by fitCamera().
+    autoRescale: false,
     // Color placed nodes by their node's current alarm severity (held in
     // the store, refreshed on an interval in View mode). Nodes without a
     // known severity -- decorative/mock nodes, or before a status fetch --
@@ -298,6 +309,14 @@ const mountSigma = (g: Graph) => {
       return attrs
     }
   })
+  // Pin a fixed coordinate frame. With autoRescale:false sigma still
+  // re-derives its normalization from a viewport-sized box around the node
+  // *centroid* on every render, so coordinates shift as nodes are added --
+  // that's why the first few palette drops land in the wrong spot. Setting an
+  // explicit customBBox makes sigma normalize from it instead, so the frame is
+  // stable no matter how many nodes are present. fitCamera() narrows this box
+  // to the actual content (and the camera back to 0.5/0.5) when framing.
+  sigma.setCustomBBox({ x: [-DEFAULT_BBOX, DEFAULT_BBOX], y: [-DEFAULT_BBOX, DEFAULT_BBOX] })
   attachInteractionHandlers(sigma, g)
 }
 
@@ -410,14 +429,79 @@ const loadView = (view: TopologyView) => {
   mountSigma(g)
   if (sigma) {
     const vp = view.viewport
-    sigma.getCamera().setState({ x: vp.panX, y: vp.panY, ratio: vp.zoom, angle: 0 })
+    // Restore the saved zoom/pan when the view actually has one; the default
+    // sentinel (zoom 1, pan 0/0) means no meaningful camera was saved -- e.g.
+    // views created via the REST API -- so frame the content instead.
+    const hasSavedCamera = !(vp.zoom === 1 && vp.panX === 0 && vp.panY === 0)
+    if (hasSavedCamera) {
+      // The saved camera (pan/ratio) is relative to the content-fitted frame,
+      // so point the customBBox at the content first, then restore it exactly.
+      setContentBBox()
+      sigma.getCamera().setState({ x: vp.panX, y: vp.panY, ratio: vp.zoom, angle: 0 })
+    } else {
+      fitCamera(false)
+    }
   }
 }
 
-/** Center + slightly zoom out so edge nodes' labels aren't clipped. */
-const fitCamera = () => {
-  if (!sigma) return
-  sigma.getCamera().animate({ x: 0.5, y: 0.5, ratio: 1.15, angle: 0 }, { duration: 300 })
+/**
+ * Point the sigma customBBox at the current content -- the bounding box over
+ * all placed nodes plus free-standing labels, padded so nothing sits hard
+ * against the edge. Because sigma normalizes coordinates from this box, making
+ * it equal to the content means the content maps to the [0,1] frame and the
+ * camera frames it with a plain centered state (see fitCamera). With nothing
+ * to frame we fall back to the default square so an empty canvas still has a
+ * stable frame for the first drops.
+ *
+ * Note this is only re-pointed on explicit framing (fit/load), never while
+ * dragging or dropping -- keeping it fixed between frames is exactly what makes
+ * node placement land where the cursor is.
+ */
+const setContentBBox = () => {
+  if (!sigma || !graph) return
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+  let count = 0
+  graph.forEachNode((_id, a) => {
+    const x = a.x as number, y = a.y as number
+    if (x < minX) minX = x
+    if (x > maxX) maxX = x
+    if (y < minY) minY = y
+    if (y > maxY) maxY = y
+    count++
+  })
+  for (const l of store.labels) {
+    if (l.x < minX) minX = l.x
+    if (l.x > maxX) maxX = l.x
+    if (l.y < minY) minY = l.y
+    if (l.y > maxY) maxY = l.y
+    count++
+  }
+  if (count === 0) {
+    sigma.setCustomBBox({ x: [-DEFAULT_BBOX, DEFAULT_BBOX], y: [-DEFAULT_BBOX, DEFAULT_BBOX] })
+    return
+  }
+  // Pad ~15% (floored) so edge nodes and their labels aren't clipped.
+  const padX = Math.max((maxX - minX) * 0.15, 120)
+  const padY = Math.max((maxY - minY) * 0.15, 120)
+  sigma.setCustomBBox({ x: [minX - padX, maxX + padX], y: [minY - padY, maxY + padY] })
+}
+
+/**
+ * Frame all placed nodes: narrow the coordinate frame to the content (via
+ * setContentBBox) and center the camera on it. Since the customBBox now equals
+ * the padded content box, a plain centered camera (0.5/0.5, ratio 1) frames it
+ * exactly -- no scale calibration needed. `animate` is true for the Fit button,
+ * false for the instant framing done on load.
+ */
+const fitCamera = (animate = true) => {
+  if (!sigma || !graph || graph.order === 0) return
+  setContentBBox()
+  const target = { x: 0.5, y: 0.5, ratio: 1, angle: 0 }
+  if (animate) {
+    sigma.getCamera().animate(target, { duration: 300 })
+  } else {
+    sigma.getCamera().setState(target)
+  }
 }
 
 /**
