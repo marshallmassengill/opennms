@@ -98,6 +98,7 @@ import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import Graph from 'graphology'
 import Sigma from 'sigma'
 import { createNodeImageProgram } from '@sigma/node-image'
+import { downloadAsImage } from '@sigma/export-image'
 import { PALETTE_DRAG_MIME, type PaletteDragPayload } from '@/components/Topology/dragTypes'
 import { useTopologyStore } from '@/stores/topologyStore'
 import { severityColor } from '@/components/Topology/severity'
@@ -1356,6 +1357,18 @@ const setEdgeLabel = (id: string, label: string) => {
   sigma?.refresh()
 }
 
+/**
+ * Export the current map as a raster image. Uses @sigma/export-image, which
+ * re-renders the scene into a temporary renderer (so the WebGL layers capture
+ * correctly) and downloads it. `fileName` is the base name; the format
+ * extension is appended by the library. Note: free-standing text labels are
+ * DOM overlays and are not yet included in the export.
+ */
+const exportImage = async (fileName: string, format: 'png' | 'jpeg' = 'png'): Promise<void> => {
+  if (!sigma) return
+  await downloadAsImage(sigma, { format, fileName, backgroundColor: '#ffffff' })
+}
+
 defineExpose({
   // Reset to the default centered view, but zoomed out slightly so the
   // edge nodes' labels aren't clipped: sigma's auto-fit bounds the node
@@ -1367,7 +1380,8 @@ defineExpose({
   loadView,
   loadDiscoveredGraph,
   getEdge,
-  setEdgeLabel
+  setEdgeLabel,
+  exportImage
 })
 </script>
 

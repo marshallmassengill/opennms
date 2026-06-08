@@ -161,6 +161,7 @@ License.
             @click="store.setEdgeDrawMode(!store.isEdgeDrawMode)"
           />
           <PButton label="Fit" severity="secondary" outlined @click="canvasRef?.fit()" />
+          <PButton label="Export PNG" severity="secondary" outlined @click="onExport" />
         </div>
       </template>
     </PToolbar>
@@ -463,6 +464,15 @@ const focusOnSelection = () => {
   if (selectedNodeId.value) navFocus(selectedNodeId.value, store.semanticZoomLevel)
 }
 const showAll = () => navFocus(null, store.semanticZoomLevel)
+
+// Export the current map as a PNG. The file name reflects the open view
+// (custom) or the source/variant (discovered); the canvas appends ".png".
+const onExport = () => {
+  const base = isDiscovered.value
+    ? `topology-${sourceSlug.value}${variantKey.value ? '-' + variantKey.value : ''}`
+    : `topology-${store.currentView?.name ?? 'view'}`
+  void canvasRef.value?.exportImage(base.replace(/[^\w.-]+/g, '-'))
+}
 const stepSzl = (delta: number) =>
   navFocus(store.focusNodeId, Math.max(0, Math.min(10, store.semanticZoomLevel + delta)))
 
