@@ -195,6 +195,9 @@ License.
       />
     </div>
 
+    <!-- Bottom browse panel: Nodes / Alarms for the view, tied to selection. -->
+    <TopologyBrowsePanel @select="onBrowseSelect" />
+
     <PContextMenu ref="nodeMenuRef" :model="nodeMenuItems" />
     <PConfirmDialog />
     <PToast position="bottom-right" />
@@ -219,6 +222,7 @@ import { useRoute, useRouter } from 'vue-router'
 import TopologyCanvas from '@/components/Topology/TopologyCanvas.vue'
 import TopologyPalette from '@/components/Topology/TopologyPalette.vue'
 import TopologyInspector from '@/components/Topology/TopologyInspector.vue'
+import TopologyBrowsePanel from '@/components/Topology/TopologyBrowsePanel.vue'
 import { useTopologyStore } from '@/stores/topologyStore'
 import { nodeIdFromPlacedId } from '@/components/Topology/nodeIds'
 import {
@@ -467,6 +471,12 @@ const showAll = () => navFocus(null, store.semanticZoomLevel)
 
 // Export the current map as a PNG. The file name reflects the open view
 // (custom) or the source/variant (discovered); the canvas appends ".png".
+// Browse-panel row -> select that node on the canvas (or clear to "show all").
+const onBrowseSelect = (placedId: string | null) => {
+  if (placedId) store.selectOnly(placedId)
+  else store.clearSelection()
+}
+
 const onExport = () => {
   const base = isDiscovered.value
     ? `topology-${sourceSlug.value}${variantKey.value ? '-' + variantKey.value : ''}`
