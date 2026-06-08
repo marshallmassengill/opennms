@@ -106,8 +106,19 @@ License.
             aria-label="View or Edit mode"
             class="mode-select"
           />
-          <!-- Discovered-view focus + Semantic Zoom Level. -->
+          <!-- Discovered-view search, focus + Semantic Zoom Level. -->
           <template v-if="isDiscovered">
+            <PAutoComplete
+              v-model="searchModel"
+              :suggestions="searchSuggestions"
+              option-label="label"
+              :complete-on-focus="true"
+              placeholder="Search nodes"
+              class="topology-search"
+              aria-label="Search nodes to focus"
+              @complete="onSearchComplete"
+              @item-select="onSearchSelect"
+            />
             <PButton
               v-if="!store.focusNodeId"
               label="Focus"
@@ -195,6 +206,7 @@ import Toolbar from 'primevue/toolbar'
 import Button from 'primevue/button'
 import Select from 'primevue/select'
 import SelectButton from 'primevue/selectbutton'
+import AutoComplete from 'primevue/autocomplete'
 import Toast from 'primevue/toast'
 import ConfirmDialog from 'primevue/confirmdialog'
 import ContextMenu from 'primevue/contextmenu'
@@ -218,6 +230,7 @@ import {
 } from '@/components/Topology/sources'
 import { focusSubgraph } from '@/components/Topology/focus'
 import { nodeActionLinks } from '@/components/Topology/nodeActions'
+import type { CanvasNode } from '@/types/topology'
 
 const PToolbar = Toolbar
 const PButton = Button
@@ -225,6 +238,7 @@ const PSelect = Select
 const PContextMenu = ContextMenu
 const PTieredMenu = TieredMenu
 const PSelectButton = SelectButton
+const PAutoComplete = AutoComplete
 const PToast = Toast
 const PConfirmDialog = ConfirmDialog
 
@@ -451,6 +465,32 @@ const focusOnSelection = () => {
 const showAll = () => navFocus(null, store.semanticZoomLevel)
 const stepSzl = (delta: number) =>
   navFocus(store.focusNodeId, Math.max(0, Math.min(10, store.semanticZoomLevel + delta)))
+
+// --- Search -> focus -------------------------------------------------------
+// Find a node by label or node id in a large discovered graph and focus it.
+// Purely client-side over the already-loaded full graph (store.discoveredGraph
+// is the whole graph; the focus reduction happens only at render). Selecting a
+// result focuses it via the same URL navigation, so the focused view stays
+// shareable.
+const SEARCH_LIMIT = 12
+const searchModel = ref<CanvasNode | string>('')
+const searchSuggestions = ref<CanvasNode[]>([])
+
+const onSearchComplete = (event: { query: string }) => {
+  const nodes = store.discoveredGraph?.nodes ?? []
+  const q = event.query.trim().toLowerCase()
+  const matches = q
+    ? nodes.filter(
+        (n) => n.label.toLowerCase().includes(q) || String(n.nodeId ?? '').includes(q)
+      )
+    : nodes
+  searchSuggestions.value = matches.slice(0, SEARCH_LIMIT)
+}
+
+const onSearchSelect = (event: { value: CanvasNode }) => {
+  if (event.value?.id) navFocus(event.value.id, store.semanticZoomLevel)
+  searchModel.value = '' // clear the field; the focus chip/SZL control reflects the state
+}
 
 // URL focus/SZL changed (a control click, a deep link, or back/forward) -> store.
 watch([routeFocus, routeSzl], () => {
@@ -743,6 +783,10 @@ const onDelete = () => {
 
 .view-chooser {
   min-width: 12rem;
+}
+
+.topology-search :deep(.p-autocomplete-input) {
+  min-width: 11rem;
 }
 
 .discovered-hint {
