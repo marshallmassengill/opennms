@@ -107,7 +107,8 @@ const stroke =
   'fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"'
 
 const GLYPHS: Record<DeviceIconId, string> = {
-  router: `<circle cx="12" cy="12" r="3.5" ${stroke}/><path d="M12 8.5V3m0 18v-5.5M8.5 12H3m18 0h-5.5M9.5 9.5 5.5 5.5m13 13-4-4m0-9 4-4m-13 13 4-4" ${stroke}/>`,
+  // Lucide "router"
+  router: `<rect x="2" y="14" width="20" height="8" rx="2" ${stroke}/><path d="M6.01 18H6M10.01 18H10M15 10v4M17.84 7.17a4 4 0 0 0-5.66 0M20.66 4.34a8 8 0 0 0-11.31 0" ${stroke}/>`,
   switch: `<rect x="2.5" y="8" width="19" height="8" rx="1.5" ${stroke}/><path d="M6 16v3m4-3v3m4-3v3m4-3v3" ${stroke}/>`,
   server: `<rect x="4" y="3" width="16" height="7" rx="1.5" ${stroke}/><rect x="4" y="14" width="16" height="7" rx="1.5" ${stroke}/><path d="M7.5 6.5h.01M7.5 17.5h.01" ${stroke}/>`,
   wifiAccess: `<path d="M4.5 12.5a10 10 0 0 1 15 0M8 16a5 5 0 0 1 8 0" ${stroke}/><circle cx="12" cy="19.5" r="1.2" fill="#ffffff"/>`,
@@ -115,11 +116,14 @@ const GLYPHS: Record<DeviceIconId, string> = {
   cloud: `<path d="M7 18a4 4 0 0 1 0-8 5 5 0 0 1 9.6-1.4A3.5 3.5 0 0 1 17 18Z" ${stroke}/>`
 }
 
-// Explicit width/height so the SVG rasterizes to a real texture (a viewBox
-// alone yields zero intrinsic size in the image loader); base64 to avoid any
-// data-URL escaping ambiguity.
+// Rasterize at high resolution (the loader uses the SVG's intrinsic width/height
+// as the bitmap size, then it's scaled down onto the node — so a 24px source
+// looks blurry on larger/retina nodes). We keep the 24-unit viewBox for the
+// path coordinates but render at RENDER_PX so the texture stays crisp. base64
+// avoids any data-URL escaping ambiguity.
+const RENDER_PX = 128
 const toDataUrl = (glyph: string): string => {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">${glyph}</svg>`
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${RENDER_PX}" height="${RENDER_PX}" viewBox="0 0 24 24">${glyph}</svg>`
   return 'data:image/svg+xml;base64,' + btoa(svg)
 }
 
