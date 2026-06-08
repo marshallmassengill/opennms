@@ -364,6 +364,7 @@ const loadSource = async (): Promise<void> => {
     const gs = graphSourceFor(option, variantKey.value)
     const graph = gs ? await store.loadDiscoveredSource(gs) : false
     if (graph && store.discoveredGraph) {
+      applyRouteFocus() // restore focus/SZL from the URL before the first render
       renderDiscovered()
       store.refreshStatus()
     } else {
@@ -407,11 +408,54 @@ const renderDiscovered = () => {
   canvasRef.value?.loadDiscoveredGraph(graph)
 }
 
-const focusOnSelection = () => {
-  if (selectedNodeId.value) store.setFocusNode(selectedNodeId.value)
+// Focus + SZL live in the URL (?focus=<nodeId>&szl=<hops>) so a focused
+// discovered view is shareable/bookmarkable, like ?view= and ?variant=. The
+// URL is the source of truth: the controls navigate, a watcher mirrors the
+// query into the store, and the store drives the render below.
+const SZL_DEFAULT = 2 // matches the store's initial semanticZoomLevel
+const routeFocus = computed<string | null>(() => {
+  const f = route.query.focus
+  return typeof f === 'string' && f.length ? f : null
+})
+const routeSzl = computed<number | null>(() => {
+  const s = route.query.szl
+  if (typeof s !== 'string') return null
+  const n = Number(s)
+  return Number.isFinite(n) ? n : null
+})
+
+// Mirror the URL focus/SZL into the store. Idempotent: the store setters no-op
+// on an unchanged value, so this can't loop with the navigation below.
+const applyRouteFocus = () => {
+  store.setFocusNode(routeFocus.value)
+  store.setSemanticZoomLevel(routeSzl.value ?? SZL_DEFAULT)
 }
-const showAll = () => store.setFocusNode(null)
-const stepSzl = (delta: number) => store.setSemanticZoomLevel(store.semanticZoomLevel + delta)
+
+// Navigate focus/SZL into the URL. szl only travels alongside a focus (it has
+// no effect without one). replace (not push) keeps back/forward uncluttered.
+const navFocus = (focus: string | null, szl: number) => {
+  const query: Record<string, string> = { ...(route.query as Record<string, string>) }
+  if (focus) {
+    query.focus = focus
+    query.szl = String(szl)
+  } else {
+    delete query.focus
+    delete query.szl
+  }
+  router.replace({ name: 'Topology', params: { source: sourceSlug.value }, query })
+}
+
+const focusOnSelection = () => {
+  if (selectedNodeId.value) navFocus(selectedNodeId.value, store.semanticZoomLevel)
+}
+const showAll = () => navFocus(null, store.semanticZoomLevel)
+const stepSzl = (delta: number) =>
+  navFocus(store.focusNodeId, Math.max(0, Math.min(10, store.semanticZoomLevel + delta)))
+
+// URL focus/SZL changed (a control click, a deep link, or back/forward) -> store.
+watch([routeFocus, routeSzl], () => {
+  if (isDiscovered.value) applyRouteFocus()
+})
 
 // Re-render the focused subgraph when focus or the zoom level changes.
 watch(
