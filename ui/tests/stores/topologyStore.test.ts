@@ -32,6 +32,7 @@ vi.mock('@/services/topologyService', () => ({
   saveView: vi.fn(),
   deleteView: vi.fn(),
   getNodeSeverities: vi.fn(),
+  getNodeIconIds: vi.fn(),
   loadDiscoveredGraph: vi.fn()
 }))
 
@@ -88,5 +89,35 @@ describe('useTopologyStore - saveCurrentViewAs (Save As)', () => {
     store.currentView = null
     expect(await store.saveCurrentViewAs('Whatever', snapshot)).toBe(false)
     expect(saveView).not.toHaveBeenCalled()
+  })
+})
+
+describe('useTopologyStore - node size (density default + clamp)', () => {
+  let store: ReturnType<typeof useTopologyStore>
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    store = useTopologyStore()
+  })
+
+  it('defaults large for small graphs and small for dense graphs', () => {
+    store.setNodeSizeForCount(5)
+    expect(store.nodeSize).toBe(20)
+    store.setNodeSizeForCount(10)
+    expect(store.nodeSize).toBe(20)
+    store.setNodeSizeForCount(100)
+    expect(store.nodeSize).toBe(9)
+    store.setNodeSizeForCount(55)
+    expect(store.nodeSize).toBeGreaterThan(9)
+    expect(store.nodeSize).toBeLessThan(20)
+  })
+
+  it('clamps the manual size to [MIN, MAX]', () => {
+    store.setNodeSize(999)
+    expect(store.nodeSize).toBe(store.NODE_SIZE_MAX)
+    store.setNodeSize(-5)
+    expect(store.nodeSize).toBe(store.NODE_SIZE_MIN)
+    store.setNodeSize(14)
+    expect(store.nodeSize).toBe(14)
   })
 })

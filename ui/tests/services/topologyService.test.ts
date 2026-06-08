@@ -29,7 +29,9 @@ import {
   getNodeNeighbors,
   parseEnlinkdNeighbors,
   loadDiscoveredGraph,
-  mapDiscoveredGraph
+  mapDiscoveredGraph,
+  getNodeInfoPanel,
+  getNodeIconIds
 } from '@/services/topologyService'
 import { v2 } from '@/services/axiosInstances'
 import type { TopologyView } from '@/types/topology'
@@ -380,6 +382,51 @@ describe('topologyService discovered graph (Graph REST API)', () => {
     it('returns false on request failure', async () => {
       vi.mocked(v2.get).mockRejectedValue(new Error('boom'))
       expect(await loadDiscoveredGraph(layer2Source)).toBe(false)
+    })
+  })
+
+  describe('getNodeInfoPanel', () => {
+    it('returns the rendered items as-is', async () => {
+      const items = [
+        { title: 'Node Overview', order: 10, html: '<b>x</b>' },
+        { title: 'Net-SNMP', order: 20, html: 'y' }
+      ]
+      vi.mocked(v2.get).mockResolvedValue({ data: items })
+      expect(await getNodeInfoPanel(2)).toEqual(items)
+      expect(v2.get).toHaveBeenCalledWith('topology/infopanel', { params: { nodeId: 2 } })
+    })
+
+    it('returns [] on error or a non-array body', async () => {
+      vi.mocked(v2.get).mockRejectedValue(new Error('boom'))
+      expect(await getNodeInfoPanel(2)).toEqual([])
+      vi.mocked(v2.get).mockResolvedValue({ data: null })
+      expect(await getNodeInfoPanel(2)).toEqual([])
+    })
+  })
+
+  describe('getNodeIconIds', () => {
+    it('maps each node sysObjectId to a device-type icon, omitting unresolved ones', async () => {
+      vi.mocked(v2.get).mockResolvedValue({
+        status: 200,
+        data: {
+          node: [
+            { id: '23', sysObjectId: '.1.3.6.1.4.1.9.1.559' }, // router
+            { id: '29', sysObjectId: '.1.3.6.1.4.1.9.1.283' }, // switch
+            { id: '99', sysObjectId: '.1.2.3.4' } // unknown -> omitted
+          ]
+        }
+      })
+      const result = await getNodeIconIds([23, 29, 99])
+      expect(result).toEqual({ 23: 'router', 29: 'switch' })
+      // The /nodes endpoint filters on `id`, not `node.id`.
+      const url = vi.mocked(v2.get).mock.calls[0][0] as string
+      expect(decodeURIComponent(url)).toContain('id==23')
+      expect(decodeURIComponent(url)).not.toContain('node.id==')
+    })
+
+    it('returns {} for an empty id list without calling the API', async () => {
+      expect(await getNodeIconIds([])).toEqual({})
+      expect(v2.get).not.toHaveBeenCalled()
     })
   })
 })
