@@ -385,6 +385,33 @@ const loadDiscoveredGraph = async (
   }
 }
 
+/**
+ * One operator-configured info-panel item for a node: a titled HTML fragment
+ * rendered server-side from an etc/infopanel Jinjava template. The HTML must be
+ * sanitized before rendering (see the Inspector).
+ */
+export interface NodeInfoPanelItem {
+  title: string
+  order: number
+  html: string
+}
+
+const infopanelEndpoint = 'topology/infopanel'
+
+/**
+ * Fetch the rendered info-panel items for a node (sorted by order server-side).
+ * Returns [] on any error or when the install has no etc/infopanel templates --
+ * the Inspector simply shows nothing extra.
+ */
+const getNodeInfoPanel = async (nodeId: number): Promise<NodeInfoPanelItem[]> => {
+  try {
+    const resp = await v2.get<NodeInfoPanelItem[]>(infopanelEndpoint, { params: { nodeId } })
+    return Array.isArray(resp.data) ? resp.data : []
+  } catch (err) {
+    return []
+  }
+}
+
 export {
   fetchPaletteNodes,
   getNodeSeverities,
@@ -395,5 +422,6 @@ export {
   getNodeNeighbors,
   parseEnlinkdNeighbors,
   loadDiscoveredGraph,
-  mapDiscoveredGraph
+  mapDiscoveredGraph,
+  getNodeInfoPanel
 }

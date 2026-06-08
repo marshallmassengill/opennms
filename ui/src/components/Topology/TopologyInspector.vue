@@ -75,6 +75,16 @@ License.
             <dt>Categories</dt>
             <dd>{{ nodeDetail.categories?.length ? nodeDetail.categories.map((c) => c.name).join(', ') : '—' }}</dd>
           </dl>
+          <!-- Operator-configured info-panel items (etc/infopanel templates),
+               rendered server-side and sanitized before display. -->
+          <section
+            v-for="item in infoPanelItems"
+            :key="item.title"
+            class="ti-infopanel-item"
+          >
+            <h4 class="ti-infopanel-title">{{ item.title }}</h4>
+            <div class="ti-infopanel-html" v-html="sanitizeHtml(item.html)" />
+          </section>
         </template>
         <p v-else class="ti-empty">Node details unavailable.</p>
       </div>
@@ -104,6 +114,8 @@ import { useTopologyStore } from '@/stores/topologyStore'
 import { isLabelId, nodeIdFromPlacedId } from '@/components/Topology/nodeIds'
 import { severityColor } from '@/components/Topology/severity'
 import { getNodeById } from '@/services/nodeService'
+import { getNodeInfoPanel, type NodeInfoPanelItem } from '@/services/topologyService'
+import DOMPurify from 'dompurify'
 import type { Node } from '@/types'
 
 const PCard = Card
@@ -165,6 +177,25 @@ const labelFontSize = computed<number>({
 /* ---- Node detail (read-only, fetched on selection) ---- */
 const nodeDetail = ref<Node | null>(null)
 const nodeLoading = ref(false)
+
+/* ---- Operator-configured info-panel items (etc/infopanel templates) ---- */
+const infoPanelItems = ref<NodeInfoPanelItem[]>([])
+
+// Server HTML is sanitized before it ever reaches v-html. The templates are
+// admin-authored, but they can interpolate node-derived data (e.g. a device's
+// sysName), so we don't trust the output blindly.
+const sanitizeHtml = (html: string): string => DOMPurify.sanitize(html)
+
+watch(
+  selectedId,
+  async (id) => {
+    infoPanelItems.value = []
+    const nid = id ? nodeIdFromPlacedId(id) : null
+    if (nid === null) return
+    infoPanelItems.value = await getNodeInfoPanel(nid)
+  },
+  { immediate: true }
+)
 
 const nodeSeverity = computed<string | undefined>(() => {
   const id = selectedId.value
@@ -299,5 +330,29 @@ const edgeLabel = computed<string>({
 .ti-detail dd {
   margin: 0;
   word-break: break-word;
+}
+
+.ti-infopanel-item {
+  margin-top: 0.85rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid #eaecf0;
+}
+
+.ti-infopanel-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #667085;
+}
+
+.ti-infopanel-html {
+  font-size: 0.85rem;
+  color: #1d2939;
+  overflow-x: auto;
+}
+
+.ti-infopanel-html :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
 }
 </style>
