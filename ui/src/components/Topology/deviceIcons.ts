@@ -104,13 +104,16 @@ export const deviceIconForSysObjectId = (sysObjectId?: string | null): DeviceIco
 // Drawn over the node's severity-colored disc by sigma's node-image program
 // (drawingMode 'background'), so the glyph reads on any severity color.
 const stroke =
-  'fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"'
+  'fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"'
 
 const GLYPHS: Record<DeviceIconId, string> = {
-  // Lucide "router"
-  router: `<rect x="2" y="14" width="20" height="8" rx="2" ${stroke}/><path d="M6.01 18H6M10.01 18H10M15 10v4M17.84 7.17a4 4 0 0 0-5.66 0M20.66 4.34a8 8 0 0 0-11.31 0" ${stroke}/>`,
-  switch: `<rect x="2.5" y="8" width="19" height="8" rx="1.5" ${stroke}/><path d="M6 16v3m4-3v3m4-3v3m4-3v3" ${stroke}/>`,
-  server: `<rect x="4" y="3" width="16" height="7" rx="1.5" ${stroke}/><rect x="4" y="14" width="16" height="7" rx="1.5" ${stroke}/><path d="M7.5 6.5h.01M7.5 17.5h.01" ${stroke}/>`,
+  // Data-center router: central hub with four outward routing arrows
+  // (the classic Cisco-style routing symbol, not a home/SOHO router).
+  router: `<circle cx="12" cy="12" r="2.6" ${stroke}/><path d="M12 9.4V4M12 4l-1.7 1.7M12 4l1.7 1.7M12 14.6V20M12 20l-1.7-1.7M12 20l1.7-1.7M9.4 12H4M4 12l1.7-1.7M4 12l1.7 1.7M14.6 12H20M20 12l-1.7-1.7M20 12l-1.7 1.7" ${stroke}/>`,
+  // Switch: a chassis with opposing (switching) arrows.
+  switch: `<rect x="2" y="6" width="20" height="12" rx="2" ${stroke}/><path d="M6 9.8h9.5M15.5 9.8l-2-1.8M15.5 9.8l-2 1.8M18 14.2H8.5M8.5 14.2l2-1.8M8.5 14.2l2 1.8" ${stroke}/>`,
+  // Server: a rack chassis of stacked units, each with a status LED.
+  server: `<rect x="5" y="2.5" width="14" height="19" rx="1.5" ${stroke}/><path d="M5 8.5h14M5 14.5h14" ${stroke}/><circle cx="8" cy="5.5" r="0.9" fill="#ffffff"/><circle cx="8" cy="11.5" r="0.9" fill="#ffffff"/><circle cx="8" cy="17.5" r="0.9" fill="#ffffff"/>`,
   wifiAccess: `<path d="M4.5 12.5a10 10 0 0 1 15 0M8 16a5 5 0 0 1 8 0" ${stroke}/><circle cx="12" cy="19.5" r="1.2" fill="#ffffff"/>`,
   printer: `<path d="M6.5 9V3h11v6" ${stroke}/><rect x="3" y="9" width="18" height="8" rx="1.5" ${stroke}/><rect x="7" y="14.5" width="10" height="6" ${stroke}/>`,
   cloud: `<path d="M7 18a4 4 0 0 1 0-8 5 5 0 0 1 9.6-1.4A3.5 3.5 0 0 1 17 18Z" ${stroke}/>`
