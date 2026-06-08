@@ -300,7 +300,8 @@ const mountSigma = (g: Graph) => {
     // watchers below trigger a sigma.refresh() so changes repaint.
     nodeReducer: (node, attrs) => {
       const paletteId = paletteIdFromPlacedId(node)
-      let res = attrs
+      // All nodes render at the store's (density-defaulted, slider-adjustable) size.
+      let res: typeof attrs = { ...attrs, size: store.nodeSize }
       if (paletteId !== null && /^\d+$/.test(paletteId)) {
         const nid = Number(paletteId)
         const severity = store.severities[nid]
@@ -401,7 +402,7 @@ const loadView = (view: TopologyView) => {
       label: n.label,
       x: n.x,
       y: n.y,
-      size: 10,
+      size: 20,
       color: n.color ?? '#1f5fb0'
     })
   }
@@ -436,6 +437,7 @@ const loadView = (view: TopologyView) => {
   store.setPlacedNodeIds(placed)
   placedCount.value = placed.length
   store.setLabels(view.labels)
+  store.setNodeSizeForCount(g.order) // density-based default node size
 
   mountSigma(g)
   if (sigma) {
@@ -524,7 +526,11 @@ const fitCamera = (animate = true) => {
  * Discovered edges render muted to read as "from discovery, not drawn."
  */
 const loadDiscoveredGraph = (dg: DiscoveredGraph) => {
-  const positioned = layoutDiscoveredGraph(dg.nodes, dg.edges)
+  // Density-based default node size, then lay out with spacing scaled to it.
+  store.setNodeSizeForCount(dg.nodes.length)
+  const positioned = layoutDiscoveredGraph(dg.nodes, dg.edges, {
+    collideRadius: Math.max(24, store.nodeSize * 3)
+  })
   const g = new Graph()
   for (const n of positioned) {
     if (g.hasNode(n.id)) continue
@@ -532,7 +538,9 @@ const loadDiscoveredGraph = (dg: DiscoveredGraph) => {
       label: n.label,
       x: n.x,
       y: n.y,
-      size: 10,
+      // Discovered graphs can be large (100+ nodes); a smaller node keeps them
+      // legible without overlap. Hand-composed views use the larger size 20.
+      size: 12,
       color: n.color ?? '#1f5fb0'
     })
   }
@@ -1042,6 +1050,12 @@ watch(
   { deep: true }
 )
 
+// Repaint when the node size changes (slider or density default).
+watch(
+  () => store.nodeSize,
+  () => sigma?.refresh()
+)
+
 /**
  * Translate a DragEvent's viewport (clientX/clientY) coordinates into the
  * graph's coordinate space, accounting for the canvas container's position
@@ -1114,7 +1128,7 @@ const onDrop = (event: DragEvent) => {
     label: payload.label,
     x: coords.x,
     y: coords.y,
-    size: 10,
+    size: 20,
     color: '#1f5fb0'
   }
   const paletteId = payload.nodeId

@@ -55,10 +55,10 @@ interface LayoutOptions {
 }
 
 const DEFAULTS: Required<LayoutOptions> = {
-  linkDistance: 90,
-  chargeStrength: -240,
-  collideRadius: 24,
-  ticks: 300
+  linkDistance: 100,
+  chargeStrength: -280,
+  collideRadius: 30,
+  ticks: 400
 }
 
 /**
@@ -90,7 +90,9 @@ export const layoutDiscoveredGraph = (
     )
     .force('charge', forceManyBody<SimNode>().strength(opts.chargeStrength))
     .force('center', forceCenter(0, 0))
-    .force('collide', forceCollide<SimNode>(opts.collideRadius))
+    // iterations > 1 enforces non-overlap more strictly (important for dense
+    // discovered graphs with many leaf nodes at the larger node size).
+    .force('collide', forceCollide<SimNode>(opts.collideRadius).iterations(3))
     .stop()
 
   simulation.tick(opts.ticks)

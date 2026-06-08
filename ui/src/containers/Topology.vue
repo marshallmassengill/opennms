@@ -160,6 +160,17 @@ License.
             :outlined="!store.isEdgeDrawMode"
             @click="store.setEdgeDrawMode(!store.isEdgeDrawMode)"
           />
+          <span class="node-size-control" title="Node size">
+            <i class="pi pi-circle-fill node-size-icon-sm" />
+            <PSlider
+              v-model="nodeSizeModel"
+              :min="store.NODE_SIZE_MIN"
+              :max="store.NODE_SIZE_MAX"
+              class="node-size-slider"
+              aria-label="Node size"
+            />
+            <i class="pi pi-circle-fill node-size-icon-lg" />
+          </span>
           <PButton label="Fit" severity="secondary" outlined @click="canvasRef?.fit()" />
           <PButton label="Export PNG" severity="secondary" outlined @click="onExport" />
         </div>
@@ -211,6 +222,7 @@ import Button from 'primevue/button'
 import Select from 'primevue/select'
 import SelectButton from 'primevue/selectbutton'
 import AutoComplete from 'primevue/autocomplete'
+import Slider from 'primevue/slider'
 import Toast from 'primevue/toast'
 import ConfirmDialog from 'primevue/confirmdialog'
 import ContextMenu from 'primevue/contextmenu'
@@ -244,6 +256,7 @@ const PContextMenu = ContextMenu
 const PTieredMenu = TieredMenu
 const PSelectButton = SelectButton
 const PAutoComplete = AutoComplete
+const PSlider = Slider
 const PToast = Toast
 const PConfirmDialog = ConfirmDialog
 
@@ -471,6 +484,12 @@ const showAll = () => navFocus(null, store.semanticZoomLevel)
 
 // Export the current map as a PNG. The file name reflects the open view
 // (custom) or the source/variant (discovered); the canvas appends ".png".
+// Node-size slider <-> store (clamped in the store setter).
+const nodeSizeModel = computed<number>({
+  get: () => store.nodeSize,
+  set: (n) => store.setNodeSize(n)
+})
+
 // Browse-panel row -> select that node on the canvas (or clear to "show all").
 const onBrowseSelect = (placedId: string | null) => {
   if (placedId) store.selectOnly(placedId)
@@ -807,6 +826,22 @@ const onDelete = () => {
 
 .topology-search :deep(.p-autocomplete-input) {
   min-width: 11rem;
+}
+
+.node-size-control {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #98a2b3;
+}
+.node-size-slider {
+  width: 6rem;
+}
+.node-size-icon-sm {
+  font-size: 0.5rem;
+}
+.node-size-icon-lg {
+  font-size: 0.85rem;
 }
 
 .discovered-hint {

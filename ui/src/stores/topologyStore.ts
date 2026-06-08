@@ -151,11 +151,37 @@ export const useTopologyStore = defineStore('topologyStore', () => {
   }
 
   // Whenever the placed-node set is replaced (view load, discovered load, a
-  // palette drop), refresh the icon map. placedNodeIds is always reassigned
-  // (never mutated in place), so a shallow watch fires on every change.
+  // palette drop), refresh the icon map AND severities. placedNodeIds is always
+  // reassigned (never mutated in place), so a shallow watch fires on every
+  // change. Fetching severities here (not only on the View-mode poll/interval)
+  // is what makes nodes show their correct color on the *initial* load instead
+  // of staying uncolored until the first poll or a click-triggered repaint.
   watch(placedNodeIds, () => {
     void refreshDeviceIcons()
+    void refreshStatus()
   })
+
+  /**
+   * Rendered node disc size (sigma size units). The canvas renders every node
+   * at this size; the toolbar slider sets it. It defaults as a function of
+   * graph density -- small/hand-composed views get large nodes, dense
+   * discovered graphs get smaller ones so they don't overlap -- and the user
+   * can override per session.
+   */
+  const NODE_SIZE_MIN = 6
+  const NODE_SIZE_MAX = 28
+  const nodeSize = ref<number>(20)
+
+  // Density curve: <=10 nodes -> 20, >=100 -> 9, linear between.
+  const autoNodeSizeForCount = (count: number): number =>
+    Math.round(Math.max(9, Math.min(20, 20 - (count - 10) * (11 / 90))))
+
+  const setNodeSize = (n: number) => {
+    nodeSize.value = Math.max(NODE_SIZE_MIN, Math.min(NODE_SIZE_MAX, Math.round(n)))
+  }
+  const setNodeSizeForCount = (count: number) => {
+    nodeSize.value = autoNodeSizeForCount(count)
+  }
 
   const newView = () => {
     currentView.value = emptyView()
@@ -421,6 +447,11 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     refreshStatus,
     nodeIconIds,
     refreshDeviceIcons,
+    nodeSize,
+    setNodeSize,
+    setNodeSizeForCount,
+    NODE_SIZE_MIN,
+    NODE_SIZE_MAX,
     setEditMode,
     setEdgeDrawMode,
     selectOnly,
