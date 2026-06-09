@@ -281,6 +281,10 @@ const mountSigma = (g: Graph) => {
   if (!canvasEl.value) return
   sigma = new Sigma(g, canvasEl.value, {
     renderEdgeLabels: true,
+    // Sigma v3 disables edge mouse events by default; enable them so an edge
+    // can be clicked to select it (and then have its label edited in the
+    // Inspector). Without this the 'clickEdge' handler below never fires.
+    enableEdgeEvents: true,
     // This is a positioning editor: node x/y are absolute graph coordinates we
     // persist and expect to render consistently. Disable sigma's auto-rescale
     // (which re-normalizes coordinates to fit the node extent on every change)
