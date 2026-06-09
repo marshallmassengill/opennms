@@ -362,17 +362,14 @@ const mountSigma = (g: Graph) => {
   // hit-detection (especially for thin edges) stays accurate.
   resizeObserver = new ResizeObserver(() => {
     if (!sigma) return
-    // Update sigma's cached dimensions, then force a full re-render so the
-    // scene re-frames to the new size. resize() alone leaves content
-    // off-screen until the next interaction (the "nodes don't show until I
-    // zoom" symptom); refresh() does the re-render that a zoom would. We avoid
-    // re-fitting here (setCustomBBox) because that desyncs sigma's edge
-    // hit-detection.
+    // sigma's resize() resyncs the canvas/WebGL dimensions but does NOT
+    // re-render (it only emits "resize"), so the scene stays blank until the
+    // next interaction -- the "nodes don't show until I zoom" symptom. A
+    // follow-up refresh() repaints at the *current* camera, so the view
+    // reappears at the size it had before, without changing the user's
+    // zoom/pan (which is why we deliberately don't fitCamera here).
     sigma.resize()
-    const cam = sigma.getCamera().getState()
-    if (Math.abs(cam.x - 0.5) < 1e-6 && Math.abs(cam.y - 0.5) < 1e-6) {
-      fitCamera(false)
-    }
+    sigma.refresh()
   })
   resizeObserver.observe(canvasEl.value)
   attachInteractionHandlers(sigma, g)
@@ -1104,6 +1101,29 @@ watch(
   () => store.severities,
   () => sigma?.refresh(),
   { deep: true }
+)
+
+/**
+ * Switching between View and Edit mounts/unmounts the palette pane and
+ * reorders the inspector, which resizes the canvas. The ResizeObserver
+ * usually catches that, but its callback can land a frame after Vue flushes
+ * the DOM, leaving a blank canvas until the next paint. React to the mode
+ * change directly as well: once the new layout settles (nextTick + a frame),
+ * resync sigma's dimensions and repaint. We refresh() rather than fit so the
+ * user's current zoom/pan is preserved across the switch.
+ */
+watch(
+  () => store.isEditMode,
+  () => {
+    if (!sigma) return
+    nextTick(() => {
+      requestAnimationFrame(() => {
+        if (!sigma) return
+        sigma.resize()
+        sigma.refresh()
+      })
+    })
+  }
 )
 
 // Repaint when device icons resolve (fetched when the placed-node set changes).
