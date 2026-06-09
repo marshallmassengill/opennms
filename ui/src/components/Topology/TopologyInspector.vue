@@ -97,10 +97,18 @@ License.
         <div class="ti-field">
           <label class="ti-label">Edge label</label>
           <PInputText v-model="edgeLabel" class="ti-input" placeholder="(none)" :disabled="!editable" />
+          <p v-if="editable" class="ti-hint">Applies as you type — <strong>Save</strong> the view to keep it.</p>
         </div>
       </div>
 
       <p v-else-if="variant === 'full'" class="ti-empty">Edge selected.</p>
+
+      <!-- Edit-mode Properties panel with nothing editable selected. The panel
+           is always present (reserves layout) so selecting an edge/label never
+           shifts the canvas. -->
+      <p v-else-if="variant === 'props'" class="ti-empty">
+        Select an edge or label to edit its properties.
+      </p>
     </template>
   </PCard>
 </template>
@@ -354,5 +362,11 @@ const edgeLabel = computed<string>({
 .ti-infopanel-html :deep(table) {
   width: 100%;
   border-collapse: collapse;
+}
+
+.ti-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+  color: #667085;
 }
 </style>

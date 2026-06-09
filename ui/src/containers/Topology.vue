@@ -197,8 +197,10 @@ License.
       <!-- View: full read-only Inspector on the left (order -1).
            Edit: slim Properties panel on the right, only when a label/edge
            is selected (nodes have no editable props here). -->
+      <!-- Always rendered (in both modes) so selecting an edge/label doesn't
+           reflow the canvas -- a reflow shifts the view and staled sigma's
+           hit-detection, which broke selecting a second edge. -->
       <TopologyInspector
-        v-if="inspectorVisible"
         :canvas="canvasRef"
         :variant="store.isEditMode ? 'props' : 'full'"
         class="topology-inspector-pane"
@@ -236,7 +238,6 @@ import TopologyPalette from '@/components/Topology/TopologyPalette.vue'
 import TopologyInspector from '@/components/Topology/TopologyInspector.vue'
 import TopologyBrowsePanel from '@/components/Topology/TopologyBrowsePanel.vue'
 import { useTopologyStore } from '@/stores/topologyStore'
-import { nodeIdFromPlacedId } from '@/components/Topology/nodeIds'
 import {
   CUSTOM_SOURCE_SLUG,
   TOPOLOGY_SOURCES,
@@ -367,18 +368,6 @@ const mode = computed<boolean>({
   get: () => store.isEditMode,
   set: (value) => store.setEditMode(value)
 })
-
-// A single selection that has editable properties = a label or an edge
-// (i.e. not a node). Drives the Edit-mode "Properties" panel.
-const hasEditableSelection = computed<boolean>(
-  () => store.selectedIds.length === 1 && nodeIdFromPlacedId(store.selectedIds[0]) === null
-)
-
-// View: always show the full read-only Inspector. Edit: show the slim
-// Properties panel only when a label/edge is selected.
-const inspectorVisible = computed<boolean>(
-  () => !store.isEditMode || hasEditableSelection.value
-)
 
 // Load whatever the route's :source points at -- the custom catalog or a
 // discovered topology. Re-runs whenever the source changes.

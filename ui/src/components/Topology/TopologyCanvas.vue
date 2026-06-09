@@ -154,6 +154,11 @@ const rubberBandStyle = computed(() => {
 })
 let sigma: Sigma | null = null
 let graph: Graph | null = null
+// Keeps sigma's cached dimensions in sync when the canvas container resizes
+// (mode toggle, inspector/browse panels, window). Without this sigma's
+// mouse->graph hit-detection drifts after a resize -- enough that thin edges
+// can't be clicked (big nodes still hit), which broke edge selection.
+let resizeObserver: ResizeObserver | null = null
 // Half-extent of the fixed coordinate frame used when there's no content to
 // frame yet (empty canvas). Only its stability matters for placement -- drops
 // land under the cursor because the frame doesn't move between viewportToGraph
@@ -278,6 +283,10 @@ const mountSigma = (g: Graph) => {
     sigma.kill()
     sigma = null
   }
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
   if (!canvasEl.value) return
   sigma = new Sigma(g, canvasEl.value, {
     renderEdgeLabels: true,
@@ -333,6 +342,10 @@ const mountSigma = (g: Graph) => {
   // stable no matter how many nodes are present. fitCamera() narrows this box
   // to the actual content (and the camera back to 0.5/0.5) when framing.
   sigma.setCustomBBox({ x: [-DEFAULT_BBOX, DEFAULT_BBOX], y: [-DEFAULT_BBOX, DEFAULT_BBOX] })
+  // Re-sync sigma's dimensions whenever its container changes size, so
+  // hit-detection (especially for thin edges) stays accurate.
+  resizeObserver = new ResizeObserver(() => sigma?.resize())
+  resizeObserver.observe(canvasEl.value)
   attachInteractionHandlers(sigma, g)
 }
 
@@ -1343,6 +1356,10 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeyDown)
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
   if (sigma) {
     sigma.kill()
     sigma = null
