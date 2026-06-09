@@ -21,7 +21,7 @@
 ///
 
 import { describe, it, expect } from 'vitest'
-import { layoutDiscoveredGraph } from '@/components/Topology/layout'
+import { layoutDiscoveredGraph, layoutHierarchyGraph } from '@/components/Topology/layout'
 import type { CanvasLink, CanvasNode } from '@/types/topology'
 
 const node = (id: string): CanvasNode => ({ id, label: id, x: 0, y: 0 })
@@ -66,5 +66,72 @@ describe('layoutDiscoveredGraph', () => {
     const out = layoutDiscoveredGraph([node('a')], [edge('a', 'ghost')])
     expect(out).toHaveLength(1)
     expect(Number.isFinite(out[0].x)).toBe(true)
+  })
+})
+
+describe('layoutHierarchyGraph', () => {
+  const byId = (out: CanvasNode[]) => new Map(out.map((n) => [n.id, n]))
+
+  it('returns an empty array for no nodes', () => {
+    expect(layoutHierarchyGraph([], [])).toEqual([])
+  })
+
+  it('places children one tier below their parent, siblings on the same row', () => {
+    // root -> (a, b); a -> leaf. Sigma's graph y-axis points up, so deeper
+    // tiers sit at smaller (negative) y.
+    const nodes = ['root', 'a', 'b', 'leaf'].map(node)
+    const links = [edge('root', 'a'), edge('root', 'b'), edge('a', 'leaf')]
+    const out = byId(layoutHierarchyGraph(nodes, links, { levelSpacing: 100, siblingSpacing: 50 }))
+
+    expect(out.get('root')!.y).toBe(0)
+    expect(out.get('a')!.y).toBe(-100)
+    expect(out.get('b')!.y).toBe(-100)
+    expect(out.get('leaf')!.y).toBe(-200)
+    // Siblings are spread horizontally, not stacked.
+    expect(out.get('a')!.x).not.toBe(out.get('b')!.x)
+  })
+
+  it('lays out a forest with every root on the top row', () => {
+    const nodes = ['r1', 'c1', 'r2', 'c2'].map(node)
+    const links = [edge('r1', 'c1'), edge('r2', 'c2')]
+    const out = byId(layoutHierarchyGraph(nodes, links))
+
+    expect(out.get('r1')!.y).toBe(0)
+    expect(out.get('r2')!.y).toBe(0)
+    expect(out.get('r1')!.x).not.toBe(out.get('r2')!.x)
+  })
+
+  it('keeps the first parent when a node has several incoming links', () => {
+    const nodes = ['p1', 'p2', 'child'].map(node)
+    const links = [edge('p1', 'child'), edge('p2', 'child')]
+    const out = byId(layoutHierarchyGraph(nodes, links, { levelSpacing: 100 }))
+
+    expect(out.get('p1')!.y).toBe(0)
+    expect(out.get('p2')!.y).toBe(0)
+    expect(out.get('child')!.y).toBe(-100)
+  })
+
+  it('falls back to the force layout when the links contain a cycle', () => {
+    const nodes = ['a', 'b'].map(node)
+    const links = [edge('a', 'b'), edge('b', 'a')]
+    const out = layoutHierarchyGraph(nodes, links)
+
+    expect(out).toHaveLength(2)
+    for (const n of out) {
+      expect(Number.isFinite(n.x)).toBe(true)
+      expect(Number.isFinite(n.y)).toBe(true)
+    }
+  })
+
+  it('preserves node identity and other fields, only setting x/y', () => {
+    const nodes: CanvasNode[] = [{ id: 'placed-1', nodeId: 1, label: 'core', x: 0, y: 0, icon: 'linkd.system' }]
+    const out = layoutHierarchyGraph(nodes, [])
+    expect(out[0]).toMatchObject({ id: 'placed-1', nodeId: 1, label: 'core', icon: 'linkd.system' })
+  })
+
+  it('does not mutate the input nodes', () => {
+    const nodes = [node('a'), node('b')]
+    layoutHierarchyGraph(nodes, [edge('a', 'b')])
+    expect(nodes.every((n) => n.x === 0 && n.y === 0)).toBe(true)
   })
 })

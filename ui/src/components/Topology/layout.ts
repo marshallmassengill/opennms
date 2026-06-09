@@ -20,7 +20,7 @@
 /// License.
 ///
 
-import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation } from 'd3'
+import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, stratify, tree } from 'd3'
 import type { SimulationLinkDatum, SimulationNodeDatum } from 'd3'
 import type { CanvasLink, CanvasNode } from '@/types/topology'
 
@@ -98,6 +98,83 @@ export const layoutDiscoveredGraph = (
   simulation.tick(opts.ticks)
 
   const posById = new Map(simNodes.map((n) => [n.id, n]))
+  return nodes.map((n) => {
+    const p = posById.get(n.id)
+    return { ...n, x: p?.x ?? 0, y: p?.y ?? 0 }
+  })
+}
+
+interface HierarchyLayoutOptions {
+  /** Vertical distance between tiers (parent row to child row). */
+  levelSpacing?: number
+  /** Horizontal distance between adjacent siblings. */
+  siblingSpacing?: number
+}
+
+const HIERARCHY_DEFAULTS: Required<HierarchyLayoutOptions> = {
+  levelSpacing: 110,
+  siblingSpacing: 70
+}
+
+/**
+ * Tiered top-down layout for rooted parent-child data (e.g. the path-outage
+ * node-parent hierarchy), where the point is to *see the tiers* -- force
+ * layout would render the same data as an undifferentiated blob. Links are
+ * read as parent (source) -> child (target). The data is usually a forest,
+ * so all roots are hung under a synthetic super-root, laid out with d3's
+ * tidy-tree algorithm, and the synthetic level is stripped back off.
+ *
+ * Defensive cases: a node with several incoming links keeps its first parent
+ * (the data model -- one nodeParentID -- can't produce this; another provider
+ * could). If the links don't form a tree at all (a cycle), d3 stratify throws
+ * and we fall back to the force layout rather than render nothing.
+ */
+export const layoutHierarchyGraph = (
+  nodes: CanvasNode[],
+  links: CanvasLink[],
+  options: HierarchyLayoutOptions = {}
+): CanvasNode[] => {
+  const opts = { ...HIERARCHY_DEFAULTS, ...options }
+  if (nodes.length === 0) return []
+
+  const ids = new Set(nodes.map((n) => n.id))
+  const parentById = new Map<string, string>()
+  for (const link of links) {
+    if (!ids.has(link.sourceId) || !ids.has(link.targetId)) continue
+    if (link.sourceId === link.targetId) continue
+    if (!parentById.has(link.targetId)) parentById.set(link.targetId, link.sourceId)
+  }
+
+  const SUPER_ROOT = '__hierarchy_root__'
+  type Datum = { id: string; parentId?: string }
+  const data: Datum[] = [
+    { id: SUPER_ROOT },
+    ...nodes.map((n) => ({ id: n.id, parentId: parentById.get(n.id) ?? SUPER_ROOT }))
+  ]
+
+  let root
+  try {
+    root = stratify<Datum>()
+      .id((d) => d.id)
+      .parentId((d) => d.parentId)(data)
+  } catch {
+    return layoutDiscoveredGraph(nodes, links)
+  }
+
+  // nodeSize (not size) so spacing stays constant regardless of tree breadth;
+  // the canvas camera fits whatever extent results.
+  const laidOut = tree<Datum>().nodeSize([opts.siblingSpacing, opts.levelSpacing])(root)
+
+  const posById = new Map<string, { x: number; y: number }>()
+  laidOut.each((n) => {
+    if (n.data.id === SUPER_ROOT) return
+    // depth 1 is the real top tier; pull it up to y=0 (the synthetic root's
+    // row). Negative per tier because sigma's graph y-axis points up -- deeper
+    // tiers must sit at smaller y to render below their parent. `|| 0`
+    // normalizes the top tier's -0 to 0.
+    posById.set(n.data.id, { x: n.x, y: -(n.depth - 1) * opts.levelSpacing || 0 })
+  })
+
   return nodes.map((n) => {
     const p = posById.get(n.id)
     return { ...n, x: p?.x ?? 0, y: p?.y ?? 0 }

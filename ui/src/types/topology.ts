@@ -129,6 +129,11 @@ export interface DiscoveredNeighbor {
 export interface DiscoveredGraphSource {
   container: string
   namespace: string
+  /**
+   * Auto-layout suited to the data's shape: 'force' (default) for mesh-like
+   * graphs, 'hierarchy' for rooted parent-child trees (e.g. path outage).
+   */
+  layout?: 'force' | 'hierarchy'
 }
 
 /**

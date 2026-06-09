@@ -31,23 +31,32 @@ import {
 } from '@/components/Topology/sources'
 
 describe('topology sources registry', () => {
-  it('has unique slugs and a short discovered menu (Custom + Layer 2 + Layer 3)', () => {
+  it('has unique slugs and a short discovered menu', () => {
     const slugs = TOPOLOGY_SOURCES.map((s) => s.slug)
     expect(new Set(slugs).size).toBe(slugs.length)
-    expect(slugs).toEqual([CUSTOM_SOURCE_SLUG, 'layer2', 'layer3'])
+    expect(slugs).toEqual([CUSTOM_SOURCE_SLUG, 'layer2', 'layer3', 'pathoutage'])
   })
 
   it('discovered groups carry a container + variants (variants[0] = default); custom does not', () => {
     for (const s of TOPOLOGY_SOURCES) {
       if (s.kind === 'discovered') {
-        expect(s.container).toBe('enlinkd')
-        expect(s.variants?.length).toBeGreaterThan(1)
-        for (const v of s.variants!) expect(v.namespace).toMatch(/^nodes/)
+        expect(s.container).toBeTruthy()
+        expect(s.variants?.length).toBeGreaterThan(0)
       } else {
         expect(s.container).toBeUndefined()
         expect(s.variants).toBeUndefined()
       }
     }
+  })
+
+  it('path outage is a single-variant hierarchy-laid-out source', () => {
+    const pathoutage = sourceForSlug('pathoutage')!
+    expect(pathoutage.kind).toBe('discovered')
+    expect(pathoutage.container).toBe('pathoutage')
+    expect(pathoutage.layout).toBe('hierarchy')
+    // One variant -> the page renders no variant picker.
+    expect(pathoutage.variants).toHaveLength(1)
+    expect(pathoutage.variants![0].namespace).toBe('pathoutage')
   })
 
   it('Layer 2 / Layer 3 cover the expected enlinkd namespaces as variants', () => {
@@ -103,6 +112,15 @@ describe('topology sources registry', () => {
 
     it('returns undefined for the custom source', () => {
       expect(graphSourceFor(sourceForSlug(CUSTOM_SOURCE_SLUG), undefined)).toBeUndefined()
+    })
+
+    it('carries the source layout preference through (hierarchy for path outage)', () => {
+      expect(graphSourceFor(sourceForSlug('pathoutage'), undefined)).toEqual({
+        container: 'pathoutage',
+        namespace: 'pathoutage',
+        layout: 'hierarchy'
+      })
+      expect(graphSourceFor(sourceForSlug('layer2'), undefined)?.layout).toBeUndefined()
     })
   })
 })

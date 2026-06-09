@@ -52,6 +52,11 @@ export interface TopologySourceOption {
   container?: string
   /** Representations of this source; variants[0] is the default. */
   variants?: SourceVariant[]
+  /**
+   * Auto-layout suited to the data's shape: 'force' (default) for mesh-like
+   * graphs, 'hierarchy' for rooted parent-child trees.
+   */
+  layout?: 'force' | 'hierarchy'
 }
 
 export const CUSTOM_SOURCE_SLUG = 'custom'
@@ -76,7 +81,17 @@ export const TOPOLOGY_SOURCES: TopologySourceOption[] = [
     { key: 'ospf-area', label: 'OSPF — by area', namespace: 'nodes:OspfArea' },
     { key: 'isis', label: 'IS-IS', namespace: 'nodes:Isis' },
     { key: 'routers', label: 'Routers & Subnets', namespace: 'nodes:NetworkRouter' }
-  ])
+  ]),
+  {
+    // The node parent / critical-path hierarchy (nodeParentID). A rooted
+    // forest, so it lays out as top-down tiers rather than force-directed.
+    slug: 'pathoutage',
+    label: 'Path Outage',
+    kind: 'discovered',
+    container: 'pathoutage',
+    layout: 'hierarchy',
+    variants: [{ key: 'default', label: 'Path Outage', namespace: 'pathoutage' }]
+  }
 ]
 
 export const sourceForSlug = (slug: string | undefined): TopologySourceOption | undefined =>
@@ -105,5 +120,5 @@ export const graphSourceFor = (
 ): DiscoveredGraphSource | undefined => {
   const variant = variantForKey(source, key)
   if (!source?.container || !variant) return undefined
-  return { container: source.container, namespace: variant.namespace }
+  return { container: source.container, namespace: variant.namespace, layout: source.layout }
 }

@@ -110,7 +110,7 @@ import {
   paletteIdFromPlacedId,
   nodeIdFromPlacedId
 } from '@/components/Topology/nodeIds'
-import { layoutDiscoveredGraph } from '@/components/Topology/layout'
+import { layoutDiscoveredGraph, layoutHierarchyGraph } from '@/components/Topology/layout'
 import type { CanvasLink, CanvasLabel, CanvasNode, DiscoveredGraph, TopologyView } from '@/types/topology'
 
 const store = useTopologyStore()
@@ -572,10 +572,19 @@ const fitCamera = (animate = true) => {
  */
 const loadDiscoveredGraph = (dg: DiscoveredGraph) => {
   // Density-based default node size, then lay out with spacing scaled to it.
+  // Tree-shaped sources (path outage) use the tiered hierarchy layout; the
+  // mesh-like ones (enlinkd) stay force-directed.
   store.setNodeSizeForCount(dg.nodes.length)
-  const positioned = layoutDiscoveredGraph(dg.nodes, dg.links, {
-    collideRadius: Math.max(24, store.nodeSize * 3)
-  })
+  const positioned =
+    dg.source.layout === 'hierarchy'
+      ? layoutHierarchyGraph(dg.nodes, dg.links, {
+          levelSpacing: Math.max(80, store.nodeSize * 6),
+          // Wide enough that a node's right-hand label clears its next sibling.
+          siblingSpacing: Math.max(70, store.nodeSize * 6)
+        })
+      : layoutDiscoveredGraph(dg.nodes, dg.links, {
+          collideRadius: Math.max(24, store.nodeSize * 3)
+        })
   const g = new Graph()
   for (const n of positioned) {
     if (g.hasNode(n.id)) continue
