@@ -30,7 +30,7 @@ License.
 <template>
   <div
     class="topology-canvas-root"
-    :class="{ 'is-drop-target': isDropHover, 'is-link-draw-mode': store.isLinkDrawMode }"
+    :class="{ 'is-drop-target': isDropHover, 'is-link-draw-mode': store.isLinkDrawMode, 'is-hovering-link': hoveredLinkId !== null }"
     @dragenter.prevent="onDragEnter"
     @dragover.prevent="onDragOver"
     @dragleave="onDragLeave"
@@ -164,6 +164,17 @@ let resizeObserver: ResizeObserver | null = null
 // land under the cursor because the frame doesn't move between viewportToGraph
 // and render; fitCamera/setContentBBox narrow it to the content once present.
 const DEFAULT_BBOX = 500
+// Link thickness, in sigma's edge-size units. Sigma derives an edge's
+// clickable zone from its *rendered* thickness, so these widths double as
+// hit-target sizes. A roomy base makes links easy to hover; hover then
+// fattens further so the click target is generous right when you're aiming
+// at it (the affordance pattern Cytoscape/Grafana use). The edgeReducer is
+// the single place these are applied, so per-link creation sizes don't matter.
+const LINK_SIZE = 3
+const LINK_HOVER_SIZE = 6
+const LINK_SELECTED_SIZE = 4
+// Transient hovered link id (cleared on leave). Drives the reducer + cursor.
+const hoveredLinkId = ref<string | null>(null)
 let placedSequence = 0
 let draggedNode: string | null = null
 let dragStartPos: { x: number; y: number } | null = null
@@ -324,14 +335,19 @@ const mountSigma = (g: Graph) => {
       }
       return res
     },
-    // Selected edges render highlighted in blue without us mutating
-    // the edge's actual color attribute; the reducer pulls a
-    // transient _selected flag we set in the selection watcher.
-    edgeReducer: (_edge, attrs) => {
-      if ((attrs as { _selected?: boolean })._selected) {
-        return { ...attrs, color: '#1f5fb0', size: 3 }
+    // The reducer is the single source of truth for link thickness and the
+    // selected/hover visuals -- it never mutates the stored attributes. Hover
+    // wins over selection so the element under the cursor is always the
+    // fattest/clearest target. _selected is set by the selection watcher;
+    // hover is tracked in hoveredLinkId via enter/leaveEdge.
+    edgeReducer: (edge, attrs) => {
+      if (edge === hoveredLinkId.value) {
+        return { ...attrs, color: '#1f5fb0', size: LINK_HOVER_SIZE }
       }
-      return attrs
+      if ((attrs as { _selected?: boolean })._selected) {
+        return { ...attrs, color: '#1f5fb0', size: LINK_SELECTED_SIZE }
+      }
+      return { ...attrs, size: LINK_SIZE }
     }
   })
   // Pin a fixed coordinate frame. With autoRescale:false sigma still
@@ -793,6 +809,21 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
     } else {
       store.selectOnly(e.edge)
     }
+  })
+
+  // Hover affordance: fatten + recolor the link under the cursor (via the
+  // reducer) and switch to a pointer cursor, so links read as clickable. In
+  // link-draw mode the cursor stays a crosshair and clicks won't select, so
+  // we skip the affordance there to avoid implying the link is clickable.
+  s.on('enterEdge', (e) => {
+    if (store.isLinkDrawMode) return
+    hoveredLinkId.value = e.edge
+    s.refresh()
+  })
+  s.on('leaveEdge', (e) => {
+    if (hoveredLinkId.value !== e.edge) return
+    hoveredLinkId.value = null
+    s.refresh()
   })
 
   s.on('clickStage', (e) => {
@@ -1496,6 +1527,13 @@ defineExpose({
 
 .topology-canvas-root.is-link-draw-mode .topology-canvas canvas {
   cursor: crosshair;
+}
+
+/* Pointer over a hovered link signals it's clickable. Draw mode keeps its
+   crosshair (the rule above wins by being listed where draw mode is active,
+   but be explicit so a hovered link mid-draw doesn't flip to a pointer). */
+.topology-canvas-root.is-hovering-link:not(.is-link-draw-mode) .topology-canvas canvas {
+  cursor: pointer;
 }
 
 .topology-labels-layer {
