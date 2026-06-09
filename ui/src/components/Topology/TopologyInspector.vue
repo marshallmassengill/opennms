@@ -24,7 +24,7 @@ License.
   Selection-driven properties panel. Shows (and, for labels, edits) the
   currently-selected canvas element: a free-standing label's text/color/
   size, or a placed node's OpenNMS detail and current alarm severity.
-  Node and edge editing beyond this is a follow-up.
+  Node and link editing beyond this is a follow-up.
 -->
 
 <template>
@@ -35,7 +35,7 @@ License.
     <template #content>
       <!-- Nothing selected (full/View only) -->
       <p v-if="kind === 'none' && variant === 'full'" class="ti-empty">
-        Select a node, edge, or label to see its properties.
+        Select a node, link, or label to see its properties.
       </p>
 
       <!-- Multiple items (full/View only) -->
@@ -89,25 +89,25 @@ License.
         <p v-else class="ti-empty">Node details unavailable.</p>
       </div>
 
-      <!-- An edge between two nodes -->
-      <div v-else-if="kind === 'edge' && edge" class="ti-section">
+      <!-- A link between two nodes -->
+      <div v-else-if="kind === 'link' && link" class="ti-section">
         <div class="ti-node-header">
-          <span class="ti-edge-endpoints">{{ edge.sourceLabel }} → {{ edge.targetLabel }}</span>
+          <span class="ti-link-endpoints">{{ link.sourceLabel }} → {{ link.targetLabel }}</span>
         </div>
         <div class="ti-field">
-          <label class="ti-label">Edge label</label>
-          <PInputText v-model="edgeLabel" class="ti-input" placeholder="(none)" :disabled="!editable" />
+          <label class="ti-label">Link label</label>
+          <PInputText v-model="linkLabel" class="ti-input" placeholder="(none)" :disabled="!editable" />
           <p v-if="editable" class="ti-hint">Applies as you type — <strong>Save</strong> the view to keep it.</p>
         </div>
       </div>
 
-      <p v-else-if="variant === 'full'" class="ti-empty">Edge selected.</p>
+      <p v-else-if="variant === 'full'" class="ti-empty">Link selected.</p>
 
       <!-- Edit-mode Properties panel with nothing editable selected. The panel
-           is always present (reserves layout) so selecting an edge/label never
+           is always present (reserves layout) so selecting a link/label never
            shifts the canvas. -->
       <p v-else-if="variant === 'props'" class="ti-empty">
-        Select an edge or label to edit its properties.
+        Select a link or label to edit its properties.
       </p>
     </template>
   </PCard>
@@ -130,18 +130,18 @@ const PCard = Card
 const PInputText = InputText
 const PInputNumber = InputNumber
 
-/** Minimal edge read/write surface the canvas exposes (via defineExpose). */
-interface CanvasEdgeApi {
-  getEdge: (id: string) => { label: string; sourceLabel: string; targetLabel: string } | null
-  setEdgeLabel: (id: string, label: string) => void
+/** Minimal link read/write surface the canvas exposes (via defineExpose). */
+interface CanvasLinkApi {
+  getLink: (id: string) => { label: string; sourceLabel: string; targetLabel: string } | null
+  setLinkLabel: (id: string, label: string) => void
 }
 
 const props = defineProps<{
-  canvas: CanvasEdgeApi | null
+  canvas: CanvasLinkApi | null
   /**
-   * 'full' (View): node detail + label/edge + empty/multi states.
-   * 'props' (Edit): only the editable label/edge property fields; the page
-   * mounts this variant solely when a label or edge is selected.
+   * 'full' (View): node detail + label/link + empty/multi states.
+   * 'props' (Edit): only the editable label/link property fields; the page
+   * mounts this variant solely when a label or link is selected.
    */
   variant?: 'full' | 'props'
 }>()
@@ -157,13 +157,13 @@ const selectedId = computed<string | null>(() =>
   store.selectedIds.length === 1 ? store.selectedIds[0] : null
 )
 
-const kind = computed<'none' | 'multi' | 'label' | 'node' | 'edge'>(() => {
+const kind = computed<'none' | 'multi' | 'label' | 'node' | 'link'>(() => {
   if (store.selectedIds.length === 0) return 'none'
   if (store.selectedIds.length > 1) return 'multi'
   const id = selectedId.value as string
   if (isLabelId(id)) return 'label'
   if (nodeIdFromPlacedId(id) !== null) return 'node'
-  return 'edge'
+  return 'link'
 })
 
 /* ---- Label editing (store-backed) ---- */
@@ -229,24 +229,24 @@ watch(
   { immediate: true }
 )
 
-/* ---- Edge editing (reads/writes the canvas graph via the exposed API) ---- */
-const edge = ref<{ label: string; sourceLabel: string; targetLabel: string } | null>(null)
+/* ---- Link editing (reads/writes the canvas graph via the exposed API) ---- */
+const link = ref<{ label: string; sourceLabel: string; targetLabel: string } | null>(null)
 
 watch(
   selectedId,
   (id) => {
-    edge.value = id && kind.value === 'edge' && props.canvas ? props.canvas.getEdge(id) : null
+    link.value = id && kind.value === 'link' && props.canvas ? props.canvas.getLink(id) : null
   },
   { immediate: true }
 )
 
-const edgeLabel = computed<string>({
-  get: () => edge.value?.label ?? '',
+const linkLabel = computed<string>({
+  get: () => link.value?.label ?? '',
   set: (value) => {
     const id = selectedId.value
     if (!id || !props.canvas) return
-    props.canvas.setEdgeLabel(id, value)
-    if (edge.value) edge.value = { ...edge.value, label: value }
+    props.canvas.setLinkLabel(id, value)
+    if (link.value) link.value = { ...link.value, label: value }
   }
 })
 </script>
@@ -318,7 +318,7 @@ const edgeLabel = computed<string>({
   font-weight: 600;
 }
 
-.ti-edge-endpoints {
+.ti-link-endpoints {
   font-weight: 600;
   word-break: break-word;
 }

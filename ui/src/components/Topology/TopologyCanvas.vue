@@ -30,7 +30,7 @@ License.
 <template>
   <div
     class="topology-canvas-root"
-    :class="{ 'is-drop-target': isDropHover, 'is-edge-draw-mode': store.isEdgeDrawMode }"
+    :class="{ 'is-drop-target': isDropHover, 'is-link-draw-mode': store.isLinkDrawMode }"
     @dragenter.prevent="onDragEnter"
     @dragover.prevent="onDragOver"
     @dragleave="onDragLeave"
@@ -40,7 +40,7 @@ License.
   >
     <div class="topology-canvas-stats">
       <span>Nodes: {{ placedCount }}</span>
-      <span>Edges: {{ edgeCount }}</span>
+      <span>Links: {{ linkCount }}</span>
       <span>Labels: {{ store.labels.length }}</span>
       <span>Selected: {{ store.selectedIds.length }}</span>
     </div>
@@ -79,12 +79,12 @@ License.
       class="topology-rubber-band"
       :style="rubberBandStyle"
     />
-    <svg v-if="edgePreview" class="topology-edge-preview" xmlns="http://www.w3.org/2000/svg">
+    <svg v-if="linkPreview" class="topology-link-preview" xmlns="http://www.w3.org/2000/svg">
       <line
-        :x1="edgePreview.x1"
-        :y1="edgePreview.y1"
-        :x2="edgePreview.x2"
-        :y2="edgePreview.y2"
+        :x1="linkPreview.x1"
+        :y1="linkPreview.y1"
+        :x2="linkPreview.x2"
+        :y2="linkPreview.y2"
         stroke="#1f5fb0"
         stroke-width="2"
         stroke-dasharray="6 4"
@@ -111,7 +111,7 @@ import {
   nodeIdFromPlacedId
 } from '@/components/Topology/nodeIds'
 import { layoutDiscoveredGraph } from '@/components/Topology/layout'
-import type { CanvasEdge, CanvasLabel, CanvasNode, DiscoveredGraph, TopologyView } from '@/types/topology'
+import type { CanvasLink, CanvasLabel, CanvasNode, DiscoveredGraph, TopologyView } from '@/types/topology'
 
 const store = useTopologyStore()
 
@@ -126,7 +126,7 @@ const emit = defineEmits<{
 }>()
 
 const canvasEl = ref<HTMLDivElement>()
-const edgeCount = ref(0)
+const linkCount = ref(0)
 const placedCount = ref(0)
 const isDropHover = ref(false)
 interface RubberBandState {
@@ -194,26 +194,26 @@ let editingIsNew = false
 let draggingLabel: { id: string; startLabelX: number; startLabelY: number; startMouseGraphX: number; startMouseGraphY: number } | null = null
 
 /**
- * Edge-draw state. `edgeDrawSource` is the node id captured on first
+ * Edge-draw state. `linkDrawSource` is the node id captured on first
  * click while in edge-draw mode; the next clickNode commits an edge
  * source -> target. Click on empty stage cancels the in-flight; Esc
  * exits edge-draw mode entirely.
  */
-const edgeDrawSource = ref<string | null>(null)
+const linkDrawSource = ref<string | null>(null)
 const cursorViewport = ref<{ x: number; y: number } | null>(null)
 
-const edgePreview = computed<{ x1: number; y1: number; x2: number; y2: number } | null>(() => {
-  if (!edgeDrawSource.value || !cursorViewport.value || !sigma || !graph) return null
-  if (!graph.hasNode(edgeDrawSource.value)) return null
+const linkPreview = computed<{ x1: number; y1: number; x2: number; y2: number } | null>(() => {
+  if (!linkDrawSource.value || !cursorViewport.value || !sigma || !graph) return null
+  if (!graph.hasNode(linkDrawSource.value)) return null
   void cameraVersion.value
-  const sx = graph.getNodeAttribute(edgeDrawSource.value, 'x') as number
-  const sy = graph.getNodeAttribute(edgeDrawSource.value, 'y') as number
+  const sx = graph.getNodeAttribute(linkDrawSource.value, 'x') as number
+  const sy = graph.getNodeAttribute(linkDrawSource.value, 'y') as number
   const src = sigma.graphToViewport({ x: sx, y: sy })
   return { x1: src.x, y1: src.y, x2: cursorViewport.value.x, y2: cursorViewport.value.y }
 })
 
 const onCanvasMouseMove = (event: MouseEvent) => {
-  if (!store.isEdgeDrawMode || !edgeDrawSource.value || !canvasEl.value) return
+  if (!store.isLinkDrawMode || !linkDrawSource.value || !canvasEl.value) return
   const rect = canvasEl.value.getBoundingClientRect()
   cursorViewport.value = {
     x: event.clientX - rect.left,
@@ -221,10 +221,10 @@ const onCanvasMouseMove = (event: MouseEvent) => {
   }
 }
 
-let edgeIdSequence = 0
-const newEdgeId = () => `edge-${Date.now()}-${edgeIdSequence++}`
+let linkIdSequence = 0
+const newLinkId = () => `link-${Date.now()}-${linkIdSequence++}`
 
-const isEdgeId = (id: string): boolean => {
+const isLinkId = (id: string): boolean => {
   if (!graph) return false
   return graph.hasEdge(id)
 }
@@ -344,7 +344,20 @@ const mountSigma = (g: Graph) => {
   sigma.setCustomBBox({ x: [-DEFAULT_BBOX, DEFAULT_BBOX], y: [-DEFAULT_BBOX, DEFAULT_BBOX] })
   // Re-sync sigma's dimensions whenever its container changes size, so
   // hit-detection (especially for thin edges) stays accurate.
-  resizeObserver = new ResizeObserver(() => sigma?.resize())
+  resizeObserver = new ResizeObserver(() => {
+    if (!sigma) return
+    // Update sigma's cached dimensions, then force a full re-render so the
+    // scene re-frames to the new size. resize() alone leaves content
+    // off-screen until the next interaction (the "nodes don't show until I
+    // zoom" symptom); refresh() does the re-render that a zoom would. We avoid
+    // re-fitting here (setCustomBBox) because that desyncs sigma's edge
+    // hit-detection.
+    sigma.resize()
+    const cam = sigma.getCamera().getState()
+    if (Math.abs(cam.x - 0.5) < 1e-6 && Math.abs(cam.y - 0.5) < 1e-6) {
+      fitCamera(false)
+    }
+  })
   resizeObserver.observe(canvasEl.value)
   attachInteractionHandlers(sigma, g)
 }
@@ -355,7 +368,7 @@ const mountSigma = (g: Graph) => {
  */
 const initGraph = () => {
   graph = new Graph()
-  edgeCount.value = 0
+  linkCount.value = 0
   placedCount.value = 0
   placedSequence = 0
   draggedNode = null
@@ -372,9 +385,9 @@ const initGraph = () => {
  * time. The viewport stores the sigma camera state directly (ratio as
  * `zoom`, x/y as pan) so it round-trips exactly on load.
  */
-const serialize = (): Pick<TopologyView, 'nodes' | 'edges' | 'viewport'> => {
+const serialize = (): Pick<TopologyView, 'nodes' | 'links' | 'viewport'> => {
   const nodes: CanvasNode[] = []
-  const edges: CanvasEdge[] = []
+  const links: CanvasLink[] = []
   if (graph) {
     graph.forEachNode((id, attrs) => {
       const paletteId = paletteIdFromPlacedId(id)
@@ -389,7 +402,7 @@ const serialize = (): Pick<TopologyView, 'nodes' | 'edges' | 'viewport'> => {
       })
     })
     graph.forEachEdge((id, attrs, source, target) => {
-      edges.push({
+      links.push({
         id,
         sourceId: source,
         targetId: target,
@@ -402,7 +415,7 @@ const serialize = (): Pick<TopologyView, 'nodes' | 'edges' | 'viewport'> => {
   const viewport = cam
     ? { zoom: cam.ratio, panX: cam.x, panY: cam.y }
     : { zoom: 1, panX: 0, panY: 0 }
-  return { nodes, edges, viewport }
+  return { nodes, links, viewport }
 }
 
 /**
@@ -423,7 +436,7 @@ const loadView = (view: TopologyView) => {
       color: n.color ?? '#1f5fb0'
     })
   }
-  for (const e of view.edges) {
+  for (const e of view.links) {
     if (
       g.hasNode(e.sourceId) &&
       g.hasNode(e.targetId) &&
@@ -439,7 +452,7 @@ const loadView = (view: TopologyView) => {
     }
   }
   graph = g
-  edgeCount.value = g.size
+  linkCount.value = g.size
   draggedNode = null
   dragStartPos = null
   clearHistory()
@@ -470,6 +483,8 @@ const loadView = (view: TopologyView) => {
       sigma.getCamera().setState({ x: vp.panX, y: vp.panY, ratio: vp.zoom, angle: 0 })
     } else {
       fitCamera(false)
+      // Re-fit once after the resize observer's first post-load resize, which
+      // would otherwise re-frame and push tall content off-screen.
     }
   }
 }
@@ -545,7 +560,7 @@ const fitCamera = (animate = true) => {
 const loadDiscoveredGraph = (dg: DiscoveredGraph) => {
   // Density-based default node size, then lay out with spacing scaled to it.
   store.setNodeSizeForCount(dg.nodes.length)
-  const positioned = layoutDiscoveredGraph(dg.nodes, dg.edges, {
+  const positioned = layoutDiscoveredGraph(dg.nodes, dg.links, {
     collideRadius: Math.max(24, store.nodeSize * 3)
   })
   const g = new Graph()
@@ -561,7 +576,7 @@ const loadDiscoveredGraph = (dg: DiscoveredGraph) => {
       color: n.color ?? '#1f5fb0'
     })
   }
-  for (const e of dg.edges) {
+  for (const e of dg.links) {
     if (
       g.hasNode(e.sourceId) &&
       g.hasNode(e.targetId) &&
@@ -572,7 +587,7 @@ const loadDiscoveredGraph = (dg: DiscoveredGraph) => {
     }
   }
   graph = g
-  edgeCount.value = g.size
+  linkCount.value = g.size
   placedCount.value = positioned.length
   draggedNode = null
   dragStartPos = null
@@ -738,7 +753,7 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
 
   s.on('clickNode', (e) => {
     const original = e.event.original as MouseEvent | undefined
-    if (store.isEdgeDrawMode) {
+    if (store.isLinkDrawMode) {
       // Seed cursorViewport from the click position so the preview line
       // is rendered immediately (rather than waiting for the next
       // mousemove to set it).
@@ -749,7 +764,7 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
           y: original.clientY - rect.top
         }
       }
-      handleEdgeDrawClick(e.node)
+      handleLinkDrawClick(e.node)
       return
     }
     if (original?.shiftKey) {
@@ -771,7 +786,7 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
   })
 
   s.on('clickEdge', (e) => {
-    if (store.isEdgeDrawMode) return
+    if (store.isLinkDrawMode) return
     const original = e.event.original as MouseEvent | undefined
     if (original?.shiftKey) {
       store.toggleSelection(e.edge)
@@ -782,10 +797,10 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
 
   s.on('clickStage', (e) => {
     const original = e.event.original as MouseEvent | undefined
-    if (store.isEdgeDrawMode) {
+    if (store.isLinkDrawMode) {
       // Click on empty stage cancels the in-flight edge but stays in
       // edge-draw mode (so the user can keep chaining edges).
-      edgeDrawSource.value = null
+      linkDrawSource.value = null
       return
     }
     // Shift+click on empty stage is reserved for rubber band; never
@@ -824,36 +839,36 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
  * In edge-draw mode, the first node click captures the source; the
  * next clickNode (a different node) commits the edge. graphology
  * assigns the edge key via addEdgeWithKey; we use a deterministic id
- * (newEdgeId) so undo/redo can re-create the exact same edge object.
+ * (newLinkId) so undo/redo can re-create the exact same edge object.
  */
-const handleEdgeDrawClick = (nodeId: string) => {
+const handleLinkDrawClick = (nodeId: string) => {
   if (!graph || !store.isEditMode) return
-  if (edgeDrawSource.value === null) {
-    edgeDrawSource.value = nodeId
+  if (linkDrawSource.value === null) {
+    linkDrawSource.value = nodeId
     return
   }
-  const source = edgeDrawSource.value
-  edgeDrawSource.value = null
+  const source = linkDrawSource.value
+  linkDrawSource.value = null
   if (source === nodeId) return // ignore clicks on the same node (no self-loops)
   if (graph.hasEdge(source, nodeId) || graph.hasEdge(nodeId, source)) {
     // Don't create duplicate edges between the same endpoints.
     return
   }
-  const edgeId = newEdgeId()
+  const edgeId = newLinkId()
   const attrs = { size: 2, color: '#1f5fb0', origin: 'user' }
   graph.addEdgeWithKey(edgeId, source, nodeId, attrs)
-  edgeCount.value = graph.size
+  linkCount.value = graph.size
   pushCommand({
     label: 'Add edge',
     do: () => {
       if (!graph || graph.hasEdge(edgeId)) return
       graph.addEdgeWithKey(edgeId, source, nodeId, attrs)
-      edgeCount.value = graph.size
+      linkCount.value = graph.size
     },
     undo: () => {
       if (!graph || !graph.hasEdge(edgeId)) return
       graph.dropEdge(edgeId)
-      edgeCount.value = graph.size
+      linkCount.value = graph.size
     }
   })
 }
@@ -861,9 +876,9 @@ const handleEdgeDrawClick = (nodeId: string) => {
 // When the user toggles edge-draw mode off mid-flight, drop any
 // captured source so re-entering the mode starts fresh.
 watch(
-  () => store.isEdgeDrawMode,
+  () => store.isLinkDrawMode,
   (on) => {
-    if (!on) edgeDrawSource.value = null
+    if (!on) linkDrawSource.value = null
   }
 )
 
@@ -1253,7 +1268,7 @@ const deleteSelected = () => {
     for (const l of labelSnapshots) {
       store.removeLabel(l.id)
     }
-    edgeCount.value = graph.size
+    linkCount.value = graph.size
   }
 
   const applyUndo = () => {
@@ -1291,7 +1306,7 @@ const deleteSelected = () => {
     for (const l of labelSnapshots) {
       if (!store.getLabel(l.id)) store.addLabel(l)
     }
-    edgeCount.value = graph.size
+    linkCount.value = graph.size
   }
 
   applyDelete()
@@ -1331,9 +1346,9 @@ const onKeyDown = (e: KeyboardEvent) => {
     return
   }
   if (e.key === 'Escape') {
-    if (store.isEdgeDrawMode) {
+    if (store.isLinkDrawMode) {
       e.preventDefault()
-      store.setEdgeDrawMode(false)
+      store.setLinkDrawMode(false)
       return
     }
     if (editingLabelId.value !== null) {
@@ -1367,10 +1382,10 @@ onBeforeUnmount(() => {
 })
 
 /**
- * Read an edge's label and its endpoint labels, for the inspector. Returns
- * null if the id isn't a current edge.
+ * Read a link's label and its endpoint labels, for the inspector. Returns
+ * null if the id isn't a current link (graphology edge).
  */
-const getEdge = (id: string): { label: string; sourceLabel: string; targetLabel: string } | null => {
+const getLink = (id: string): { label: string; sourceLabel: string; targetLabel: string } | null => {
   if (!graph || !graph.hasEdge(id)) return null
   const source = graph.source(id)
   const target = graph.target(id)
@@ -1386,7 +1401,7 @@ const getEdge = (id: string): { label: string; sourceLabel: string; targetLabel:
  * Called per keystroke from the inspector, so it does not push an undo
  * command -- edge-label edits aren't individually undoable.
  */
-const setEdgeLabel = (id: string, label: string) => {
+const setLinkLabel = (id: string, label: string) => {
   if (!graph || !graph.hasEdge(id)) return
   graph.setEdgeAttribute(id, 'label', label)
   sigma?.refresh()
@@ -1414,8 +1429,8 @@ defineExpose({
   serialize,
   loadView,
   loadDiscoveredGraph,
-  getEdge,
-  setEdgeLabel,
+  getLink,
+  setLinkLabel,
   exportImage
 })
 </script>
@@ -1466,7 +1481,7 @@ defineExpose({
   z-index: 2;
 }
 
-.topology-edge-preview {
+.topology-link-preview {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -1475,11 +1490,11 @@ defineExpose({
   z-index: 2;
 }
 
-.topology-canvas-root.is-edge-draw-mode {
+.topology-canvas-root.is-link-draw-mode {
   cursor: crosshair;
 }
 
-.topology-canvas-root.is-edge-draw-mode .topology-canvas canvas {
+.topology-canvas-root.is-link-draw-mode .topology-canvas canvas {
   cursor: crosshair;
 }
 

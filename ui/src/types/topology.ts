@@ -40,7 +40,7 @@ export interface CanvasNode {
  * Phase 2 (assisted composition): edges drawn by the user vs. surfaced
  * from discovered topology data.
  */
-export interface CanvasEdge {
+export interface CanvasLink {
   id: string
   sourceId: string
   targetId: string
@@ -79,7 +79,7 @@ export interface TopologyView {
   id?: string
   name: string
   nodes: CanvasNode[]
-  edges: CanvasEdge[]
+  links: CanvasLink[]
   labels: CanvasLabel[]
   viewport: {
     zoom: number
@@ -142,5 +142,5 @@ export interface DiscoveredGraph {
   source: DiscoveredGraphSource
   label: string
   nodes: CanvasNode[]
-  edges: CanvasEdge[]
+  links: CanvasLink[]
 }

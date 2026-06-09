@@ -22,16 +22,16 @@
 
 import { describe, it, expect } from 'vitest'
 import { focusSubgraph } from '@/components/Topology/focus'
-import type { CanvasEdge, CanvasNode, DiscoveredGraph } from '@/types/topology'
+import type { CanvasLink, CanvasNode, DiscoveredGraph } from '@/types/topology'
 
 // core -- d1, d2 ; d1 -- a1 ; d2 -- a2 (a small two-tier tree)
 const node = (id: string): CanvasNode => ({ id, label: id, x: 0, y: 0 })
-const edge = (s: string, t: string): CanvasEdge => ({ id: `${s}|${t}`, sourceId: s, targetId: t, origin: 'discovered' })
+const edge = (s: string, t: string): CanvasLink => ({ id: `${s}|${t}`, sourceId: s, targetId: t, origin: 'discovered' })
 const graph: DiscoveredGraph = {
   source: { container: 'enlinkd', namespace: 'nodes:Layer2' },
   label: 'Layer2',
   nodes: ['core', 'd1', 'd2', 'a1', 'a2'].map(node),
-  edges: [edge('core', 'd1'), edge('core', 'd2'), edge('d1', 'a1'), edge('d2', 'a2')]
+  links: [edge('core', 'd1'), edge('core', 'd2'), edge('d1', 'a1'), edge('d2', 'a2')]
 }
 
 const ids = (g: DiscoveredGraph) => g.nodes.map((n) => n.id).sort()
@@ -48,20 +48,20 @@ describe('focusSubgraph', () => {
   it('hops=0 yields just the focus node and no edges', () => {
     const out = focusSubgraph(graph, 'core', 0)
     expect(ids(out)).toEqual(['core'])
-    expect(out.edges).toEqual([])
+    expect(out.links).toEqual([])
   })
 
   it('hops=1 yields the focus node and its direct neighbors', () => {
     const out = focusSubgraph(graph, 'core', 1)
     expect(ids(out)).toEqual(['core', 'd1', 'd2'])
     // only edges fully inside the kept set
-    expect(out.edges.map((e) => e.id).sort()).toEqual(['core|d1', 'core|d2'])
+    expect(out.links.map((e) => e.id).sort()).toEqual(['core|d1', 'core|d2'])
   })
 
   it('hops=2 reaches the leaves', () => {
     const out = focusSubgraph(graph, 'core', 2)
     expect(ids(out)).toEqual(['a1', 'a2', 'core', 'd1', 'd2'])
-    expect(out.edges).toHaveLength(4)
+    expect(out.links).toHaveLength(4)
   })
 
   it('focusing on a leaf walks back up', () => {
@@ -72,6 +72,6 @@ describe('focusSubgraph', () => {
   it('does not mutate the input graph', () => {
     focusSubgraph(graph, 'core', 1)
     expect(graph.nodes).toHaveLength(5)
-    expect(graph.edges).toHaveLength(4)
+    expect(graph.links).toHaveLength(4)
   })
 })

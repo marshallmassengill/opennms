@@ -44,12 +44,12 @@ import type { DeviceIconId } from '@/components/Topology/deviceIcons'
  * nodes/edges from the graphology graph plus the sigma camera viewport.
  * Labels are not included here -- they already live in the store.
  */
-type CanvasSnapshot = Pick<TopologyView, 'nodes' | 'edges' | 'viewport'>
+type CanvasSnapshot = Pick<TopologyView, 'nodes' | 'links' | 'viewport'>
 
 const emptyView = (): TopologyView => ({
   name: 'Untitled view',
   nodes: [],
-  edges: [],
+  links: [],
   labels: [],
   viewport: { zoom: 1, panX: 0, panY: 0 }
 })
@@ -70,7 +70,7 @@ export const useTopologyStore = defineStore('topologyStore', () => {
    * Edge-draw mode: when true, clicks on nodes capture source/target
    * instead of selecting. Driven by the toolbar Draw Edge toggle.
    */
-  const isEdgeDrawMode = ref<boolean>(false)
+  const isLinkDrawMode = ref<boolean>(false)
   const selectedIds = ref<string[]>([])
   /**
    * Palette node ids currently placed on the canvas. The palette uses
@@ -264,7 +264,7 @@ export const useTopologyStore = defineStore('topologyStore', () => {
       const view: TopologyView = {
         ...currentView.value,
         nodes: snapshot.nodes,
-        edges: snapshot.edges,
+        links: snapshot.links,
         labels: labels.value.map((l) => ({ ...l })),
         viewport: snapshot.viewport
       }
@@ -296,7 +296,7 @@ export const useTopologyStore = defineStore('topologyStore', () => {
         id: undefined,
         name,
         nodes: snapshot.nodes,
-        edges: snapshot.edges,
+        links: snapshot.links,
         labels: labels.value.map((l) => ({ ...l })),
         viewport: snapshot.viewport
       }
@@ -349,8 +349,8 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     isEditMode.value = value
   }
 
-  const setEdgeDrawMode = (value: boolean) => {
-    isEdgeDrawMode.value = value
+  const setLinkDrawMode = (value: boolean) => {
+    isLinkDrawMode.value = value
   }
 
   const selectOnly = (id: string) => {
@@ -418,7 +418,7 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     catalog,
     currentView,
     isEditMode,
-    isEdgeDrawMode,
+    isLinkDrawMode,
     isSaving,
     discoveredGraph,
     isDiscoveredLoading,
@@ -453,7 +453,7 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     NODE_SIZE_MIN,
     NODE_SIZE_MAX,
     setEditMode,
-    setEdgeDrawMode,
+    setLinkDrawMode,
     selectOnly,
     toggleSelection,
     clearSelection,

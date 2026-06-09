@@ -48,7 +48,7 @@ vi.mock('@/services/axiosInstances', () => ({
 const flatView = (overrides: Partial<TopologyView> = {}): TopologyView => ({
   name: 'Core DC',
   nodes: [{ id: 'placed-7', nodeId: 7, label: 'core-sw1', x: 10, y: 20, color: '#1f5fb0' }],
-  edges: [{ id: 'e1', sourceId: 'placed-7', targetId: 'placed-8', origin: 'user' }],
+  links: [{ id: 'e1', sourceId: 'placed-7', targetId: 'placed-8', origin: 'user' }],
   labels: [{ id: 'label-1', text: 'DC core', x: 5, y: 5 }],
   viewport: { zoom: 1.5, panX: 3, panY: 4 },
   ...overrides
@@ -63,7 +63,7 @@ const dtoFor = (id: number, view: TopologyView) => ({
   lastModified: null,
   definition: {
     nodes: view.nodes,
-    edges: view.edges,
+    links: view.links,
     labels: view.labels,
     viewport: view.viewport
   }
@@ -107,7 +107,7 @@ describe('topologyService views catalog', () => {
         id: '99',
         name: 'Core DC',
         nodes: view.nodes,
-        edges: view.edges,
+        links: view.links,
         labels: view.labels,
         viewport: view.viewport
       })
@@ -122,7 +122,7 @@ describe('topologyService views catalog', () => {
         id: '1',
         name: 'Bare',
         nodes: [],
-        edges: [],
+        links: [],
         labels: [],
         viewport: { zoom: 1, panX: 0, panY: 0 }
       })
@@ -146,7 +146,7 @@ describe('topologyService views catalog', () => {
         name: 'Core DC',
         definition: {
           nodes: view.nodes,
-          edges: view.edges,
+          links: view.links,
           labels: view.labels,
           viewport: view.viewport,
           background: undefined
@@ -328,7 +328,7 @@ describe('topologyService discovered graph (Graph REST API)', () => {
   })
 
   describe('mapDiscoveredGraph', () => {
-    it('maps node vertices to placed-<nodeId> CanvasNodes and edges to discovered CanvasEdges', () => {
+    it('maps node vertices to placed-<nodeId> CanvasNodes and edges to discovered CanvasLinks', () => {
       const graph = mapDiscoveredGraph(graphApiResponse, layer2Source)
       expect(graph.label).toBe('Layer2')
       expect(graph.source).toEqual(layer2Source)
@@ -338,7 +338,7 @@ describe('topologyService discovered graph (Graph REST API)', () => {
         { id: 'placed-100001', nodeId: 100001, label: 'core-01', x: 0, y: 0, icon: 'linkd.system' },
         { id: 'placed-100002', nodeId: 100002, label: 'core-02', x: 0, y: 0, icon: 'linkd.system' }
       ])
-      expect(graph.edges).toEqual([
+      expect(graph.links).toEqual([
         { id: '572|581', sourceId: 'placed-100001', targetId: 'placed-100002', origin: 'discovered' }
       ])
     })
@@ -348,7 +348,7 @@ describe('topologyService discovered graph (Graph REST API)', () => {
         vertices: [{ id: '100001', label: 'core-01', nodeID: '100001' }],
         edges: [{ id: 'e1', source: { id: '100001' }, target: { id: '999' } }]
       }
-      expect(mapDiscoveredGraph(data, layer2Source).edges).toEqual([])
+      expect(mapDiscoveredGraph(data, layer2Source).links).toEqual([])
     })
 
     it('falls back to a disc- id and undefined nodeId for a non-node vertex', () => {
@@ -362,7 +362,7 @@ describe('topologyService discovered graph (Graph REST API)', () => {
         source: layer2Source,
         label: 'nodes:Layer2',
         nodes: [],
-        edges: []
+        links: []
       })
     })
   })
@@ -375,7 +375,7 @@ describe('topologyService discovered graph (Graph REST API)', () => {
       expect(graph).not.toBe(false)
       const g = graph as Exclude<typeof graph, false>
       expect(g.nodes).toHaveLength(2)
-      expect(g.edges).toHaveLength(1)
+      expect(g.links).toHaveLength(1)
       expect(g.nodes[0].id).toBe('placed-100001')
     })
 

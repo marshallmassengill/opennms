@@ -45,7 +45,7 @@ export const focusSubgraph = (
   // Undirected adjacency over the node set (edges to unknown nodes ignored).
   const adjacency = new Map<string, string[]>()
   for (const n of graph.nodes) adjacency.set(n.id, [])
-  for (const e of graph.edges) {
+  for (const e of graph.links) {
     if (adjacency.has(e.sourceId) && adjacency.has(e.targetId)) {
       adjacency.get(e.sourceId)!.push(e.targetId)
       adjacency.get(e.targetId)!.push(e.sourceId)
@@ -72,6 +72,6 @@ export const focusSubgraph = (
   return {
     ...graph,
     nodes: graph.nodes.filter((n) => reached.has(n.id)),
-    edges: graph.edges.filter((e) => reached.has(e.sourceId) && reached.has(e.targetId))
+    links: graph.links.filter((e) => reached.has(e.sourceId) && reached.has(e.targetId))
   }
 }

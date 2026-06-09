@@ -22,10 +22,10 @@
 
 import { describe, it, expect } from 'vitest'
 import { layoutDiscoveredGraph } from '@/components/Topology/layout'
-import type { CanvasEdge, CanvasNode } from '@/types/topology'
+import type { CanvasLink, CanvasNode } from '@/types/topology'
 
 const node = (id: string): CanvasNode => ({ id, label: id, x: 0, y: 0 })
-const edge = (s: string, t: string): CanvasEdge => ({ id: `${s}-${t}`, sourceId: s, targetId: t, origin: 'discovered' })
+const edge = (s: string, t: string): CanvasLink => ({ id: `${s}-${t}`, sourceId: s, targetId: t, origin: 'discovered' })
 
 describe('layoutDiscoveredGraph', () => {
   it('returns an empty array for no nodes', () => {

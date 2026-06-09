@@ -22,7 +22,7 @@
 
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation } from 'd3'
 import type { SimulationLinkDatum, SimulationNodeDatum } from 'd3'
-import type { CanvasEdge, CanvasNode } from '@/types/topology'
+import type { CanvasLink, CanvasNode } from '@/types/topology'
 
 /**
  * Auto-layout for discovered topologies. Unlike custom views, a discovered
@@ -69,7 +69,7 @@ const DEFAULTS: Required<LayoutOptions> = {
  */
 export const layoutDiscoveredGraph = (
   nodes: CanvasNode[],
-  edges: CanvasEdge[],
+  links: CanvasLink[],
   options: LayoutOptions = {}
 ): CanvasNode[] => {
   const opts = { ...DEFAULTS, ...options }
@@ -77,7 +77,7 @@ export const layoutDiscoveredGraph = (
 
   const simNodes: SimNode[] = nodes.map((n) => ({ id: n.id }))
   const ids = new Set(simNodes.map((n) => n.id))
-  const simLinks: SimLink[] = edges
+  const simLinks: SimLink[] = links
     .filter((e) => ids.has(e.sourceId) && ids.has(e.targetId))
     .map((e) => ({ source: e.sourceId, target: e.targetId }))
 

@@ -24,7 +24,7 @@ import { v2 } from './axiosInstances'
 import { getNodes } from './nodeService'
 import { placedIdFor } from '@/components/Topology/nodeIds'
 import type {
-  CanvasEdge,
+  CanvasLink,
   CanvasNode,
   DiscoveredGraph,
   DiscoveredGraphSource,
@@ -95,7 +95,7 @@ const viewsEndpoint = 'topology/views'
 /** The canvas document as stored under the server's `definition` field. */
 interface TopologyViewDefinition {
   nodes: TopologyView['nodes']
-  edges: TopologyView['edges']
+  links: TopologyView['links']
   labels: TopologyView['labels']
   viewport: TopologyView['viewport']
   background?: TopologyView['background']
@@ -115,7 +115,7 @@ const toDto = (view: TopologyView): TopologyViewDTO => ({
   name: view.name,
   definition: {
     nodes: view.nodes,
-    edges: view.edges,
+    links: view.links,
     labels: view.labels,
     viewport: view.viewport,
     background: view.background
@@ -126,7 +126,7 @@ const fromDto = (dto: TopologyViewDTO): TopologyView => ({
   id: dto.id != null ? String(dto.id) : undefined,
   name: dto.name,
   nodes: dto.definition?.nodes ?? [],
-  edges: dto.definition?.edges ?? [],
+  links: dto.definition?.links ?? [],
   labels: dto.definition?.labels ?? [],
   viewport: dto.definition?.viewport ?? { zoom: 1, panX: 0, panY: 0 },
   background: dto.definition?.background
@@ -290,7 +290,7 @@ const getNodeNeighbors = async (nodeId: number): Promise<DiscoveredNeighbor[]> =
  * vertices), `label`, `nodeID` (the real OnmsNode id), `iconKey`, and x/y that
  * are always "0" (no stored layout -- the front-end auto-lays-out). An edge
  * carries `id` plus `source`/`target` refs whose `id` is a vertex id. We map
- * vertices -> CanvasNode and edges -> CanvasEdge (origin:'discovered'),
+ * vertices -> CanvasNode and edges -> CanvasLink (origin:'discovered'),
  * dropping any edge whose endpoints aren't present as vertices.
  */
 const graphsEndpoint = 'graphs'
@@ -355,7 +355,7 @@ const mapDiscoveredGraph = (
     y: 0,
     icon: v.iconKey
   }))
-  const edges: CanvasEdge[] = (data.edges ?? [])
+  const links: CanvasLink[] = (data.edges ?? [])
     .filter(
       (e) =>
         e.source &&
@@ -369,7 +369,7 @@ const mapDiscoveredGraph = (
       targetId: canvasIdByVertexId.get(e.target!.id) as string,
       origin: 'discovered' as const
     }))
-  return { source, label: data.label ?? source.namespace, nodes, edges }
+  return { source, label: data.label ?? source.namespace, nodes, links }
 }
 
 const loadDiscoveredGraph = async (

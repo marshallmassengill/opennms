@@ -155,10 +155,10 @@ License.
           />
           <PButton
             v-if="store.isEditMode"
-            :label="store.isEdgeDrawMode ? 'Edge: ON' : 'Draw Edge'"
-            :severity="store.isEdgeDrawMode ? 'primary' : 'secondary'"
-            :outlined="!store.isEdgeDrawMode"
-            @click="store.setEdgeDrawMode(!store.isEdgeDrawMode)"
+            :label="store.isLinkDrawMode ? 'Link: ON' : 'Draw Link'"
+            :severity="store.isLinkDrawMode ? 'primary' : 'secondary'"
+            :outlined="!store.isLinkDrawMode"
+            @click="store.setLinkDrawMode(!store.isLinkDrawMode)"
           />
           <span class="node-size-control" title="Node size">
             <i class="pi pi-circle-fill node-size-icon-sm" />
@@ -562,7 +562,7 @@ watch(
     if (!editMode) {
       // Entering View mode: drop any in-flight edge-draw (an Edit-only tool),
       // then refresh status now and on an interval.
-      store.setEdgeDrawMode(false)
+      store.setLinkDrawMode(false)
       store.refreshStatus()
       statusTimer = setInterval(() => store.refreshStatus(), STATUS_INTERVAL_MS)
     }
