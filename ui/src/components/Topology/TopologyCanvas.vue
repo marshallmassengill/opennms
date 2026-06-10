@@ -200,6 +200,7 @@ import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import Graph from 'graphology'
 import Sigma from 'sigma'
 import { createNodeImageProgram } from '@sigma/node-image'
+import { drawDiscNodeLabel } from 'sigma/rendering'
 import { downloadAsImage } from '@sigma/export-image'
 import { PALETTE_DRAG_MIME, type PaletteDragPayload } from '@/components/Topology/dragTypes'
 import { useTopologyStore } from '@/stores/topologyStore'
@@ -450,6 +451,8 @@ const mountSigma = (g: Graph) => {
     nodeProgramClasses: {
       image: createNodeImageProgram({ drawingMode: 'background', padding: 0.15 })
     },
+    // Theme-aware hover/selection halo (see drawThemedNodeHover).
+    defaultDrawNodeHover: drawThemedNodeHover as never,
     // Color placed nodes by their node's current alarm severity (held in
     // the store, refreshed on an interval in View mode). Nodes without a
     // known severity -- decorative/mock nodes, or before a status fetch --
@@ -2031,6 +2034,62 @@ const onShapeDrawEnd = () => {
     do: () => store.getShape(shape.id) || store.addShape({ ...shape }),
     undo: () => store.removeShape(shape.id)
   })
+}
+
+/**
+ * Themed replacement for sigma's default node hover/selection renderer.
+ * The stock drawDiscNodeHover hardcodes a WHITE halo box behind the label;
+ * in dark mode our label default is near-white, so hovered and selected
+ * node labels rendered white-on-white. Same geometry as the original, with
+ * a theme-aware halo, then sigma's own label routine on top (which already
+ * follows the theme-aware labelColor set in applyViewStyle).
+ */
+const drawThemedNodeHover = (
+  context: CanvasRenderingContext2D,
+  data: { x: number; y: number; size: number; label?: string | null },
+  settings: { labelSize: number; labelFont: string; labelWeight: string }
+) => {
+  const { labelSize: size, labelFont: font, labelWeight: weight } = settings
+  context.font = `${weight} ${size}px ${font}`
+
+  const dark = appStore.theme === 'open-dark'
+  context.fillStyle = dark ? '#262c45' : '#FFF'
+  context.shadowOffsetX = 0
+  context.shadowOffsetY = 0
+  context.shadowBlur = 8
+  context.shadowColor = '#000'
+
+  const PADDING = 2
+  if (typeof data.label === 'string') {
+    const textWidth = context.measureText(data.label).width
+    const boxWidth = Math.round(textWidth + 5)
+    const boxHeight = Math.round(size + 2 * PADDING)
+    const radius = Math.max(data.size, size / 2) + PADDING
+    const angleRadian = Math.asin(boxHeight / 2 / radius)
+    const xDeltaCoord = Math.sqrt(Math.abs(radius ** 2 - (boxHeight / 2) ** 2))
+    context.beginPath()
+    context.moveTo(data.x + xDeltaCoord, data.y + boxHeight / 2)
+    context.lineTo(data.x + radius + boxWidth, data.y + boxHeight / 2)
+    context.lineTo(data.x + radius + boxWidth, data.y - boxHeight / 2)
+    context.lineTo(data.x + xDeltaCoord, data.y - boxHeight / 2)
+    context.arc(data.x, data.y, radius, angleRadian, -angleRadian)
+    context.closePath()
+    context.fill()
+  } else {
+    context.beginPath()
+    context.arc(data.x, data.y, data.size + PADDING, 0, Math.PI * 2)
+    context.closePath()
+    context.fill()
+  }
+  context.shadowOffsetX = 0
+  context.shadowOffsetY = 0
+  context.shadowBlur = 0
+
+  drawDiscNodeLabel(
+    context,
+    data as Parameters<typeof drawDiscNodeLabel>[1],
+    settings as Parameters<typeof drawDiscNodeLabel>[2]
+  )
 }
 
 /**
