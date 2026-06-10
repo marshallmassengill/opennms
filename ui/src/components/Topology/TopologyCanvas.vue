@@ -1656,7 +1656,17 @@ const placeNeighbor = (fromId: string, neighbor: import('@/types/topology').Disc
   }
 
   const angle = (graph.degree(fromId) * 60 * Math.PI) / 180
-  const radius = Math.max(120, store.nodeSize * 7)
+  // Place the neighbor a constant *screen* distance away, whatever the zoom:
+  // measure how many graph units ~150px currently spans. A fixed graph-unit
+  // radius lands neighbors way off-screen when zoomed in.
+  const probe = sigma
+    ? (() => {
+        const a = sigma.viewportToGraph({ x: 0, y: 0 })
+        const b = sigma.viewportToGraph({ x: 150, y: 0 })
+        return Math.hypot(b.x - a.x, b.y - a.y)
+      })()
+    : 150
+  const radius = Math.max(probe, store.nodeSize * 2)
   const nodeAttrs = {
     label: neighbor.neighborLabel,
     x: (graph.getNodeAttribute(fromId, 'x') as number) + radius * Math.cos(angle),
@@ -1680,7 +1690,8 @@ const placeNeighbor = (fromId: string, neighbor: import('@/types/topology').Disc
     }
   }
   apply()
-  store.selectOnly(placedId)
+  // Selection stays on the source node: the tray remains open for adding
+  // several neighbors in a row.
   pushCommand({
     label: `Add ${neighbor.neighborLabel} + link`,
     do: apply,
