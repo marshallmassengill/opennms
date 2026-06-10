@@ -2337,7 +2337,10 @@ const applyViewStyle = () => {
   if (!sigma) {
     return
   }
-  const style = store.viewStyle
+  // Per-view label colors belong to the open CUSTOM view. A discovered
+  // source renders beside currentView without clearing it, so without this
+  // gate the last custom view's colors would bleed into discovered renders.
+  const style = store.discoveredGraph === null ? store.viewStyle : undefined
   const themeDefault = appStore.theme === 'open-dark' ? '#dfe3e8' : '#000'
   sigma.setSetting(
     'labelColor',
@@ -2351,7 +2354,7 @@ const applyViewStyle = () => {
 }
 
 watch(
-  () => store.viewStyle,
+  [() => store.viewStyle, () => store.discoveredGraph],
   () => applyViewStyle(),
   { deep: true }
 )
