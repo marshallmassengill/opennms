@@ -38,13 +38,15 @@ export const focusSubgraph = (
   focusId: string | null,
   hops: number
 ): DiscoveredGraph => {
-  if (focusId === null || !graph.nodes.some((n) => n.id === focusId)) {
+  if (focusId === null || !graph.nodes.some(n => n.id === focusId)) {
     return graph
   }
 
   // Undirected adjacency over the node set (edges to unknown nodes ignored).
   const adjacency = new Map<string, string[]>()
-  for (const n of graph.nodes) adjacency.set(n.id, [])
+  for (const n of graph.nodes) {
+    adjacency.set(n.id, [])
+  }
   for (const e of graph.links) {
     if (adjacency.has(e.sourceId) && adjacency.has(e.targetId)) {
       adjacency.get(e.sourceId)!.push(e.targetId)
@@ -65,13 +67,15 @@ export const focusSubgraph = (
         }
       }
     }
-    if (next.length === 0) break
+    if (next.length === 0) {
+      break
+    }
     frontier = next
   }
 
   return {
     ...graph,
-    nodes: graph.nodes.filter((n) => reached.has(n.id)),
-    links: graph.links.filter((e) => reached.has(e.sourceId) && reached.has(e.targetId))
+    nodes: graph.nodes.filter(n => reached.has(n.id)),
+    links: graph.links.filter(e => reached.has(e.sourceId) && reached.has(e.targetId))
   }
 }

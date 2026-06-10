@@ -47,6 +47,8 @@ export const isShapeId = (id: string): boolean => id.startsWith(SHAPE_PREFIX)
 /** The real OnmsNode id for a placed node id, or null if not a placed node. */
 export const nodeIdFromPlacedId = (id: string): number | null => {
   const paletteId = paletteIdFromPlacedId(id)
-  if (paletteId === null || !/^\d+$/.test(paletteId)) return null
+  if (paletteId === null || !/^\d+$/.test(paletteId)) {
+    return null
+  }
   return Number(paletteId)
 }

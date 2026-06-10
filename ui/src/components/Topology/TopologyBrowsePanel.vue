@@ -123,32 +123,36 @@ const alarmRows = ref<AlarmRow[]>([])
 // The real OnmsNode ids of the placed nodes (bare-number palette ids).
 const placedRealIds = computed<number[]>(() =>
   Array.from(store.placedNodeIds)
-    .map((id) => Number(id))
-    .filter((n) => Number.isInteger(n))
+    .map(id => Number(id))
+    .filter(n => Number.isInteger(n))
 )
 
 // When exactly one placed node is selected, the tables filter to it.
 const selectedNodeId = computed<number | null>(() => {
-  if (store.selectedIds.length !== 1) return null
+  if (store.selectedIds.length !== 1) {
+    return null
+  }
   return nodeIdFromPlacedId(store.selectedIds[0])
 })
 
 const filteredNodeRows = computed(() =>
   selectedNodeId.value === null
     ? nodeRows.value
-    : nodeRows.value.filter((r) => r.nodeId === selectedNodeId.value)
+    : nodeRows.value.filter(r => r.nodeId === selectedNodeId.value)
 )
 const filteredAlarmRows = computed(() =>
   selectedNodeId.value === null
     ? alarmRows.value
-    : alarmRows.value.filter((r) => r.nodeId === selectedNodeId.value)
+    : alarmRows.value.filter(r => r.nodeId === selectedNodeId.value)
 )
 
 const onRowSelect = (placedId: string) => emit('select', placedId)
 
 const stripHtml = (s?: string): string => (s ? s.replace(/<[^>]*>/g, '').trim() : '')
 const formatTime = (ms?: number): string => {
-  if (!ms) return '—'
+  if (!ms) {
+    return '—'
+  }
   const d = new Date(ms)
   return `${d.toLocaleDateString()} ${d.toLocaleTimeString()}`
 }
@@ -162,8 +166,8 @@ const fetchData = async (): Promise<void> => {
   }
   loading.value = true
   try {
-    const nodeFiql = ids.map((id) => `id==${id}`).join(',')
-    const alarmFiql = ids.map((id) => `node.id==${id}`).join(',')
+    const nodeFiql = ids.map(id => `id==${id}`).join(',')
+    const alarmFiql = ids.map(id => `node.id==${id}`).join(',')
     const [nodesResp, alarmsResp] = await Promise.all([
       getNodes({ _s: nodeFiql, limit: 1000 }),
       getAlarms({ _s: alarmFiql, limit: 1000 })
@@ -171,26 +175,26 @@ const fetchData = async (): Promise<void> => {
     nodeRows.value =
       nodesResp && nodesResp.node
         ? nodesResp.node.map((n) => {
-            const nid = Number(n.id)
-            return {
-              id: `placed-${nid}`,
-              nodeId: nid,
-              label: n.label ?? String(nid),
-              location: n.location ?? '',
-              severity: store.severities[nid] ?? 'NORMAL'
-            }
-          })
+          const nid = Number(n.id)
+          return {
+            id: `placed-${nid}`,
+            nodeId: nid,
+            label: n.label ?? String(nid),
+            location: n.location ?? '',
+            severity: store.severities[nid] ?? 'NORMAL'
+          }
+        })
         : []
     alarmRows.value =
       alarmsResp && alarmsResp.alarm
-        ? alarmsResp.alarm.map((a) => ({
-            id: Number(a.id),
-            nodeId: a.nodeId,
-            nodeLabel: a.nodeLabel ?? String(a.nodeId),
-            severity: a.severity ?? 'NORMAL',
-            logMessage: a.logMessage ?? '',
-            lastEventTime: a.lastEventTime
-          }))
+        ? alarmsResp.alarm.map(a => ({
+          id: Number(a.id),
+          nodeId: a.nodeId,
+          nodeLabel: a.nodeLabel ?? String(a.nodeId),
+          severity: a.severity ?? 'NORMAL',
+          logMessage: a.logMessage ?? '',
+          lastEventTime: a.lastEventTime
+        }))
         : []
   } finally {
     loading.value = false
@@ -199,7 +203,9 @@ const fetchData = async (): Promise<void> => {
 
 // Fetch when first expanded and whenever the placed-node set changes while open.
 watch([collapsed, placedRealIds], ([isCollapsed]) => {
-  if (!isCollapsed) void fetchData()
+  if (!isCollapsed) {
+    void fetchData()
+  }
 })
 </script>
 

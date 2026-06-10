@@ -115,10 +115,12 @@ export const useTopologyStore = defineStore('topologyStore', () => {
 
   const refreshNeighbors = async (): Promise<void> => {
     const wanted = Array.from(placedNodeIds.value)
-      .map((id) => Number(id))
-      .filter((n) => Number.isInteger(n) && !(n in neighborsByNode.value))
-    if (wanted.length === 0) return
-    const fetched = await Promise.all(wanted.map((id) => getNodeNeighbors(id)))
+      .map(id => Number(id))
+      .filter(n => Number.isInteger(n) && !(n in neighborsByNode.value))
+    if (wanted.length === 0) {
+      return
+    }
+    const fetched = await Promise.all(wanted.map(id => getNodeNeighbors(id)))
     const next = { ...neighborsByNode.value }
     wanted.forEach((id, i) => {
       next[id] = fetched[i]
@@ -140,9 +142,13 @@ export const useTopologyStore = defineStore('topologyStore', () => {
   )
 
   const setBackground = (bg: TopologyViewBackground | undefined) => {
-    if (!currentView.value) return
+    if (!currentView.value) {
+      return
+    }
     currentView.value.background = bg
-    if (!bg) isBackgroundAdjustMode.value = false
+    if (!bg) {
+      isBackgroundAdjustMode.value = false
+    }
   }
 
   /**
@@ -187,7 +193,9 @@ export const useTopologyStore = defineStore('topologyStore', () => {
   const viewStyle = computed<TopologyViewStyle | undefined>(() => currentView.value?.style)
 
   const setViewStyle = (patch: Partial<TopologyViewStyle>) => {
-    if (!currentView.value) return
+    if (!currentView.value) {
+      return
+    }
     currentView.value.style = { ...currentView.value.style, ...patch }
   }
 
@@ -231,8 +239,8 @@ export const useTopologyStore = defineStore('topologyStore', () => {
    */
   const refreshStatus = async (): Promise<void> => {
     const ids = Array.from(placedNodeIds.value)
-      .map((id) => Number(id))
-      .filter((n) => Number.isInteger(n))
+      .map(id => Number(id))
+      .filter(n => Number.isInteger(n))
     if (ids.length === 0) {
       severities.value = {}
       return
@@ -251,8 +259,8 @@ export const useTopologyStore = defineStore('topologyStore', () => {
 
   const refreshDeviceIcons = async (): Promise<void> => {
     const ids = Array.from(placedNodeIds.value)
-      .map((id) => Number(id))
-      .filter((n) => Number.isInteger(n))
+      .map(id => Number(id))
+      .filter(n => Number.isInteger(n))
     nodeIconIds.value = ids.length === 0 ? {} : await getNodeIconIds(ids)
   }
 
@@ -266,7 +274,9 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     void refreshDeviceIcons()
     void refreshStatus()
     // Ghost links / neighbor tray only matter while composing a custom view.
-    if (isEditMode.value && discoveredGraph.value === null) void refreshNeighbors()
+    if (isEditMode.value && discoveredGraph.value === null) {
+      void refreshNeighbors()
+    }
   })
 
   /**
@@ -323,7 +333,7 @@ export const useTopologyStore = defineStore('topologyStore', () => {
       discoveredGraph.value = graph
       // refreshStatus keys off placedNodeIds (bare node-id strings).
       const nodeIds = graph.nodes
-        .map((n) => n.nodeId)
+        .map(n => n.nodeId)
         .filter((id): id is number => id != null)
         .map(String)
       placedNodeIds.value = new Set(nodeIds)
@@ -359,7 +369,9 @@ export const useTopologyStore = defineStore('topologyStore', () => {
 
   /** Rename the open view (persisted on the next save). */
   const renameCurrent = (name: string) => {
-    if (currentView.value) currentView.value = { ...currentView.value, name }
+    if (currentView.value) {
+      currentView.value = { ...currentView.value, name }
+    }
   }
 
   /**
@@ -369,19 +381,23 @@ export const useTopologyStore = defineStore('topologyStore', () => {
    * view and the catalog is refreshed.
    */
   const saveCurrentView = async (snapshot: CanvasSnapshot): Promise<boolean> => {
-    if (!currentView.value) return false
+    if (!currentView.value) {
+      return false
+    }
     isSaving.value = true
     try {
       const view: TopologyView = {
         ...currentView.value,
         nodes: snapshot.nodes,
         links: snapshot.links,
-        labels: labels.value.map((l) => ({ ...l })),
-        shapes: shapes.value.map((s) => ({ ...s })),
+        labels: labels.value.map(l => ({ ...l })),
+        shapes: shapes.value.map(s => ({ ...s })),
         viewport: snapshot.viewport
       }
       const saved = await saveView(view)
-      if (saved === false) return false
+      if (saved === false) {
+        return false
+      }
       currentView.value = saved
       await refreshCatalog()
       return true
@@ -400,7 +416,9 @@ export const useTopologyStore = defineStore('topologyStore', () => {
    * to the conflicting name.
    */
   const saveCurrentViewAs = async (name: string, snapshot: CanvasSnapshot): Promise<boolean> => {
-    if (!currentView.value) return false
+    if (!currentView.value) {
+      return false
+    }
     isSaving.value = true
     try {
       const candidate: TopologyView = {
@@ -409,12 +427,14 @@ export const useTopologyStore = defineStore('topologyStore', () => {
         name,
         nodes: snapshot.nodes,
         links: snapshot.links,
-        labels: labels.value.map((l) => ({ ...l })),
-        shapes: shapes.value.map((s) => ({ ...s })),
+        labels: labels.value.map(l => ({ ...l })),
+        shapes: shapes.value.map(s => ({ ...s })),
         viewport: snapshot.viewport
       }
       const saved = await saveView(candidate)
-      if (saved === false) return false
+      if (saved === false) {
+        return false
+      }
       currentView.value = saved
       await refreshCatalog()
       return true
@@ -430,7 +450,9 @@ export const useTopologyStore = defineStore('topologyStore', () => {
    */
   const openView = async (id: string): Promise<TopologyView | false> => {
     const view = await getView(id)
-    if (view === false) return false
+    if (view === false) {
+      return false
+    }
     currentView.value = view
     isBackgroundAdjustMode.value = false
     return view
@@ -439,8 +461,12 @@ export const useTopologyStore = defineStore('topologyStore', () => {
   /** Delete a view; if it was the open one, reset to a blank canvas. */
   const removeView = async (id: string): Promise<boolean> => {
     const ok = await deleteView(id)
-    if (!ok) return false
-    if (currentView.value?.id === id) newView()
+    if (!ok) {
+      return false
+    }
+    if (currentView.value?.id === id) {
+      newView()
+    }
     await refreshCatalog()
     return true
   }
@@ -451,10 +477,16 @@ export const useTopologyStore = defineStore('topologyStore', () => {
    */
   const renameView = async (id: string, name: string): Promise<boolean> => {
     const view = await getView(id)
-    if (view === false) return false
+    if (view === false) {
+      return false
+    }
     const renamed = await saveView({ ...view, name })
-    if (renamed === false) return false
-    if (currentView.value?.id === id) currentView.value = renamed
+    if (renamed === false) {
+      return false
+    }
+    if (currentView.value?.id === id) {
+      currentView.value = renamed
+    }
     await refreshCatalog()
     return true
   }
@@ -480,8 +512,11 @@ export const useTopologyStore = defineStore('topologyStore', () => {
 
   const toggleSelection = (id: string) => {
     const idx = selectedIds.value.indexOf(id)
-    if (idx >= 0) selectedIds.value.splice(idx, 1)
-    else selectedIds.value.push(id)
+    if (idx >= 0) {
+      selectedIds.value.splice(idx, 1)
+    } else {
+      selectedIds.value.push(id)
+    }
   }
 
   const clearSelection = () => {
@@ -494,19 +529,23 @@ export const useTopologyStore = defineStore('topologyStore', () => {
 
   const addToSelection = (ids: string[]) => {
     const merged = new Set(selectedIds.value)
-    ids.forEach((id) => merged.add(id))
+    ids.forEach(id => merged.add(id))
     selectedIds.value = Array.from(merged)
   }
 
   const isPlaced = (paletteId: string): boolean => placedNodeIds.value.has(paletteId)
 
   const markPlaced = (paletteId: string) => {
-    if (placedNodeIds.value.has(paletteId)) return
+    if (placedNodeIds.value.has(paletteId)) {
+      return
+    }
     placedNodeIds.value = new Set(placedNodeIds.value).add(paletteId)
   }
 
   const markUnplaced = (paletteId: string) => {
-    if (!placedNodeIds.value.has(paletteId)) return
+    if (!placedNodeIds.value.has(paletteId)) {
+      return
+    }
     const next = new Set(placedNodeIds.value)
     next.delete(paletteId)
     placedNodeIds.value = next
@@ -517,7 +556,7 @@ export const useTopologyStore = defineStore('topologyStore', () => {
   }
 
   const setLabels = (next: CanvasLabel[]) => {
-    labels.value = next.map((l) => ({ ...l }))
+    labels.value = next.map(l => ({ ...l }))
   }
 
   const addLabel = (label: CanvasLabel) => {
@@ -525,18 +564,18 @@ export const useTopologyStore = defineStore('topologyStore', () => {
   }
 
   const updateLabel = (id: string, patch: Partial<CanvasLabel>) => {
-    labels.value = labels.value.map((l) => (l.id === id ? { ...l, ...patch } : l))
+    labels.value = labels.value.map(l => (l.id === id ? { ...l, ...patch } : l))
   }
 
   const removeLabel = (id: string) => {
-    labels.value = labels.value.filter((l) => l.id !== id)
+    labels.value = labels.value.filter(l => l.id !== id)
   }
 
   const getLabel = (id: string): CanvasLabel | undefined =>
-    labels.value.find((l) => l.id === id)
+    labels.value.find(l => l.id === id)
 
   const setShapes = (next: CanvasShape[]) => {
-    shapes.value = next.map((s) => ({ ...s }))
+    shapes.value = next.map(s => ({ ...s }))
   }
 
   const addShape = (shape: CanvasShape) => {
@@ -544,15 +583,15 @@ export const useTopologyStore = defineStore('topologyStore', () => {
   }
 
   const updateShape = (id: string, patch: Partial<CanvasShape>) => {
-    shapes.value = shapes.value.map((s) => (s.id === id ? { ...s, ...patch } : s))
+    shapes.value = shapes.value.map(s => (s.id === id ? { ...s, ...patch } : s))
   }
 
   const removeShape = (id: string) => {
-    shapes.value = shapes.value.filter((s) => s.id !== id)
+    shapes.value = shapes.value.filter(s => s.id !== id)
   }
 
   const getShape = (id: string): CanvasShape | undefined =>
-    shapes.value.find((s) => s.id === id)
+    shapes.value.find(s => s.id === id)
 
   return {
     catalog,

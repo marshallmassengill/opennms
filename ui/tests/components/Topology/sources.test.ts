@@ -32,7 +32,7 @@ import {
 
 describe('topology sources registry', () => {
   it('has unique slugs and a short discovered menu', () => {
-    const slugs = TOPOLOGY_SOURCES.map((s) => s.slug)
+    const slugs = TOPOLOGY_SOURCES.map(s => s.slug)
     expect(new Set(slugs).size).toBe(slugs.length)
     expect(slugs).toEqual([CUSTOM_SOURCE_SLUG, 'layer2', 'layer3', 'pathoutage'])
   })
@@ -60,7 +60,7 @@ describe('topology sources registry', () => {
   })
 
   it('Layer 2 / Layer 3 cover the expected enlinkd namespaces as variants', () => {
-    const ns = (slug: string) => sourceForSlug(slug)!.variants!.map((v) => v.namespace)
+    const ns = (slug: string) => sourceForSlug(slug)!.variants!.map(v => v.namespace)
     expect(ns('layer2')).toEqual(['nodes:Layer2', 'nodes:Lldp', 'nodes:Cdp', 'nodes:Bridge'])
     expect(ns('layer3')).toEqual([
       'nodes:Layer3',

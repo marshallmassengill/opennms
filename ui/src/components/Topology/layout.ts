@@ -73,19 +73,21 @@ export const layoutDiscoveredGraph = (
   options: LayoutOptions = {}
 ): CanvasNode[] => {
   const opts = { ...DEFAULTS, ...options }
-  if (nodes.length === 0) return []
+  if (nodes.length === 0) {
+    return []
+  }
 
-  const simNodes: SimNode[] = nodes.map((n) => ({ id: n.id }))
-  const ids = new Set(simNodes.map((n) => n.id))
+  const simNodes: SimNode[] = nodes.map(n => ({ id: n.id }))
+  const ids = new Set(simNodes.map(n => n.id))
   const simLinks: SimLink[] = links
-    .filter((e) => ids.has(e.sourceId) && ids.has(e.targetId))
-    .map((e) => ({ source: e.sourceId, target: e.targetId }))
+    .filter(e => ids.has(e.sourceId) && ids.has(e.targetId))
+    .map(e => ({ source: e.sourceId, target: e.targetId }))
 
   const simulation = forceSimulation<SimNode>(simNodes)
     .force(
       'link',
       forceLink<SimNode, SimLink>(simLinks)
-        .id((d) => d.id)
+        .id(d => d.id)
         .distance(opts.linkDistance)
     )
     .force('charge', forceManyBody<SimNode>().strength(opts.chargeStrength))
@@ -97,7 +99,7 @@ export const layoutDiscoveredGraph = (
 
   simulation.tick(opts.ticks)
 
-  const posById = new Map(simNodes.map((n) => [n.id, n]))
+  const posById = new Map(simNodes.map(n => [n.id, n]))
   return nodes.map((n) => {
     const p = posById.get(n.id)
     return { ...n, x: p?.x ?? 0, y: p?.y ?? 0 }
@@ -135,28 +137,36 @@ export const layoutHierarchyGraph = (
   options: HierarchyLayoutOptions = {}
 ): CanvasNode[] => {
   const opts = { ...HIERARCHY_DEFAULTS, ...options }
-  if (nodes.length === 0) return []
+  if (nodes.length === 0) {
+    return []
+  }
 
-  const ids = new Set(nodes.map((n) => n.id))
+  const ids = new Set(nodes.map(n => n.id))
   const parentById = new Map<string, string>()
   for (const link of links) {
-    if (!ids.has(link.sourceId) || !ids.has(link.targetId)) continue
-    if (link.sourceId === link.targetId) continue
-    if (!parentById.has(link.targetId)) parentById.set(link.targetId, link.sourceId)
+    if (!ids.has(link.sourceId) || !ids.has(link.targetId)) {
+      continue
+    }
+    if (link.sourceId === link.targetId) {
+      continue
+    }
+    if (!parentById.has(link.targetId)) {
+      parentById.set(link.targetId, link.sourceId)
+    }
   }
 
   const SUPER_ROOT = '__hierarchy_root__'
   type Datum = { id: string; parentId?: string }
   const data: Datum[] = [
     { id: SUPER_ROOT },
-    ...nodes.map((n) => ({ id: n.id, parentId: parentById.get(n.id) ?? SUPER_ROOT }))
+    ...nodes.map(n => ({ id: n.id, parentId: parentById.get(n.id) ?? SUPER_ROOT }))
   ]
 
   let root
   try {
     root = stratify<Datum>()
-      .id((d) => d.id)
-      .parentId((d) => d.parentId)(data)
+      .id(d => d.id)
+      .parentId(d => d.parentId)(data)
   } catch {
     return layoutDiscoveredGraph(nodes, links)
   }
@@ -167,7 +177,9 @@ export const layoutHierarchyGraph = (
 
   const posById = new Map<string, { x: number; y: number }>()
   laidOut.each((n) => {
-    if (n.data.id === SUPER_ROOT) return
+    if (n.data.id === SUPER_ROOT) {
+      return
+    }
     // depth 1 is the real top tier; pull it up to y=0 (the synthetic root's
     // row). Negative per tier because sigma's graph y-axis points up -- deeper
     // tiers must sit at smaller y to render below their parent. `|| 0`

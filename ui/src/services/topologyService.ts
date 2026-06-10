@@ -60,16 +60,20 @@ const fetchPaletteNodes = async (
 const alarmsEndpoint = '/alarms'
 
 const getNodeSeverities = async (nodeIds: number[]): Promise<Record<number, string>> => {
-  if (nodeIds.length === 0) return {}
-  const fiql = nodeIds.map((id) => `node.id==${id}`).join(',')
+  if (nodeIds.length === 0) {
+    return {}
+  }
+  const fiql = nodeIds.map(id => `node.id==${id}`).join(',')
   try {
     const resp = await v2.get<{ alarm?: Array<{ nodeId?: number; severity?: string }> }>(
       alarmsEndpoint,
-      { params: { _s: fiql, limit: 1000 } }
+      { params: { _s: fiql, limit: 1000 }}
     )
-    if (resp.status === 204 || !resp.data) return {}
+    if (resp.status === 204 || !resp.data) {
+      return {}
+    }
     return aggregateNodeSeverities(resp.data.alarm ?? [])
-  } catch (err) {
+  } catch {
     return {}
   }
 }
@@ -141,11 +145,11 @@ const fromDto = (dto: TopologyViewDTO): TopologyView => ({
 const listViews = async (): Promise<TopologyViewSummary[] | false> => {
   try {
     const resp = await v2.get<TopologyViewDTO[]>(viewsEndpoint)
-    return (resp.data ?? []).map((dto) => ({
+    return (resp.data ?? []).map(dto => ({
       id: dto.id != null ? String(dto.id) : '',
       name: dto.name
     }))
-  } catch (err) {
+  } catch {
     return false
   }
 }
@@ -154,7 +158,7 @@ const getView = async (id: string): Promise<TopologyView | false> => {
   try {
     const resp = await v2.get<TopologyViewDTO>(`${viewsEndpoint}/${id}`)
     return fromDto(resp.data)
-  } catch (err) {
+  } catch {
     return false
   }
 }
@@ -174,9 +178,11 @@ const saveView = async (view: TopologyView): Promise<TopologyView | false> => {
     const resp = await v2.post(viewsEndpoint, toDto(view))
     const location: string | undefined = resp.headers?.location
     const newId = location ? location.substring(location.lastIndexOf('/') + 1) : undefined
-    if (!newId) return false
+    if (!newId) {
+      return false
+    }
     return await getView(newId)
-  } catch (err) {
+  } catch {
     return false
   }
 }
@@ -185,7 +191,7 @@ const deleteView = async (id: string): Promise<boolean> => {
   try {
     await v2.delete(`${viewsEndpoint}/${id}`)
     return true
-  } catch (err) {
+  } catch {
     return false
   }
 }
@@ -237,7 +243,9 @@ const firstStringField = (
 
 const parseNeighborNodeId = (link: Record<string, unknown>): number | undefined => {
   const urlValue = firstStringField(link, (k, v) => k.includes('url') && NODE_URL_RE.test(v))
-  if (!urlValue) return undefined
+  if (!urlValue) {
+    return undefined
+  }
   const match = NODE_URL_RE.exec(urlValue)
   return match ? Number(match[1]) : undefined
 }
@@ -250,26 +258,34 @@ const parseEnlinkdNeighbors = (
   data: Record<string, unknown> | null | undefined,
   nodeId: number
 ): DiscoveredNeighbor[] => {
-  if (!data) return []
+  if (!data) {
+    return []
+  }
   const neighbors: DiscoveredNeighbor[] = []
   const seen = new Set<number>()
   for (const { field, type } of PROTOCOL_LINK_FIELDS) {
     const links = data[field]
-    if (!Array.isArray(links)) continue
+    if (!Array.isArray(links)) {
+      continue
+    }
     for (const raw of links) {
-      if (!raw || typeof raw !== 'object') continue
+      if (!raw || typeof raw !== 'object') {
+        continue
+      }
       const link = raw as Record<string, unknown>
       const neighborNodeId = parseNeighborNodeId(link)
-      if (neighborNodeId == null || neighborNodeId === nodeId || seen.has(neighborNodeId)) continue
+      if (neighborNodeId == null || neighborNodeId === nodeId || seen.has(neighborNodeId)) {
+        continue
+      }
       seen.add(neighborNodeId)
       neighbors.push({
         neighborNodeId,
         neighborLabel:
-          firstStringField(link, (k) => REMOTE_LABEL_HINTS.some((h) => k.includes(h))) ??
+          firstStringField(link, k => REMOTE_LABEL_HINTS.some(h => k.includes(h))) ??
           `Node ${neighborNodeId}`,
         linkType: type,
-        localPort: firstStringField(link, (k) => k.includes(LOCAL_PORT_HINT)),
-        remotePort: firstStringField(link, (k) => k.includes(REMOTE_PORT_HINT))
+        localPort: firstStringField(link, k => k.includes(LOCAL_PORT_HINT)),
+        remotePort: firstStringField(link, k => k.includes(REMOTE_PORT_HINT))
       })
     }
   }
@@ -280,7 +296,7 @@ const getNodeNeighbors = async (nodeId: number): Promise<DiscoveredNeighbor[]> =
   try {
     const resp = await v2.get<Record<string, unknown>>(`${enlinkdEndpoint}/${nodeId}`)
     return parseEnlinkdNeighbors(resp.data, nodeId)
-  } catch (err) {
+  } catch {
     return []
   }
 }
@@ -352,8 +368,8 @@ const mapDiscoveredGraph = (
 ): DiscoveredGraph => {
   const vertices = data.vertices ?? []
   // vertex id (the id edges reference) -> canvas node id
-  const canvasIdByVertexId = new Map(vertices.map((v) => [v.id, discoveredNodeCanvasId(v)]))
-  const nodes: CanvasNode[] = vertices.map((v) => ({
+  const canvasIdByVertexId = new Map(vertices.map(v => [v.id, discoveredNodeCanvasId(v)]))
+  const nodes: CanvasNode[] = vertices.map(v => ({
     id: canvasIdByVertexId.get(v.id) as string,
     nodeId: v.nodeID != null && /^\d+$/.test(v.nodeID) ? Number(v.nodeID) : undefined,
     label: v.label ?? v.id,
@@ -363,13 +379,13 @@ const mapDiscoveredGraph = (
   }))
   const links: CanvasLink[] = (data.edges ?? [])
     .filter(
-      (e) =>
+      e =>
         e.source &&
         e.target &&
         canvasIdByVertexId.has(e.source.id) &&
         canvasIdByVertexId.has(e.target.id)
     )
-    .map((e) => ({
+    .map(e => ({
       id: e.id,
       sourceId: canvasIdByVertexId.get(e.source!.id) as string,
       targetId: canvasIdByVertexId.get(e.target!.id) as string,
@@ -385,9 +401,11 @@ const loadDiscoveredGraph = async (
     const resp = await v2.get<GraphApiResponse>(
       `${graphsEndpoint}/${source.container}/${source.namespace}`
     )
-    if (!resp.data) return false
+    if (!resp.data) {
+      return false
+    }
     return mapDiscoveredGraph(resp.data, source)
-  } catch (err) {
+  } catch {
     return false
   }
 }
@@ -418,29 +436,35 @@ const infopanelEndpoint = 'topology/infopanel'
  * lookup; returns {} on error.
  */
 const getNodeIconIds = async (nodeIds: number[]): Promise<Record<number, DeviceIconId>> => {
-  if (nodeIds.length === 0) return {}
+  if (nodeIds.length === 0) {
+    return {}
+  }
   // The /nodes endpoint filters on `id` (the /alarms endpoint uses `node.id`).
-  const fiql = nodeIds.map((id) => `id==${id}`).join(',')
+  const fiql = nodeIds.map(id => `id==${id}`).join(',')
   try {
     const resp = await getNodes({ _s: fiql, limit: 1000 })
-    if (!resp || !resp.node) return {}
+    if (!resp || !resp.node) {
+      return {}
+    }
     const out: Record<number, DeviceIconId> = {}
     for (const n of resp.node) {
       const icon = deviceIconForSysObjectId(n.sysObjectId)
       const id = Number(n.id)
-      if (icon && Number.isFinite(id)) out[id] = icon
+      if (icon && Number.isFinite(id)) {
+        out[id] = icon
+      }
     }
     return out
-  } catch (err) {
+  } catch {
     return {}
   }
 }
 
 const getNodeInfoPanel = async (nodeId: number): Promise<NodeInfoPanelItem[]> => {
   try {
-    const resp = await v2.get<NodeInfoPanelItem[]>(infopanelEndpoint, { params: { nodeId } })
+    const resp = await v2.get<NodeInfoPanelItem[]>(infopanelEndpoint, { params: { nodeId }})
     return Array.isArray(resp.data) ? resp.data : []
-  } catch (err) {
+  } catch {
     return []
   }
 }
@@ -479,9 +503,9 @@ const assetUrl = (id: string): string => {
 /** List asset metadata, optionally only one kind. Returns [] on error. */
 const listAssets = async (kind?: TopologyAssetKind): Promise<TopologyAssetMeta[]> => {
   try {
-    const resp = await v2.get<TopologyAssetMeta[]>(assetsEndpoint, { params: kind ? { kind } : {} })
+    const resp = await v2.get<TopologyAssetMeta[]>(assetsEndpoint, { params: kind ? { kind } : {}})
     return Array.isArray(resp.data) ? resp.data : []
-  } catch (err) {
+  } catch {
     return []
   }
 }
@@ -502,7 +526,7 @@ const uploadAsset = async (
       headers: { 'Content-Type': file.type || 'application/octet-stream' }
     })
     return resp.data ?? false
-  } catch (err) {
+  } catch {
     return false
   }
 }
@@ -512,7 +536,7 @@ const deleteAsset = async (id: string): Promise<boolean> => {
   try {
     await v2.delete(`${assetsEndpoint}/${encodeURIComponent(id)}`)
     return true
-  } catch (err) {
+  } catch {
     return false
   }
 }

@@ -34,7 +34,7 @@ describe('nodeActionLinks', () => {
   })
 
   it('encodes the node filter so it is a single query value', () => {
-    const events = nodeActionLinks(7).find((l) => l.label === 'Events')!
+    const events = nodeActionLinks(7).find(l => l.label === 'Events')!
     expect(events.url).toContain('filter=node%3D7')
   })
 })

@@ -36,7 +36,7 @@ vi.mock('@/services/topologyService', () => ({
   loadDiscoveredGraph: vi.fn()
 }))
 
-const snapshot = { nodes: [], links: [], viewport: { zoom: 1, panX: 0, panY: 0 } }
+const snapshot = { nodes: [], links: [], viewport: { zoom: 1, panX: 0, panY: 0 }}
 
 const existingView = (): TopologyView => ({
   id: '5',

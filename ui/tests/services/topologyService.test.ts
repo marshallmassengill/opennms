@@ -119,7 +119,7 @@ describe('topologyService views catalog', () => {
     })
 
     it('falls back to an empty canvas when definition fields are absent', async () => {
-      vi.mocked(v2.get).mockResolvedValue({ data: { id: 1, name: 'Bare', definition: {} } })
+      vi.mocked(v2.get).mockResolvedValue({ data: { id: 1, name: 'Bare', definition: {}}})
 
       const result = await getView('1')
 
@@ -298,7 +298,7 @@ describe('topologyService discovered neighbors', () => {
       vi.mocked(v2.get).mockResolvedValue({ data: enlinkdResponse })
       const neighbors = await getNodeNeighbors(100011)
       expect(v2.get).toHaveBeenCalledWith('enlinkd/100011')
-      expect(neighbors.map((n) => n.neighborNodeId)).toEqual([100001, 100002, 100101])
+      expect(neighbors.map(n => n.neighborNodeId)).toEqual([100001, 100002, 100101])
     })
 
     it('returns an empty array on request failure', async () => {
@@ -351,7 +351,7 @@ describe('topologyService discovered graph (Graph REST API)', () => {
     it('drops edges whose endpoints are not present as vertices', () => {
       const data = {
         vertices: [{ id: '100001', label: 'core-01', nodeID: '100001' }],
-        edges: [{ id: 'e1', source: { id: '100001' }, target: { id: '999' } }]
+        edges: [{ id: 'e1', source: { id: '100001' }, target: { id: '999' }}]
       }
       expect(mapDiscoveredGraph(data, layer2Source).links).toEqual([])
     })
@@ -398,7 +398,7 @@ describe('topologyService discovered graph (Graph REST API)', () => {
       ]
       vi.mocked(v2.get).mockResolvedValue({ data: items })
       expect(await getNodeInfoPanel(2)).toEqual(items)
-      expect(v2.get).toHaveBeenCalledWith('topology/infopanel', { params: { nodeId: 2 } })
+      expect(v2.get).toHaveBeenCalledWith('topology/infopanel', { params: { nodeId: 2 }})
     })
 
     it('returns [] on error or a non-array body', async () => {
@@ -442,7 +442,7 @@ describe('topologyService discovered graph (Graph REST API)', () => {
       })
       vi.mocked(v2.post).mockResolvedValue({ status: 201, headers: { location: '/x/9' }, data: dtoFor(9, view) })
       await saveView(view)
-      const sent = vi.mocked(v2.post).mock.calls[0][1] as { definition: { shapes?: unknown[] } }
+      const sent = vi.mocked(v2.post).mock.calls[0][1] as { definition: { shapes?: unknown[] }}
       expect(sent.definition.shapes).toHaveLength(1)
 
       vi.mocked(v2.get).mockResolvedValue({ status: 200, data: dtoFor(9, view) })
@@ -465,7 +465,7 @@ describe('topologyService discovered graph (Graph REST API)', () => {
       })
       const icons = await listAssets('icon')
       expect(icons).toHaveLength(1)
-      expect(vi.mocked(v2.get).mock.calls[0][1]).toEqual({ params: { kind: 'icon' } })
+      expect(vi.mocked(v2.get).mock.calls[0][1]).toEqual({ params: { kind: 'icon' }})
 
       vi.mocked(v2.get).mockRejectedValue(new Error('boom'))
       expect(await listAssets()).toEqual([])

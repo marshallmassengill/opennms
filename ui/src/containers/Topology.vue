@@ -294,7 +294,9 @@ const currentSource = computed(() => sourceForSlug(sourceSlug.value))
 // Navigate to a source via the route so every source stays bookmarkable.
 // Dropping the query resets the variant to the group's default.
 const goToSource = (slug: string) => {
-  if (slug !== sourceSlug.value) router.push({ name: 'Topology', params: { source: slug } })
+  if (slug !== sourceSlug.value) {
+    router.push({ name: 'Topology', params: { source: slug }})
+  }
 }
 
 // Compact label for the source button.
@@ -312,7 +314,9 @@ const selectedVariant = computed<string>({
   get: () => variantForKey(currentSource.value, variantKey.value)?.key ?? '',
   set: (key) => {
     const variants = currentSource.value?.variants
-    if (!variants) return
+    if (!variants) {
+      return
+    }
     // Clean URL for the default variant; explicit ?variant otherwise.
     const query = key === variants[0].key ? {} : { variant: key }
     router.push({ name: 'Topology', params: { source: sourceSlug.value }, query })
@@ -329,15 +333,19 @@ const sourceMenuModel = computed<MenuItem[]>(() => {
     class: slug === sourceSlug.value ? 'source-item-active' : undefined,
     command: () => goToSource(slug)
   })
-  const discovered = TOPOLOGY_SOURCES.filter((s) => s.kind === 'discovered').map((s) =>
+  const discovered = TOPOLOGY_SOURCES.filter(s => s.kind === 'discovered').map(s =>
     item(s.slug, s.label.replace(/^Discovered · /, ''))
   )
   return [item(CUSTOM_SOURCE_SLUG, 'Custom'), { label: 'Discovered', items: discovered }]
 })
 
 const discoveredHint = computed<string>(() => {
-  if (store.isDiscoveredLoading) return 'Loading…'
-  if (store.discoveredError) return 'Load failed'
+  if (store.isDiscoveredLoading) {
+    return 'Loading…'
+  }
+  if (store.discoveredError) {
+    return 'Load failed'
+  }
   return 'read-only'
 })
 
@@ -366,10 +374,14 @@ const onNodeContextMenu = (payload: { event: MouseEvent; nodeId: number | null; 
     }
   }
   if (isDiscovered.value) {
-    if (items.length) items.push({ separator: true })
+    if (items.length) {
+      items.push({ separator: true })
+    }
     items.push({ label: 'Set as focus point', command: () => store.setFocusNode(nodeKey) })
   }
-  if (items.length === 0) return
+  if (items.length === 0) {
+    return
+  }
   nodeMenuItems.value = items
   nodeMenuRef.value?.show(event)
 }
@@ -381,7 +393,7 @@ const modeOptions = [
 ]
 const mode = computed<boolean>({
   get: () => store.isEditMode,
-  set: (value) => store.setEditMode(value)
+  set: value => store.setEditMode(value)
 })
 
 // Load whatever the route's :source points at -- the custom catalog or a
@@ -390,7 +402,7 @@ const loadSource = async (): Promise<void> => {
   const option = sourceForSlug(sourceSlug.value)
   if (!option) {
     // Unknown source -> fall back to custom.
-    router.replace({ name: 'Topology', params: { source: CUSTOM_SOURCE_SLUG } })
+    router.replace({ name: 'Topology', params: { source: CUSTOM_SOURCE_SLUG }})
     return
   }
   if (option.kind === 'discovered') {
@@ -439,7 +451,9 @@ const selectedNodeId = computed<string | null>(() =>
 // Render the discovered graph, reduced to the focus node + SZL hops when a
 // focus is set (else the whole graph). Re-runs the auto-layout each time.
 const renderDiscovered = () => {
-  if (!store.discoveredGraph) return
+  if (!store.discoveredGraph) {
+    return
+  }
   const graph = focusSubgraph(store.discoveredGraph, store.focusNodeId, store.semanticZoomLevel)
   canvasRef.value?.loadDiscoveredGraph(graph)
 }
@@ -455,7 +469,9 @@ const routeFocus = computed<string | null>(() => {
 })
 const routeSzl = computed<number | null>(() => {
   const s = route.query.szl
-  if (typeof s !== 'string') return null
+  if (typeof s !== 'string') {
+    return null
+  }
   const n = Number(s)
   return Number.isFinite(n) ? n : null
 })
@@ -482,7 +498,9 @@ const navFocus = (focus: string | null, szl: number) => {
 }
 
 const focusOnSelection = () => {
-  if (selectedNodeId.value) navFocus(selectedNodeId.value, store.semanticZoomLevel)
+  if (selectedNodeId.value) {
+    navFocus(selectedNodeId.value, store.semanticZoomLevel)
+  }
 }
 const showAll = () => navFocus(null, store.semanticZoomLevel)
 
@@ -491,13 +509,16 @@ const showAll = () => navFocus(null, store.semanticZoomLevel)
 // Node-size slider <-> store (clamped in the store setter).
 const nodeSizeModel = computed<number>({
   get: () => store.nodeSize,
-  set: (n) => store.setNodeSize(n)
+  set: n => store.setNodeSize(n)
 })
 
 // Browse-panel row -> select that node on the canvas (or clear to "show all").
 const onBrowseSelect = (placedId: string | null) => {
-  if (placedId) store.selectOnly(placedId)
-  else store.clearSelection()
+  if (placedId) {
+    store.selectOnly(placedId)
+  } else {
+    store.clearSelection()
+  }
 }
 
 const onExport = () => {
@@ -524,27 +545,33 @@ const onSearchComplete = (event: { query: string }) => {
   const q = event.query.trim().toLowerCase()
   const matches = q
     ? nodes.filter(
-        (n) => n.label.toLowerCase().includes(q) || String(n.nodeId ?? '').includes(q)
-      )
+      n => n.label.toLowerCase().includes(q) || String(n.nodeId ?? '').includes(q)
+    )
     : nodes
   searchSuggestions.value = matches.slice(0, SEARCH_LIMIT)
 }
 
 const onSearchSelect = (event: { value: CanvasNode }) => {
-  if (event.value?.id) navFocus(event.value.id, store.semanticZoomLevel)
+  if (event.value?.id) {
+    navFocus(event.value.id, store.semanticZoomLevel)
+  }
   searchModel.value = '' // clear the field; the focus chip/SZL control reflects the state
 }
 
 // URL focus/SZL changed (a control click, a deep link, or back/forward) -> store.
 watch([routeFocus, routeSzl], () => {
-  if (isDiscovered.value) applyRouteFocus()
+  if (isDiscovered.value) {
+    applyRouteFocus()
+  }
 })
 
 // Re-render the focused subgraph when focus or the zoom level changes.
 watch(
   () => [store.focusNodeId, store.semanticZoomLevel],
   () => {
-    if (isDiscovered.value) renderDiscovered()
+    if (isDiscovered.value) {
+      renderDiscovered()
+    }
   }
 )
 
@@ -553,7 +580,9 @@ watch(
 watch(
   () => route.query.view,
   () => {
-    if (!isDiscovered.value) loadFromRoute()
+    if (!isDiscovered.value) {
+      loadFromRoute()
+    }
   }
 )
 
@@ -600,13 +629,17 @@ const canDelete = computed<boolean>(
 const currentViewId = computed<string | null>({
   get: () => store.currentView?.id ?? null,
   set: (id) => {
-    if (id && id !== store.currentView?.id) openIntoCanvas(id)
+    if (id && id !== store.currentView?.id) {
+      openIntoCanvas(id)
+    }
   }
 })
 
 const saveCurrent = async (): Promise<boolean> => {
   const snapshot = canvasRef.value?.serialize()
-  if (!snapshot) return false
+  if (!snapshot) {
+    return false
+  }
   const ok = await store.saveCurrentView(snapshot)
   toast.add(
     ok
@@ -622,7 +655,7 @@ const syncRouteToView = () => {
   const name = store.currentView?.name
   const source = (route.params.source as string) || 'custom'
   if (name && route.query.view !== name) {
-    router.replace({ name: 'Topology', params: { source }, query: { ...route.query, view: name } })
+    router.replace({ name: 'Topology', params: { source }, query: { ...route.query, view: name }})
   }
 }
 
@@ -633,8 +666,10 @@ const syncRouteToView = () => {
 // a source switch pass force=true so the custom view actually re-renders.
 const loadFromRoute = async (force = false): Promise<void> => {
   const wanted = (route.query.view as string) || 'Default'
-  if (!force && store.currentView?.id && store.currentView.name === wanted) return
-  const match = store.catalog.find((v) => v.name === wanted)
+  if (!force && store.currentView?.id && store.currentView.name === wanted) {
+    return
+  }
+  const match = store.catalog.find(v => v.name === wanted)
   if (match) {
     await openIntoCanvas(match.id)
   } else {
@@ -660,12 +695,14 @@ const openIntoCanvas = async (id: string): Promise<boolean> => {
 
 // Land on the seeded 'Default' view if present, else a blank canvas.
 const loadDefault = async (): Promise<void> => {
-  const def = store.catalog.find((v) => v.name === 'Default')
+  const def = store.catalog.find(v => v.name === 'Default')
   if (def) {
     await openIntoCanvas(def.id)
   } else {
     store.newView()
-    if (store.currentView) canvasRef.value?.loadView(store.currentView)
+    if (store.currentView) {
+      canvasRef.value?.loadView(store.currentView)
+    }
     syncRouteToView()
   }
 }
@@ -675,7 +712,7 @@ const onSave = () => saveCurrent()
 // View names are unique in the catalog. Catch a collision up front so New /
 // Save As give a clear message instead of a doomed request -- and, for Save
 // As, so we never mutate the open view before a save that will fail.
-const nameInUse = (name: string): boolean => store.catalog.some((v) => v.name === name)
+const nameInUse = (name: string): boolean => store.catalog.some(v => v.name === name)
 
 const warnNameInUse = (name: string) =>
   toast.add({
@@ -687,7 +724,9 @@ const warnNameInUse = (name: string) =>
 
 const onNew = async () => {
   const name = window.prompt('Name the new view:', '')
-  if (!name || !name.trim()) return
+  if (!name || !name.trim()) {
+    return
+  }
   const trimmed = name.trim()
   if (nameInUse(trimmed)) {
     warnNameInUse(trimmed)
@@ -696,15 +735,21 @@ const onNew = async () => {
   store.newView()
   store.renameCurrent(trimmed)
   store.setEditMode(true)
-  if (store.currentView) canvasRef.value?.loadView(store.currentView)
+  if (store.currentView) {
+    canvasRef.value?.loadView(store.currentView)
+  }
   await saveCurrent()
   syncRouteToView()
 }
 
 const onSaveAs = async () => {
-  if (!store.currentView) return
+  if (!store.currentView) {
+    return
+  }
   const name = window.prompt('Save view as:', store.currentView.name)
-  if (!name || !name.trim()) return
+  if (!name || !name.trim()) {
+    return
+  }
   const trimmed = name.trim()
   // Up-front collision check: Save As must create a new entry, so an existing
   // name (including the current view's own) is always a conflict.
@@ -713,27 +758,35 @@ const onSaveAs = async () => {
     return
   }
   const snapshot = canvasRef.value?.serialize()
-  if (!snapshot) return
+  if (!snapshot) {
+    return
+  }
   // Non-destructive: the open view is replaced only if the save succeeds.
   const ok = await store.saveCurrentViewAs(trimmed, snapshot)
   toast.add(
     ok
       ? { severity: 'success', summary: 'View saved', detail: trimmed, life: 3000 }
       : {
-          severity: 'error',
-          summary: 'Save failed',
-          detail: 'Could not save the view; the name may already be in use.',
-          life: 5000
-        }
+        severity: 'error',
+        summary: 'Save failed',
+        detail: 'Could not save the view; the name may already be in use.',
+        life: 5000
+      }
   )
-  if (ok) syncRouteToView()
+  if (ok) {
+    syncRouteToView()
+  }
 }
 
 const onRename = async () => {
   const cur = store.currentView
-  if (!cur) return
+  if (!cur) {
+    return
+  }
   const name = window.prompt('Rename view:', cur.name)
-  if (!name || !name.trim() || name.trim() === cur.name) return
+  if (!name || !name.trim() || name.trim() === cur.name) {
+    return
+  }
   if (cur.id) {
     const ok = await store.renameView(cur.id, name.trim())
     toast.add(
@@ -750,7 +803,9 @@ const onRename = async () => {
 
 const onDelete = () => {
   const cur = store.currentView
-  if (!cur?.id) return
+  if (!cur?.id) {
+    return
+  }
   const id = cur.id
   const name = cur.name
   confirm.require({
@@ -766,7 +821,9 @@ const onDelete = () => {
           ? { severity: 'success', summary: 'View deleted', detail: name, life: 3000 }
           : { severity: 'error', summary: 'Delete failed', detail: name, life: 5000 }
       )
-      if (ok) await loadDefault()
+      if (ok) {
+        await loadDefault()
+      }
     }
   })
 }

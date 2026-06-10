@@ -249,8 +249,12 @@ const appStore = useAppStore()
  * to undefined so the automatic icon takes over rather than a broken image.
  */
 const iconOverrideUrl = (override: string | undefined): string | undefined => {
-  if (!override) return undefined
-  if (override.startsWith('asset:')) return assetUrl(override.slice('asset:'.length))
+  if (!override) {
+    return undefined
+  }
+  if (override.startsWith('asset:')) {
+    return assetUrl(override.slice('asset:'.length))
+  }
   return DEVICE_ICON_SVG[override as keyof typeof DEVICE_ICON_SVG]
 }
 
@@ -282,7 +286,9 @@ const rubberBandHeight = computed(() =>
   rubberBand.value ? Math.abs(rubberBand.value.currentY - rubberBand.value.startY) : 0
 )
 const rubberBandStyle = computed(() => {
-  if (!rubberBand.value) return {}
+  if (!rubberBand.value) {
+    return {}
+  }
   const { startX, startY, currentX, currentY } = rubberBand.value
   return {
     left: Math.min(startX, currentX) + 'px',
@@ -314,7 +320,6 @@ const LINK_HOVER_SIZE = 6
 const LINK_SELECTED_SIZE = 4
 // Transient hovered link id (cleared on leave). Drives the reducer + cursor.
 const hoveredLinkId = ref<string | null>(null)
-let placedSequence = 0
 let draggedNode: string | null = null
 let dragStartPos: { x: number; y: number } | null = null
 
@@ -353,8 +358,12 @@ const linkDrawSource = ref<string | null>(null)
 const cursorViewport = ref<{ x: number; y: number } | null>(null)
 
 const linkPreview = computed<{ x1: number; y1: number; x2: number; y2: number } | null>(() => {
-  if (!linkDrawSource.value || !cursorViewport.value || !sigma || !graph) return null
-  if (!graph.hasNode(linkDrawSource.value)) return null
+  if (!linkDrawSource.value || !cursorViewport.value || !sigma || !graph) {
+    return null
+  }
+  if (!graph.hasNode(linkDrawSource.value)) {
+    return null
+  }
   void cameraVersion.value
   const sx = graph.getNodeAttribute(linkDrawSource.value, 'x') as number
   const sy = graph.getNodeAttribute(linkDrawSource.value, 'y') as number
@@ -363,7 +372,9 @@ const linkPreview = computed<{ x1: number; y1: number; x2: number; y2: number } 
 })
 
 const onCanvasMouseMove = (event: MouseEvent) => {
-  if (!store.isLinkDrawMode || !linkDrawSource.value || !canvasEl.value) return
+  if (!store.isLinkDrawMode || !linkDrawSource.value || !canvasEl.value) {
+    return
+  }
   const rect = canvasEl.value.getBoundingClientRect()
   cursorViewport.value = {
     x: event.clientX - rect.left,
@@ -373,11 +384,6 @@ const onCanvasMouseMove = (event: MouseEvent) => {
 
 let linkIdSequence = 0
 const newLinkId = () => `link-${Date.now()}-${linkIdSequence++}`
-
-const isLinkId = (id: string): boolean => {
-  if (!graph) return false
-  return graph.hasEdge(id)
-}
 
 /**
  * Undo/redo. Each user action that mutates the canvas (add from
@@ -400,20 +406,26 @@ const redoStack: Command[] = []
 
 const pushCommand = (cmd: Command) => {
   undoStack.push(cmd)
-  if (undoStack.length > MAX_HISTORY) undoStack.shift()
+  if (undoStack.length > MAX_HISTORY) {
+    undoStack.shift()
+  }
   redoStack.length = 0
 }
 
 const undo = () => {
   const cmd = undoStack.pop()
-  if (!cmd) return
+  if (!cmd) {
+    return
+  }
   cmd.undo()
   redoStack.push(cmd)
 }
 
 const redo = () => {
   const cmd = redoStack.pop()
-  if (!cmd) return
+  if (!cmd) {
+    return
+  }
   cmd.do()
   undoStack.push(cmd)
 }
@@ -437,7 +449,9 @@ const mountSigma = (g: Graph) => {
     resizeObserver.disconnect()
     resizeObserver = null
   }
-  if (!canvasEl.value) return
+  if (!canvasEl.value) {
+    return
+  }
   sigma = new Sigma(g, canvasEl.value, {
     renderEdgeLabels: true,
     // Sigma v3 disables edge mouse events by default; enable them so an edge
@@ -475,7 +489,9 @@ const mountSigma = (g: Graph) => {
       if (paletteId !== null && /^\d+$/.test(paletteId)) {
         const nid = Number(paletteId)
         const severity = store.severities[nid]
-        if (severity) res = { ...res, color: severityColor(severity) }
+        if (severity) {
+          res = { ...res, color: severityColor(severity) }
+        }
         // Icon resolution: a user-chosen override (built-in glyph or uploaded
         // asset) wins over the automatic sysObjectId-derived glyph.
         const overrideUrl = iconOverrideUrl(attrs.iconOverride as string | undefined)
@@ -483,7 +499,9 @@ const mountSigma = (g: Graph) => {
           res = { ...res, type: 'image', image: overrideUrl }
         } else {
           const iconId = store.nodeIconIds[nid]
-          if (iconId) res = { ...res, type: 'image', image: DEVICE_ICON_SVG[iconId] }
+          if (iconId) {
+            res = { ...res, type: 'image', image: DEVICE_ICON_SVG[iconId] }
+          }
         }
       }
       return res
@@ -514,7 +532,9 @@ const mountSigma = (g: Graph) => {
   // Re-sync sigma's dimensions whenever its container changes size, so
   // hit-detection (especially for thin edges) stays accurate.
   resizeObserver = new ResizeObserver(() => {
-    if (!sigma) return
+    if (!sigma) {
+      return
+    }
     // sigma's resize() resyncs the canvas/WebGL dimensions but does NOT
     // re-render (it only emits "resize"), so the scene stays blank until the
     // next interaction -- the "nodes don't show until I zoom" symptom. A
@@ -537,7 +557,6 @@ const initGraph = () => {
   graph = new Graph()
   linkCount.value = 0
   placedCount.value = 0
-  placedSequence = 0
   draggedNode = null
   dragStartPos = null
   clearHistory()
@@ -596,7 +615,9 @@ const serialize = (): Pick<TopologyView, 'nodes' | 'links' | 'viewport'> => {
 const loadView = (view: TopologyView) => {
   const g = new Graph()
   for (const n of view.nodes) {
-    if (g.hasNode(n.id)) continue
+    if (g.hasNode(n.id)) {
+      continue
+    }
     g.addNode(n.id, {
       label: n.label,
       x: n.x,
@@ -633,7 +654,9 @@ const loadView = (view: TopologyView) => {
   const placed: string[] = []
   for (const n of view.nodes) {
     const pid = paletteIdFromPlacedId(n.id)
-    if (pid !== null) placed.push(pid)
+    if (pid !== null) {
+      placed.push(pid)
+    }
   }
   store.setPlacedNodeIds(placed)
   placedCount.value = placed.length
@@ -675,22 +698,40 @@ const loadView = (view: TopologyView) => {
  * node placement land where the cursor is.
  */
 const setContentBBox = () => {
-  if (!sigma || !graph) return
+  if (!sigma || !graph) {
+    return
+  }
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
   let count = 0
   graph.forEachNode((_id, a) => {
     const x = a.x as number, y = a.y as number
-    if (x < minX) minX = x
-    if (x > maxX) maxX = x
-    if (y < minY) minY = y
-    if (y > maxY) maxY = y
+    if (x < minX) {
+      minX = x
+    }
+    if (x > maxX) {
+      maxX = x
+    }
+    if (y < minY) {
+      minY = y
+    }
+    if (y > maxY) {
+      maxY = y
+    }
     count++
   })
   for (const l of store.labels) {
-    if (l.x < minX) minX = l.x
-    if (l.x > maxX) maxX = l.x
-    if (l.y < minY) minY = l.y
-    if (l.y > maxY) maxY = l.y
+    if (l.x < minX) {
+      minX = l.x
+    }
+    if (l.x > maxX) {
+      maxX = l.x
+    }
+    if (l.y < minY) {
+      minY = l.y
+    }
+    if (l.y > maxY) {
+      maxY = l.y
+    }
     count++
   }
   if (count === 0) {
@@ -711,7 +752,9 @@ const setContentBBox = () => {
  * false for the instant framing done on load.
  */
 const fitCamera = (animate = true) => {
-  if (!sigma || !graph || graph.order === 0) return
+  if (!sigma || !graph || graph.order === 0) {
+    return
+  }
   setContentBBox()
   const target = { x: 0.5, y: 0.5, ratio: 1, angle: 0 }
   if (animate) {
@@ -737,16 +780,18 @@ const loadDiscoveredGraph = (dg: DiscoveredGraph) => {
   const positioned =
     dg.source.layout === 'hierarchy'
       ? layoutHierarchyGraph(dg.nodes, dg.links, {
-          levelSpacing: Math.max(80, store.nodeSize * 6),
-          // Wide enough that a node's right-hand label clears its next sibling.
-          siblingSpacing: Math.max(70, store.nodeSize * 6)
-        })
+        levelSpacing: Math.max(80, store.nodeSize * 6),
+        // Wide enough that a node's right-hand label clears its next sibling.
+        siblingSpacing: Math.max(70, store.nodeSize * 6)
+      })
       : layoutDiscoveredGraph(dg.nodes, dg.links, {
-          collideRadius: Math.max(24, store.nodeSize * 3)
-        })
+        collideRadius: Math.max(24, store.nodeSize * 3)
+      })
   const g = new Graph()
   for (const n of positioned) {
-    if (g.hasNode(n.id)) continue
+    if (g.hasNode(n.id)) {
+      continue
+    }
     g.addNode(n.id, {
       label: n.label,
       x: n.x,
@@ -814,12 +859,16 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
         pushCommand({
           label: `Move ${id}`,
           do: () => {
-            if (!graph || !graph.hasNode(id)) return
+            if (!graph || !graph.hasNode(id)) {
+              return
+            }
             graph.setNodeAttribute(id, 'x', end.x)
             graph.setNodeAttribute(id, 'y', end.y)
           },
           undo: () => {
-            if (!graph || !graph.hasNode(id)) return
+            if (!graph || !graph.hasNode(id)) {
+              return
+            }
             graph.setNodeAttribute(id, 'x', start.x)
             graph.setNodeAttribute(id, 'y', start.y)
           }
@@ -833,7 +882,9 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
 
   s.on('downNode', (e) => {
     // No node dragging in View mode (read-only canvas).
-    if (!store.isEditMode) return
+    if (!store.isEditMode) {
+      return
+    }
     draggedNode = e.node
     if (g.hasNode(e.node)) {
       dragStartPos = {
@@ -896,7 +947,9 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
 
   s.on('downStage', (e) => {
     const original = e.event.original as MouseEvent | undefined
-    if (!original?.shiftKey || !canvasEl.value) return
+    if (!original?.shiftKey || !canvasEl.value) {
+      return
+    }
     const rect = canvasEl.value.getBoundingClientRect()
     const x = original.clientX - rect.left
     const y = original.clientY - rect.top
@@ -916,7 +969,9 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
       rubberBand.value.currentY = original.clientY - rect.top
       return
     }
-    if (!draggedNode) return
+    if (!draggedNode) {
+      return
+    }
     // Prevent sigma's camera pan while dragging a node.
     e.preventSigmaDefault()
     e.original.preventDefault()
@@ -958,7 +1013,9 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
 
   s.on('rightClickNode', (e) => {
     const original = e.event.original as MouseEvent | undefined
-    if (!original) return
+    if (!original) {
+      return
+    }
     original.preventDefault()
     emit('node-contextmenu', {
       event: original,
@@ -968,7 +1025,9 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
   })
 
   s.on('clickEdge', (e) => {
-    if (store.isLinkDrawMode) return
+    if (store.isLinkDrawMode) {
+      return
+    }
     const original = e.event.original as MouseEvent | undefined
     if (original?.shiftKey) {
       store.toggleSelection(e.edge)
@@ -982,12 +1041,16 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
   // link-draw mode the cursor stays a crosshair and clicks won't select, so
   // we skip the affordance there to avoid implying the link is clickable.
   s.on('enterEdge', (e) => {
-    if (store.isLinkDrawMode) return
+    if (store.isLinkDrawMode) {
+      return
+    }
     hoveredLinkId.value = e.edge
     s.refresh()
   })
   s.on('leaveEdge', (e) => {
-    if (hoveredLinkId.value !== e.edge) return
+    if (hoveredLinkId.value !== e.edge) {
+      return
+    }
     hoveredLinkId.value = null
     s.refresh()
   })
@@ -1002,7 +1065,9 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
     }
     // Shift+click on empty stage is reserved for rubber band; never
     // clear selection on it.
-    if (original?.shiftKey) return
+    if (original?.shiftKey) {
+      return
+    }
     store.clearSelection()
   })
 
@@ -1010,9 +1075,13 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
     // Double-click on empty stage creates a new free-standing label at
     // the cursor's graph coordinates and enters edit mode. Edit mode only;
     // in View mode let sigma's default double-click zoom happen.
-    if (!store.isEditMode) return
+    if (!store.isEditMode) {
+      return
+    }
     const original = e.event.original as MouseEvent | undefined
-    if (!original || !canvasEl.value) return
+    if (!original || !canvasEl.value) {
+      return
+    }
     // sigma also fires its zoom-on-doubleClick by default; suppress it.
     e.preventSigmaDefault()
     const rect = canvasEl.value.getBoundingClientRect()
@@ -1039,14 +1108,18 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
  * (newLinkId) so undo/redo can re-create the exact same edge object.
  */
 const handleLinkDrawClick = (nodeId: string) => {
-  if (!graph || !store.isEditMode) return
+  if (!graph || !store.isEditMode) {
+    return
+  }
   if (linkDrawSource.value === null) {
     linkDrawSource.value = nodeId
     return
   }
   const source = linkDrawSource.value
   linkDrawSource.value = null
-  if (source === nodeId) return // ignore clicks on the same node (no self-loops)
+  if (source === nodeId) {
+    return
+  } // ignore clicks on the same node (no self-loops)
   if (graph.hasEdge(source, nodeId) || graph.hasEdge(nodeId, source)) {
     // Don't create duplicate edges between the same endpoints.
     return
@@ -1058,12 +1131,16 @@ const handleLinkDrawClick = (nodeId: string) => {
   pushCommand({
     label: 'Add edge',
     do: () => {
-      if (!graph || graph.hasEdge(edgeId)) return
+      if (!graph || graph.hasEdge(edgeId)) {
+        return
+      }
       graph.addEdgeWithKey(edgeId, source, nodeId, attrs)
       linkCount.value = graph.size
     },
     undo: () => {
-      if (!graph || !graph.hasEdge(edgeId)) return
+      if (!graph || !graph.hasEdge(edgeId)) {
+        return
+      }
       graph.dropEdge(edgeId)
       linkCount.value = graph.size
     }
@@ -1075,7 +1152,9 @@ const handleLinkDrawClick = (nodeId: string) => {
 watch(
   () => store.isLinkDrawMode,
   (on) => {
-    if (!on) linkDrawSource.value = null
+    if (!on) {
+      linkDrawSource.value = null
+    }
   }
 )
 
@@ -1091,7 +1170,9 @@ const newLabelId = () => `${LABEL_PREFIX}${Date.now()}-${labelSequence++}`
  * reactivity re-evaluates this function on every render frame.
  */
 const labelStyle = (label: CanvasLabel, _cameraVersion: number) => {
-  if (!sigma) return { display: 'none' }
+  if (!sigma) {
+    return { display: 'none' }
+  }
   void _cameraVersion
   const v = sigma.graphToViewport({ x: label.x, y: label.y })
   return {
@@ -1123,7 +1204,9 @@ const startEditLabel = (id: string, originalText: string, isNew: boolean) => {
 
 const commitEdit = () => {
   const id = editingLabelId.value
-  if (id === null) return
+  if (id === null) {
+    return
+  }
   const text = editingText.value.trim()
   editingLabelId.value = null
   if (text.length === 0) {
@@ -1134,12 +1217,16 @@ const commitEdit = () => {
   if (editingIsNew) {
     store.updateLabel(id, { text })
     const final = store.getLabel(id)
-    if (!final) return
+    if (!final) {
+      return
+    }
     const snapshot: CanvasLabel = { ...final }
     pushCommand({
       label: `Add label "${text}"`,
       do: () => {
-        if (!store.getLabel(snapshot.id)) store.addLabel(snapshot)
+        if (!store.getLabel(snapshot.id)) {
+          store.addLabel(snapshot)
+        }
       },
       undo: () => {
         store.removeLabel(snapshot.id)
@@ -1147,11 +1234,13 @@ const commitEdit = () => {
     })
     return
   }
-  if (text === editingOriginalText) return
+  if (text === editingOriginalText) {
+    return
+  }
   const original = editingOriginalText
   store.updateLabel(id, { text })
   pushCommand({
-    label: `Edit label`,
+    label: 'Edit label',
     do: () => store.updateLabel(id, { text }),
     undo: () => store.updateLabel(id, { text: original })
   })
@@ -1159,7 +1248,9 @@ const commitEdit = () => {
 
 const cancelEdit = () => {
   const id = editingLabelId.value
-  if (id === null) return
+  if (id === null) {
+    return
+  }
   editingLabelId.value = null
   if (editingIsNew) {
     // Cancel of a freshly-created label drops it -- never lands in
@@ -1169,7 +1260,9 @@ const cancelEdit = () => {
 }
 
 const onLabelClick = (event: MouseEvent, label: CanvasLabel) => {
-  if (editingLabelId.value === label.id) return
+  if (editingLabelId.value === label.id) {
+    return
+  }
   if (event.shiftKey) {
     store.toggleSelection(label.id)
   } else {
@@ -1178,17 +1271,27 @@ const onLabelClick = (event: MouseEvent, label: CanvasLabel) => {
 }
 
 const onLabelDoubleClick = (label: CanvasLabel) => {
-  if (!store.isEditMode) return
+  if (!store.isEditMode) {
+    return
+  }
   startEditLabel(label.id, label.text, false)
 }
 
 const onLabelMouseDown = (event: MouseEvent, label: CanvasLabel) => {
   // Only left button; do not interfere with edit-mode input field.
-  if (event.button !== 0) return
+  if (event.button !== 0) {
+    return
+  }
   // No label dragging in View mode (selection-to-inspect still works via click).
-  if (!store.isEditMode) return
-  if (editingLabelId.value === label.id) return
-  if (!sigma || !canvasEl.value) return
+  if (!store.isEditMode) {
+    return
+  }
+  if (editingLabelId.value === label.id) {
+    return
+  }
+  if (!sigma || !canvasEl.value) {
+    return
+  }
   const rect = canvasEl.value.getBoundingClientRect()
   const mouseGraph = sigma.viewportToGraph({
     x: event.clientX - rect.left,
@@ -1206,7 +1309,9 @@ const onLabelMouseDown = (event: MouseEvent, label: CanvasLabel) => {
 }
 
 const onLabelMouseMove = (event: MouseEvent) => {
-  if (!draggingLabel || !sigma || !canvasEl.value) return
+  if (!draggingLabel || !sigma || !canvasEl.value) {
+    return
+  }
   const rect = canvasEl.value.getBoundingClientRect()
   const cur = sigma.viewportToGraph({
     x: event.clientX - rect.left,
@@ -1220,16 +1325,22 @@ const onLabelMouseMove = (event: MouseEvent) => {
 const onLabelMouseUp = () => {
   window.removeEventListener('mousemove', onLabelMouseMove)
   window.removeEventListener('mouseup', onLabelMouseUp)
-  if (!draggingLabel) return
+  if (!draggingLabel) {
+    return
+  }
   const id = draggingLabel.id
   const start = { x: draggingLabel.startLabelX, y: draggingLabel.startLabelY }
   const current = store.getLabel(id)
   draggingLabel = null
-  if (!current) return
-  if (Math.abs(current.x - start.x) < 0.001 && Math.abs(current.y - start.y) < 0.001) return
+  if (!current) {
+    return
+  }
+  if (Math.abs(current.x - start.x) < 0.001 && Math.abs(current.y - start.y) < 0.001) {
+    return
+  }
   const end = { x: current.x, y: current.y }
   pushCommand({
-    label: `Move label`,
+    label: 'Move label',
     do: () => store.updateLabel(id, { x: end.x, y: end.y }),
     undo: () => store.updateLabel(id, { x: start.x, y: start.y })
   })
@@ -1246,16 +1357,27 @@ const onLabelMouseUp = () => {
 watch(
   () => store.selectedIds.slice(),
   (newIds, oldIds) => {
-    if (!graph) return
-    ;(oldIds ?? []).forEach((id) => {
-      if (!graph) return
-      if (graph.hasNode(id)) graph.removeNodeAttribute(id, 'highlighted')
-      else if (graph.hasEdge(id)) graph.removeEdgeAttribute(id, '_selected')
+    if (!graph) {
+      return
+    }(oldIds ?? []).forEach((id) => {
+      if (!graph) {
+        return
+      }
+      if (graph.hasNode(id)) {
+        graph.removeNodeAttribute(id, 'highlighted')
+      } else if (graph.hasEdge(id)) {
+        graph.removeEdgeAttribute(id, '_selected')
+      }
     })
     newIds.forEach((id) => {
-      if (!graph) return
-      if (graph.hasNode(id)) graph.setNodeAttribute(id, 'highlighted', true)
-      else if (graph.hasEdge(id)) graph.setEdgeAttribute(id, '_selected', true)
+      if (!graph) {
+        return
+      }
+      if (graph.hasNode(id)) {
+        graph.setNodeAttribute(id, 'highlighted', true)
+      } else if (graph.hasEdge(id)) {
+        graph.setEdgeAttribute(id, '_selected', true)
+      }
     })
     sigma?.refresh()
   }
@@ -1284,10 +1406,14 @@ watch(
 watch(
   () => store.isEditMode,
   () => {
-    if (!sigma) return
+    if (!sigma) {
+      return
+    }
     nextTick(() => {
       requestAnimationFrame(() => {
-        if (!sigma) return
+        if (!sigma) {
+          return
+        }
         sigma.resize()
         sigma.refresh()
       })
@@ -1314,7 +1440,9 @@ watch(
  * and sigma's current camera state.
  */
 const eventToGraphCoords = (event: DragEvent): { x: number; y: number } | null => {
-  if (!sigma || !canvasEl.value) return null
+  if (!sigma || !canvasEl.value) {
+    return null
+  }
   const rect = canvasEl.value.getBoundingClientRect()
   const localX = event.clientX - rect.left
   const localY = event.clientY - rect.top
@@ -1322,7 +1450,9 @@ const eventToGraphCoords = (event: DragEvent): { x: number; y: number } | null =
 }
 
 const isPaletteDrag = (event: DragEvent): boolean => {
-  if (!event.dataTransfer) return false
+  if (!event.dataTransfer) {
+    return false
+  }
   // Some browsers expose types via dataTransfer.types (lowercased).
   return Array.from(event.dataTransfer.types).includes(PALETTE_DRAG_MIME)
 }
@@ -1350,10 +1480,16 @@ const onDragLeave = (event: DragEvent) => {
 
 const onDrop = (event: DragEvent) => {
   isDropHover.value = false
-  if (!store.isEditMode) return
-  if (!event.dataTransfer || !graph) return
+  if (!store.isEditMode) {
+    return
+  }
+  if (!event.dataTransfer || !graph) {
+    return
+  }
   const raw = event.dataTransfer.getData(PALETTE_DRAG_MIME)
-  if (!raw) return
+  if (!raw) {
+    return
+  }
   let payload: PaletteDragPayload
   try {
     payload = JSON.parse(raw)
@@ -1361,7 +1497,9 @@ const onDrop = (event: DragEvent) => {
     return
   }
   const coords = eventToGraphCoords(event)
-  if (!coords) return
+  if (!coords) {
+    return
+  }
 
   if (store.isPlaced(payload.nodeId)) {
     // Defensive: the palette filters out already-placed nodes, but if
@@ -1375,7 +1513,9 @@ const onDrop = (event: DragEvent) => {
   }
 
   const placedId = placedIdFor(payload.nodeId)
-  if (graph.hasNode(placedId)) return
+  if (graph.hasNode(placedId)) {
+    return
+  }
   const attrs = {
     label: payload.label,
     x: coords.x,
@@ -1388,17 +1528,20 @@ const onDrop = (event: DragEvent) => {
   graph.addNode(placedId, attrs)
   store.markPlaced(paletteId)
   placedCount.value++
-  placedSequence++ // retained for stats; not used in id construction
   pushCommand({
     label: `Add ${payload.label}`,
     do: () => {
-      if (!graph || graph.hasNode(placedId)) return
+      if (!graph || graph.hasNode(placedId)) {
+        return
+      }
       graph.addNode(placedId, attrs)
       store.markPlaced(paletteId)
       placedCount.value++
     },
     undo: () => {
-      if (!graph || !graph.hasNode(placedId)) return
+      if (!graph || !graph.hasNode(placedId)) {
+        return
+      }
       graph.dropNode(placedId)
       store.markUnplaced(paletteId)
       placedCount.value = Math.max(0, placedCount.value - 1)
@@ -1425,27 +1568,33 @@ interface DeletedNodeSnapshot {
  * edges automatically; we capture them first so undo can rebuild them.
  */
 const deleteSelected = () => {
-  if (!graph || !store.isEditMode) return
+  if (!graph || !store.isEditMode) {
+    return
+  }
   const ids = store.selectedIds.slice()
-  if (ids.length === 0) return
+  if (ids.length === 0) {
+    return
+  }
 
   // Partition into label ids, shape ids, edge ids, and node ids. Labels and
   // shapes live in the store; edges and nodes live in the graphology graph.
   const labelIds = ids.filter(isLabelId)
   const shapeIds = ids.filter(isShapeId)
-  const edgeIds = ids.filter((id) => !isLabelId(id) && !isShapeId(id) && graph!.hasEdge(id))
-  const nodeIds = ids.filter((id) => !isLabelId(id) && !isShapeId(id) && graph!.hasNode(id))
+  const edgeIds = ids.filter(id => !isLabelId(id) && !isShapeId(id) && graph!.hasEdge(id))
+  const nodeIds = ids.filter(id => !isLabelId(id) && !isShapeId(id) && graph!.hasNode(id))
   const labelSnapshots: CanvasLabel[] = labelIds
-    .map((id) => store.getLabel(id))
+    .map(id => store.getLabel(id))
     .filter((l): l is CanvasLabel => l !== undefined)
-    .map((l) => ({ ...l }))
+    .map(l => ({ ...l }))
   const shapeSnapshots: CanvasShape[] = shapeIds
-    .map((id) => store.getShape(id))
+    .map(id => store.getShape(id))
     .filter((s): s is CanvasShape => s !== undefined)
-    .map((s) => ({ ...s }))
+    .map(s => ({ ...s }))
   const edgeSnapshots: Array<{ id: string; source: string; target: string; attrs: Record<string, unknown> }> = []
   for (const eid of edgeIds) {
-    if (!graph.hasEdge(eid)) continue
+    if (!graph.hasEdge(eid)) {
+      continue
+    }
     edgeSnapshots.push({
       id: eid,
       source: graph.source(eid),
@@ -1456,7 +1605,9 @@ const deleteSelected = () => {
 
   const snapshots: DeletedNodeSnapshot[] = []
   for (const id of nodeIds) {
-    if (!graph.hasNode(id)) continue
+    if (!graph.hasNode(id)) {
+      continue
+    }
     const attrs = { ...graph.getNodeAttributes(id) }
     // `highlighted` is transient visual state owned by the selection
     // watcher, not user-meaningful node data. Preserving it across a
@@ -1470,20 +1621,26 @@ const deleteSelected = () => {
       // Capture each incident edge once; for an edge whose endpoints
       // are both in the deletion set, this still records it from each
       // side, but the undo step de-dupes via hasEdge.
-      edges.push({ source, target, attrs: { ...edgeAttrs } })
+      edges.push({ source, target, attrs: { ...edgeAttrs }})
     })
     snapshots.push({ id, attrs, paletteId, edges })
   }
 
   const applyDelete = () => {
-    if (!graph) return
+    if (!graph) {
+      return
+    }
     // Edges first so node-deletion cascade doesn't trip the explicit
     // edge-drop step (dropNode also drops incident edges).
     for (const e of edgeSnapshots) {
-      if (graph.hasEdge(e.id)) graph.dropEdge(e.id)
+      if (graph.hasEdge(e.id)) {
+        graph.dropEdge(e.id)
+      }
     }
     for (const s of snapshots) {
-      if (!graph.hasNode(s.id)) continue
+      if (!graph.hasNode(s.id)) {
+        continue
+      }
       if (s.paletteId !== null) {
         store.markUnplaced(s.paletteId)
         placedCount.value = Math.max(0, placedCount.value - 1)
@@ -1500,7 +1657,9 @@ const deleteSelected = () => {
   }
 
   const applyUndo = () => {
-    if (!graph) return
+    if (!graph) {
+      return
+    }
     for (const s of snapshots) {
       if (!graph.hasNode(s.id)) {
         graph.addNode(s.id, s.attrs)
@@ -1532,10 +1691,14 @@ const deleteSelected = () => {
       }
     }
     for (const l of labelSnapshots) {
-      if (!store.getLabel(l.id)) store.addLabel(l)
+      if (!store.getLabel(l.id)) {
+        store.addLabel(l)
+      }
     }
     for (const s of shapeSnapshots) {
-      if (!store.getShape(s.id)) store.addShape(s)
+      if (!store.getShape(s.id)) {
+        store.addShape(s)
+      }
     }
     linkCount.value = graph.size
   }
@@ -1543,7 +1706,9 @@ const deleteSelected = () => {
   applyDelete()
   store.clearSelection()
   const totalDeleted = snapshots.length + labelSnapshots.length + shapeSnapshots.length + edgeSnapshots.length
-  if (totalDeleted === 0) return
+  if (totalDeleted === 0) {
+    return
+  }
   pushCommand({
     label: `Delete ${totalDeleted} item(s)`,
     do: applyDelete,
@@ -1560,15 +1725,22 @@ const onKeyDown = (e: KeyboardEvent) => {
   const target = e.target as HTMLElement | null
   if (target) {
     const tag = target.tagName
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) {
+      return
+    }
   }
   // All keyboard editing (undo/redo, delete, edit-mode escapes) is Edit-only.
-  if (!store.isEditMode) return
+  if (!store.isEditMode) {
+    return
+  }
   const ctrlOrMeta = e.ctrlKey || e.metaKey
   if (ctrlOrMeta && (e.key === 'z' || e.key === 'Z')) {
     e.preventDefault()
-    if (e.shiftKey) redo()
-    else undo()
+    if (e.shiftKey) {
+      redo()
+    } else {
+      undo()
+    }
     return
   }
   if (ctrlOrMeta && (e.key === 'y' || e.key === 'Y')) {
@@ -1594,7 +1766,9 @@ const onKeyDown = (e: KeyboardEvent) => {
     }
   }
   if (e.key === 'Delete' || e.key === 'Backspace') {
-    if (store.selectedIds.length === 0) return
+    if (store.selectedIds.length === 0) {
+      return
+    }
     e.preventDefault()
     deleteSelected()
   }
@@ -1628,7 +1802,9 @@ onBeforeUnmount(() => {
 const getLink = (
   id: string
 ): { label: string; sourceLabel: string; targetLabel: string; origin: 'user' | 'discovered'; binding?: CanvasLinkBinding } | null => {
-  if (!graph || !graph.hasEdge(id)) return null
+  if (!graph || !graph.hasEdge(id)) {
+    return null
+  }
   const source = graph.source(id)
   const target = graph.target(id)
   return {
@@ -1647,7 +1823,9 @@ const getLink = (
  * successive placements fan out. One undo command covers node + link.
  */
 const placeNeighbor = (fromId: string, neighbor: import('@/types/topology').DiscoveredNeighbor) => {
-  if (!graph || !store.isEditMode || !graph.hasNode(fromId)) return
+  if (!graph || !store.isEditMode || !graph.hasNode(fromId)) {
+    return
+  }
   const paletteId = String(neighbor.neighborNodeId)
   const placedId = placedIdFor(paletteId)
   const binding: CanvasLinkBinding = {
@@ -1670,10 +1848,10 @@ const placeNeighbor = (fromId: string, neighbor: import('@/types/topology').Disc
   // radius lands neighbors way off-screen when zoomed in.
   const probe = sigma
     ? (() => {
-        const a = sigma.viewportToGraph({ x: 0, y: 0 })
-        const b = sigma.viewportToGraph({ x: 150, y: 0 })
-        return Math.hypot(b.x - a.x, b.y - a.y)
-      })()
+      const a = sigma.viewportToGraph({ x: 0, y: 0 })
+      const b = sigma.viewportToGraph({ x: 150, y: 0 })
+      return Math.hypot(b.x - a.x, b.y - a.y)
+    })()
     : 150
   const radius = Math.max(probe, store.nodeSize * 2)
   const nodeAttrs = {
@@ -1687,7 +1865,9 @@ const placeNeighbor = (fromId: string, neighbor: import('@/types/topology').Disc
   const linkAttrs = { size: 2, color: '#1f5fb0', origin: 'discovered', binding }
 
   const apply = () => {
-    if (!graph) return
+    if (!graph) {
+      return
+    }
     if (!graph.hasNode(placedId)) {
       graph.addNode(placedId, nodeAttrs)
       store.markPlaced(paletteId)
@@ -1705,8 +1885,12 @@ const placeNeighbor = (fromId: string, neighbor: import('@/types/topology').Disc
     label: `Add ${neighbor.neighborLabel} + link`,
     do: apply,
     undo: () => {
-      if (!graph) return
-      if (graph.hasEdge(linkId)) graph.dropEdge(linkId)
+      if (!graph) {
+        return
+      }
+      if (graph.hasEdge(linkId)) {
+        graph.dropEdge(linkId)
+      }
       if (graph.hasNode(placedId)) {
         graph.dropNode(placedId)
         store.markUnplaced(paletteId)
@@ -1723,7 +1907,9 @@ const placeNeighbor = (fromId: string, neighbor: import('@/types/topology').Disc
  * command -- edge-label edits aren't individually undoable.
  */
 const setLinkLabel = (id: string, label: string) => {
-  if (!graph || !graph.hasEdge(id)) return
+  if (!graph || !graph.hasEdge(id)) {
+    return
+  }
   graph.setEdgeAttribute(id, 'label', label)
   sigma?.refresh()
 }
@@ -1795,7 +1981,9 @@ const backgroundMouseGraph = (event: MouseEvent) => {
 
 const beginBackgroundDrag = (event: MouseEvent, mode: 'move' | 'resize') => {
   const bg = store.background
-  if (!sigma || !canvasEl.value || !bg || !store.isEditMode || !store.isBackgroundAdjustMode) return
+  if (!sigma || !canvasEl.value || !bg || !store.isEditMode || !store.isBackgroundAdjustMode) {
+    return
+  }
   const g = backgroundMouseGraph(event)
   backgroundDrag = {
     mode,
@@ -1816,7 +2004,9 @@ const onBackgroundMouseDown = (event: MouseEvent) => beginBackgroundDrag(event, 
 const onBackgroundHandleMouseDown = (event: MouseEvent) => beginBackgroundDrag(event, 'resize')
 
 const onBackgroundDragMove = (event: MouseEvent) => {
-  if (!backgroundDrag || !sigma || !canvasEl.value || !store.background) return
+  if (!backgroundDrag || !sigma || !canvasEl.value || !store.background) {
+    return
+  }
   const g = backgroundMouseGraph(event)
   const dx = g.x - backgroundDrag.startGraphX
   const dy = g.y - backgroundDrag.startGraphY
@@ -1825,11 +2015,11 @@ const onBackgroundDragMove = (event: MouseEvent) => {
     backgroundDrag.mode === 'move'
       ? { ...store.background, x: orig.x + dx, y: orig.y + dy }
       : {
-          ...store.background,
-          width: Math.max(BG_MIN_SIZE, orig.width + dx),
-          // Dragging the handle downward is negative dy in graph coords.
-          height: Math.max(BG_MIN_SIZE, orig.height - dy)
-        }
+        ...store.background,
+        width: Math.max(BG_MIN_SIZE, orig.width + dx),
+        // Dragging the handle downward is negative dy in graph coords.
+        height: Math.max(BG_MIN_SIZE, orig.height - dy)
+      }
   store.setBackground(next)
 }
 
@@ -1856,7 +2046,9 @@ const visibleShapes = computed<CanvasShape[]>(() =>
 
 /** The shape's graph rect projected to viewport px (same math as the background). */
 const shapeViewportRect = (shape: CanvasShape) => {
-  if (!sigma) return null
+  if (!sigma) {
+    return null
+  }
   const topLeft = sigma.graphToViewport({ x: shape.x, y: shape.y })
   const bottomRight = sigma.graphToViewport({ x: shape.x + shape.width, y: shape.y - shape.height })
   return {
@@ -1870,7 +2062,9 @@ const shapeViewportRect = (shape: CanvasShape) => {
 const shapeRectAttrs = (shape: CanvasShape, _cameraVersion: number) => {
   void _cameraVersion
   const r = shapeViewportRect(shape)
-  if (!r) return { display: 'none' }
+  if (!r) {
+    return { display: 'none' }
+  }
   return {
     x: r.left,
     y: r.top,
@@ -1886,7 +2080,9 @@ const shapeRectAttrs = (shape: CanvasShape, _cameraVersion: number) => {
 const shapeEllipseAttrs = (shape: CanvasShape, _cameraVersion: number) => {
   void _cameraVersion
   const r = shapeViewportRect(shape)
-  if (!r) return { display: 'none' }
+  if (!r) {
+    return { display: 'none' }
+  }
   return {
     cx: r.left + r.width / 2,
     cy: r.top + r.height / 2,
@@ -1902,7 +2098,9 @@ const shapeEllipseAttrs = (shape: CanvasShape, _cameraVersion: number) => {
 const shapeLabelAttrs = (shape: CanvasShape, _cameraVersion: number) => {
   void _cameraVersion
   const r = shapeViewportRect(shape)
-  if (!r) return { display: 'none' }
+  if (!r) {
+    return { display: 'none' }
+  }
   return {
     x: r.left + r.width / 2,
     y: r.top + 16,
@@ -1918,7 +2116,9 @@ const shapeHitEllipseAttrs = (shape: CanvasShape, cameraVersion: number) => shap
 const shapeHandleAttrs = (shape: CanvasShape, _cameraVersion: number) => {
   void _cameraVersion
   const r = shapeViewportRect(shape)
-  if (!r) return { display: 'none' }
+  if (!r) {
+    return { display: 'none' }
+  }
   return { x: r.left + r.width - 6, y: r.top + r.height - 6, width: 12, height: 12 }
 }
 
@@ -1940,7 +2140,9 @@ const onShapeHandleMouseDown = (shape: CanvasShape, event: MouseEvent) =>
   beginShapeDrag(shape, event, 'resize')
 
 const beginShapeDrag = (shape: CanvasShape, event: MouseEvent, mode: 'move' | 'resize') => {
-  if (!sigma || !canvasEl.value || !store.isEditMode) return
+  if (!sigma || !canvasEl.value || !store.isEditMode) {
+    return
+  }
   const g = backgroundMouseGraph(event)
   shapeDrag = {
     id: shape.id,
@@ -1956,11 +2158,15 @@ const beginShapeDrag = (shape: CanvasShape, event: MouseEvent, mode: 'move' | 'r
 }
 
 const onShapeDragMove = (event: MouseEvent) => {
-  if (!shapeDrag || !sigma || !canvasEl.value) return
+  if (!shapeDrag || !sigma || !canvasEl.value) {
+    return
+  }
   const g = backgroundMouseGraph(event)
   const dx = g.x - shapeDrag.startGraphX
   const dy = g.y - shapeDrag.startGraphY
-  if (!shapeDrag.moved && Math.abs(dx) < 1 && Math.abs(dy) < 1) return
+  if (!shapeDrag.moved && Math.abs(dx) < 1 && Math.abs(dy) < 1) {
+    return
+  }
   shapeDrag.moved = true
   const { orig } = shapeDrag
   if (shapeDrag.mode === 'move') {
@@ -1977,8 +2183,11 @@ const onShapeDragMove = (event: MouseEvent) => {
 const endShapeDrag = () => {
   if (shapeDrag && !shapeDrag.moved && shapeDrag.mode === 'move') {
     // No movement: it was a selection click on the border.
-    if (shapeDrag.shiftKey) store.toggleSelection(shapeDrag.id)
-    else store.selectOnly(shapeDrag.id)
+    if (shapeDrag.shiftKey) {
+      store.toggleSelection(shapeDrag.id)
+    } else {
+      store.selectOnly(shapeDrag.id)
+    }
   }
   shapeDrag = null
   window.removeEventListener('mousemove', onShapeDragMove)
@@ -1996,7 +2205,9 @@ let shapeDrawOverlayRect: DOMRect | null = null
 const shapeDraftStyle = computed(() => {
   const d = shapeDraft.value
   const o = shapeDrawOverlayRect
-  if (!d || !o) return {}
+  if (!d || !o) {
+    return {}
+  }
   return {
     left: Math.min(d.x1, d.x2) - o.left + 'px',
     top: Math.min(d.y1, d.y2) - o.top + 'px',
@@ -2013,7 +2224,9 @@ const onShapeDrawStart = (event: MouseEvent) => {
 }
 
 const onShapeDrawMove = (event: MouseEvent) => {
-  if (!shapeDraft.value) return
+  if (!shapeDraft.value) {
+    return
+  }
   shapeDraft.value = { ...shapeDraft.value, x2: event.clientX, y2: event.clientY }
 }
 
@@ -2023,7 +2236,9 @@ const onShapeDrawEnd = () => {
   const d = shapeDraft.value
   shapeDraft.value = null
   shapeDrawOverlayRect = null
-  if (!d || !sigma || !canvasEl.value) return
+  if (!d || !sigma || !canvasEl.value) {
+    return
+  }
   if (Math.abs(d.x2 - d.x1) < SHAPE_MIN_DRAW_PX || Math.abs(d.y2 - d.y1) < SHAPE_MIN_DRAW_PX) {
     // Too small to be a deliberate shape; treat as a cancel.
     store.setShapeDrawMode(false)
@@ -2119,7 +2334,9 @@ const drawThemedNodeHover = (
  * keep sigma's own default of taking the link's color attribute.
  */
 const applyViewStyle = () => {
-  if (!sigma) return
+  if (!sigma) {
+    return
+  }
   const style = store.viewStyle
   const themeDefault = appStore.theme === 'open-dark' ? '#dfe3e8' : '#000'
   sigma.setSetting(
@@ -2153,11 +2370,15 @@ watch(
  * graph: both change whenever links or nodes are added or removed.
  */
 const ghostHints = computed<LinkHint[]>(() => {
-  if (!store.isEditMode || store.discoveredGraph !== null || !store.isLinkHintsEnabled) return []
+  if (!store.isEditMode || store.discoveredGraph !== null || !store.isLinkHintsEnabled) {
+    return []
+  }
   void linkCount.value
   void placedCount.value
   return computeGhostLinks(store.neighborsByNode, store.placedNodeIds, (a, b) => {
-    if (!graph || !graph.hasNode(a) || !graph.hasNode(b)) return true
+    if (!graph || !graph.hasNode(a) || !graph.hasNode(b)) {
+      return true
+    }
     return graph.hasEdge(a, b) || graph.hasEdge(b, a)
   })
 })
@@ -2180,8 +2401,12 @@ const ghostLineAttrs = (hint: LinkHint, _cameraVersion: number) => {
 
 /** Adopt a ghost: it becomes a real, persisted link carrying its binding. */
 const adoptHint = (hint: LinkHint) => {
-  if (!graph || !store.isEditMode) return
-  if (graph.hasEdge(hint.sourceId, hint.targetId) || graph.hasEdge(hint.targetId, hint.sourceId)) return
+  if (!graph || !store.isEditMode) {
+    return
+  }
+  if (graph.hasEdge(hint.sourceId, hint.targetId) || graph.hasEdge(hint.targetId, hint.sourceId)) {
+    return
+  }
   const id = newLinkId()
   const attrs = {
     size: 2,
@@ -2195,13 +2420,19 @@ const adoptHint = (hint: LinkHint) => {
   pushCommand({
     label: 'Add discovered link',
     do: () => {
-      if (!graph || graph.hasEdge(id)) return
-      if (!graph.hasNode(hint.sourceId) || !graph.hasNode(hint.targetId)) return
+      if (!graph || graph.hasEdge(id)) {
+        return
+      }
+      if (!graph.hasNode(hint.sourceId) || !graph.hasNode(hint.targetId)) {
+        return
+      }
       graph.addEdgeWithKey(id, hint.sourceId, hint.targetId, attrs)
       linkCount.value = graph.size
     },
     undo: () => {
-      if (!graph || !graph.hasEdge(id)) return
+      if (!graph || !graph.hasEdge(id)) {
+        return
+      }
       graph.dropEdge(id)
       linkCount.value = graph.size
     }
@@ -2210,7 +2441,9 @@ const adoptHint = (hint: LinkHint) => {
 
 /** A node's persisted icon override (built-in glyph key or `asset:<id>`). */
 const getNodeIconOverride = (id: string): string | undefined => {
-  if (!graph || !graph.hasNode(id)) return undefined
+  if (!graph || !graph.hasNode(id)) {
+    return undefined
+  }
   return (graph.getNodeAttribute(id, 'iconOverride') as string | undefined) || undefined
 }
 
@@ -2219,7 +2452,9 @@ const getNodeIconOverride = (id: string): string | undefined => {
  * it on the next repaint; persisted by serialize() with the view.
  */
 const setNodeIconOverride = (id: string, override: string | undefined) => {
-  if (!graph || !graph.hasNode(id)) return
+  if (!graph || !graph.hasNode(id)) {
+    return
+  }
   if (override) {
     graph.setNodeAttribute(id, 'iconOverride', override)
   } else {
@@ -2236,7 +2471,9 @@ const setNodeIconOverride = (id: string, override: string | undefined) => {
  * DOM overlays and are not yet included in the export.
  */
 const exportImage = async (fileName: string, format: 'png' | 'jpeg' = 'png'): Promise<void> => {
-  if (!sigma) return
+  if (!sigma) {
+    return
+  }
   await downloadAsImage(sigma, { format, fileName, backgroundColor: '#ffffff' })
 }
 

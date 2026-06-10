@@ -72,7 +72,9 @@ const ICON_MAP: Record<string, DeviceIconId> = {
 
 /** enlinkd Topology.getIconKey: sysObjectId -> iconKey. */
 export const iconKeyForSysObjectId = (sysObjectId?: string | null): string => {
-  if (!sysObjectId) return 'linkd.system'
+  if (!sysObjectId) {
+    return 'linkd.system'
+  }
   return sysObjectId.startsWith('.')
     ? `linkd.system.snmp${sysObjectId}`
     : `linkd.system.snmp.${sysObjectId}`
@@ -83,8 +85,12 @@ export const iconKeyForSysObjectId = (sysObjectId?: string | null): string => {
  * most specific OID wins), or null when nothing matches (keep the plain circle).
  */
 export const resolveDeviceIcon = (iconKey?: string | null): DeviceIconId | null => {
-  if (!iconKey) return null
-  if (ICON_MAP[iconKey]) return ICON_MAP[iconKey]
+  if (!iconKey) {
+    return null
+  }
+  if (ICON_MAP[iconKey]) {
+    return ICON_MAP[iconKey]
+  }
   let best: DeviceIconId | null = null
   let bestLen = -1
   for (const key of Object.keys(ICON_MAP)) {

@@ -125,7 +125,7 @@ const loadError = ref<boolean>(false)
 
 const availableCategories = computed<string[]>(() => {
   const set = new Set<string>()
-  allNodes.value.forEach((n) => n.categories?.forEach((c) => set.add(c.name)))
+  allNodes.value.forEach(n => n.categories?.forEach(c => set.add(c.name)))
   return Array.from(set).sort()
 })
 
@@ -134,11 +134,17 @@ const filteredNodes = computed<Node[]>(() => {
   const cats = selectedCategories.value
   const placed = store.placedNodeIds
   return allNodes.value.filter((n) => {
-    if (placed.has(n.id)) return false
-    if (q && !n.label.toLowerCase().includes(q)) return false
+    if (placed.has(n.id)) {
+      return false
+    }
+    if (q && !n.label.toLowerCase().includes(q)) {
+      return false
+    }
     if (cats.length > 0) {
-      const nodeCatNames = (n.categories ?? []).map((c) => c.name)
-      if (!cats.some((c) => nodeCatNames.includes(c))) return false
+      const nodeCatNames = (n.categories ?? []).map(c => c.name)
+      if (!cats.some(c => nodeCatNames.includes(c))) {
+        return false
+      }
     }
     return true
   })
@@ -157,7 +163,9 @@ const loadNodes = async () => {
 }
 
 const onDragStart = (event: DragEvent, node: Node) => {
-  if (!event.dataTransfer) return
+  if (!event.dataTransfer) {
+    return
+  }
   const payload: PaletteDragPayload = {
     nodeId: node.id,
     label: node.label

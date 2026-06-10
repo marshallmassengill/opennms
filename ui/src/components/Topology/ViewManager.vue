@@ -103,7 +103,9 @@ const refresh = async () => {
 watch(
   () => props.visible,
   (open) => {
-    if (open) refresh()
+    if (open) {
+      refresh()
+    }
   }
 )
 
@@ -114,7 +116,9 @@ const onOpen = (id: string) => {
 
 const onRename = async (id: string, currentName: string) => {
   const name = window.prompt('Rename view:', currentName)
-  if (!name || name.trim() === '' || name === currentName) return
+  if (!name || name.trim() === '' || name === currentName) {
+    return
+  }
   const ok = await store.renameView(id, name.trim())
   toast.add(
     ok
@@ -124,7 +128,9 @@ const onRename = async (id: string, currentName: string) => {
 }
 
 const onDelete = async (id: string, name: string) => {
-  if (!window.confirm(`Delete view "${name}"? This cannot be undone.`)) return
+  if (!window.confirm(`Delete view "${name}"? This cannot be undone.`)) {
+    return
+  }
   const ok = await store.removeView(id)
   toast.add(
     ok

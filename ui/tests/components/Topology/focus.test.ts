@@ -34,7 +34,7 @@ const graph: DiscoveredGraph = {
   links: [edge('core', 'd1'), edge('core', 'd2'), edge('d1', 'a1'), edge('d2', 'a2')]
 }
 
-const ids = (g: DiscoveredGraph) => g.nodes.map((n) => n.id).sort()
+const ids = (g: DiscoveredGraph) => g.nodes.map(n => n.id).sort()
 
 describe('focusSubgraph', () => {
   it('returns the whole graph when focus is null', () => {
@@ -55,7 +55,7 @@ describe('focusSubgraph', () => {
     const out = focusSubgraph(graph, 'core', 1)
     expect(ids(out)).toEqual(['core', 'd1', 'd2'])
     // only edges fully inside the kept set
-    expect(out.links.map((e) => e.id).sort()).toEqual(['core|d1', 'core|d2'])
+    expect(out.links.map(e => e.id).sort()).toEqual(['core|d1', 'core|d2'])
   })
 
   it('hops=2 reaches the leaves', () => {

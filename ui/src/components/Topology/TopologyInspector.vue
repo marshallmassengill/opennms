@@ -408,12 +408,22 @@ const selectedId = computed<string | null>(() =>
 )
 
 const kind = computed<'none' | 'multi' | 'label' | 'node' | 'shape' | 'link'>(() => {
-  if (store.selectedIds.length === 0) return 'none'
-  if (store.selectedIds.length > 1) return 'multi'
+  if (store.selectedIds.length === 0) {
+    return 'none'
+  }
+  if (store.selectedIds.length > 1) {
+    return 'multi'
+  }
   const id = selectedId.value as string
-  if (isLabelId(id)) return 'label'
-  if (isShapeId(id)) return 'shape'
-  if (nodeIdFromPlacedId(id) !== null) return 'node'
+  if (isLabelId(id)) {
+    return 'label'
+  }
+  if (isShapeId(id)) {
+    return 'shape'
+  }
+  if (nodeIdFromPlacedId(id) !== null) {
+    return 'node'
+  }
   return 'link'
 })
 
@@ -422,15 +432,17 @@ const label = computed(() => (selectedId.value && isLabelId(selectedId.value) ? 
 
 const labelText = computed<string>({
   get: () => label.value?.text ?? '',
-  set: (text) => label.value && store.updateLabel(label.value.id, { text })
+  set: text => label.value && store.updateLabel(label.value.id, { text })
 })
 const labelColor = computed<string>(() => label.value?.color ?? '#1d2939')
 const onLabelColor = (event: Event) => {
-  if (label.value) store.updateLabel(label.value.id, { color: (event.target as HTMLInputElement).value })
+  if (label.value) {
+    store.updateLabel(label.value.id, { color: (event.target as HTMLInputElement).value })
+  }
 }
 const labelFontSize = computed<number>({
   get: () => label.value?.fontSize ?? 12,
-  set: (fontSize) => label.value && store.updateLabel(label.value.id, { fontSize })
+  set: fontSize => label.value && store.updateLabel(label.value.id, { fontSize })
 })
 
 /* ---- Node detail (read-only, fetched on selection) ---- */
@@ -450,7 +462,9 @@ watch(
   async (id) => {
     infoPanelItems.value = []
     const nid = id ? nodeIdFromPlacedId(id) : null
-    if (nid === null) return
+    if (nid === null) {
+      return
+    }
     infoPanelItems.value = await getNodeInfoPanel(nid)
   },
   { immediate: true }
@@ -458,7 +472,9 @@ watch(
 
 const nodeSeverity = computed<string | undefined>(() => {
   const id = selectedId.value
-  if (!id) return undefined
+  if (!id) {
+    return undefined
+  }
   const nid = nodeIdFromPlacedId(id)
   return nid !== null ? store.severities[nid] : undefined
 })
@@ -468,7 +484,9 @@ watch(
   async (id) => {
     nodeDetail.value = null
     const nid = id ? nodeIdFromPlacedId(id) : null
-    if (nid === null) return
+    if (nid === null) {
+      return
+    }
     nodeLoading.value = true
     try {
       const res = await getNodeById(String(nid))
@@ -481,7 +499,7 @@ watch(
 )
 
 /* ---- Node icon picker (Edit mode) ---- */
-const builtinIcons = (Object.keys(DEVICE_ICON_SVG) as Array<keyof typeof DEVICE_ICON_SVG>).map((id) => ({
+const builtinIcons = (Object.keys(DEVICE_ICON_SVG) as Array<keyof typeof DEVICE_ICON_SVG>).map(id => ({
   id: id as string,
   label: id.charAt(0).toUpperCase() + id.slice(1),
   url: DEVICE_ICON_SVG[id]
@@ -494,7 +512,9 @@ let iconAssetsLoaded = false
 
 const applyIconOverride = (override: string | undefined) => {
   const id = selectedId.value
-  if (!id || !props.canvas) return
+  if (!id || !props.canvas) {
+    return
+  }
   props.canvas.setNodeIconOverride(id, override)
   iconOverride.value = override
 }
@@ -503,10 +523,14 @@ const onIconFileChosen = async (event: Event) => {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   input.value = ''
-  if (!file) return
+  if (!file) {
+    return
+  }
   const name = file.name.replace(/\.[^.]+$/, '') || file.name
   const created = await uploadAsset(name, 'icon', file)
-  if (created === false) return
+  if (created === false) {
+    return
+  }
   iconAssets.value = await listAssets('icon')
   applyIconOverride('asset:' + created.id)
 }
@@ -532,13 +556,21 @@ watch(
 /* ---- Neighbor tray (Edit mode, node selected) ---- */
 const unplacedNeighbors = computed<DiscoveredNeighbor[]>(() => {
   const id = selectedId.value
-  if (!id || kind.value !== 'node' || variant.value !== 'props') return []
+  if (!id || kind.value !== 'node' || variant.value !== 'props') {
+    return []
+  }
   const nid = nodeIdFromPlacedId(id)
-  if (nid === null) return []
+  if (nid === null) {
+    return []
+  }
   const seen = new Set<number>()
   return (store.neighborsByNode[nid] ?? []).filter((n) => {
-    if (store.placedNodeIds.has(String(n.neighborNodeId))) return false
-    if (seen.has(n.neighborNodeId)) return false
+    if (store.placedNodeIds.has(String(n.neighborNodeId))) {
+      return false
+    }
+    if (seen.has(n.neighborNodeId)) {
+      return false
+    }
     seen.add(n.neighborNodeId)
     return true
   })
@@ -546,7 +578,9 @@ const unplacedNeighbors = computed<DiscoveredNeighbor[]>(() => {
 
 const addNeighbor = (neighbor: DiscoveredNeighbor) => {
   const id = selectedId.value
-  if (!id || !props.canvas) return
+  if (!id || !props.canvas) {
+    return
+  }
   props.canvas.placeNeighbor(id, neighbor)
 }
 
@@ -611,16 +645,22 @@ const onBackgroundFileChosen = async (event: Event) => {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   input.value = ''
-  if (!file) return
+  if (!file) {
+    return
+  }
   const name = file.name.replace(/\.[^.]+$/, '') || file.name
   const created = await uploadAsset(name, 'background', file)
-  if (created === false) return
+  if (created === false) {
+    return
+  }
   backgroundAssets.value = await listAssets('background')
   chooseBackground(created)
 }
 
 const onBackgroundOpacity = (event: Event) => {
-  if (!store.background) return
+  if (!store.background) {
+    return
+  }
   const opacity = Number((event.target as HTMLInputElement).value)
   store.setBackground({ ...store.background, opacity })
 }
@@ -634,24 +674,30 @@ const shape = computed(() =>
 
 const shapeLabel = computed<string>({
   get: () => shape.value?.label ?? '',
-  set: (label) => shape.value && store.updateShape(shape.value.id, { label })
+  set: label => shape.value && store.updateShape(shape.value.id, { label })
 })
 
 const shapeType = computed<'rect' | 'ellipse'>({
   get: () => shape.value?.type ?? 'rect',
-  set: (type) => shape.value && store.updateShape(shape.value.id, { type })
+  set: type => shape.value && store.updateShape(shape.value.id, { type })
 })
 
 const onShapeStroke = (event: Event) => {
-  if (shape.value) store.updateShape(shape.value.id, { stroke: (event.target as HTMLInputElement).value })
+  if (shape.value) {
+    store.updateShape(shape.value.id, { stroke: (event.target as HTMLInputElement).value })
+  }
 }
 
 const onShapeFill = (event: Event) => {
-  if (shape.value) store.updateShape(shape.value.id, { fill: (event.target as HTMLInputElement).value })
+  if (shape.value) {
+    store.updateShape(shape.value.id, { fill: (event.target as HTMLInputElement).value })
+  }
 }
 
 const onShapeOpacity = (event: Event) => {
-  if (shape.value) store.updateShape(shape.value.id, { opacity: Number((event.target as HTMLInputElement).value) })
+  if (shape.value) {
+    store.updateShape(shape.value.id, { opacity: Number((event.target as HTMLInputElement).value) })
+  }
 }
 
 /* ---- Link editing (reads/writes the canvas graph via the exposed API) ---- */
@@ -669,9 +715,13 @@ const linkLabel = computed<string>({
   get: () => link.value?.label ?? '',
   set: (value) => {
     const id = selectedId.value
-    if (!id || !props.canvas) return
+    if (!id || !props.canvas) {
+      return
+    }
     props.canvas.setLinkLabel(id, value)
-    if (link.value) link.value = { ...link.value, label: value }
+    if (link.value) {
+      link.value = { ...link.value, label: value }
+    }
   }
 })
 </script>

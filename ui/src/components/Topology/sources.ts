@@ -95,7 +95,7 @@ export const TOPOLOGY_SOURCES: TopologySourceOption[] = [
 ]
 
 export const sourceForSlug = (slug: string | undefined): TopologySourceOption | undefined =>
-  TOPOLOGY_SOURCES.find((s) => s.slug === slug)
+  TOPOLOGY_SOURCES.find(s => s.slug === slug)
 
 export const isDiscoveredSlug = (slug: string | undefined): boolean =>
   sourceForSlug(slug)?.kind === 'discovered'
@@ -109,8 +109,10 @@ export const variantForKey = (
   source: TopologySourceOption | undefined,
   key: string | undefined
 ): SourceVariant | undefined => {
-  if (!source?.variants?.length) return undefined
-  return source.variants.find((v) => v.key === key) ?? source.variants[0]
+  if (!source?.variants?.length) {
+    return undefined
+  }
+  return source.variants.find(v => v.key === key) ?? source.variants[0]
 }
 
 /** The Graph REST API graph source for a discovered (source, variant key). */
@@ -119,6 +121,8 @@ export const graphSourceFor = (
   key: string | undefined
 ): DiscoveredGraphSource | undefined => {
   const variant = variantForKey(source, key)
-  if (!source?.container || !variant) return undefined
+  if (!source?.container || !variant) {
+    return undefined
+  }
   return { container: source.container, namespace: variant.namespace, layout: source.layout }
 }

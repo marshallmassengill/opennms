@@ -65,14 +65,22 @@ export const computeGhostLinks = (
 
   for (const key of Object.keys(neighborsByNode)) {
     const nodeId = Number(key)
-    if (!placedNodeIds.has(String(nodeId))) continue
+    if (!placedNodeIds.has(String(nodeId))) {
+      continue
+    }
     for (const neighbor of neighborsByNode[nodeId] ?? []) {
-      if (!placedNodeIds.has(String(neighbor.neighborNodeId))) continue
-      if (neighbor.neighborNodeId === nodeId) continue
+      if (!placedNodeIds.has(String(neighbor.neighborNodeId))) {
+        continue
+      }
+      if (neighbor.neighborNodeId === nodeId) {
+        continue
+      }
 
       const sourceId = placedIdFor(String(nodeId))
       const targetId = placedIdFor(String(neighbor.neighborNodeId))
-      if (hasLink(sourceId, targetId)) continue
+      if (hasLink(sourceId, targetId)) {
+        continue
+      }
 
       const pairKey =
         nodeId < neighbor.neighborNodeId

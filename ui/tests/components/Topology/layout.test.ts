@@ -43,7 +43,7 @@ describe('layoutDiscoveredGraph', () => {
       expect(Number.isFinite(n.y)).toBe(true)
     }
     // Not all stacked at the origin -- the layout produced spread.
-    const distinct = new Set(out.map((n) => `${Math.round(n.x)},${Math.round(n.y)}`))
+    const distinct = new Set(out.map(n => `${Math.round(n.x)},${Math.round(n.y)}`))
     expect(distinct.size).toBe(nodes.length)
   })
 
@@ -59,7 +59,7 @@ describe('layoutDiscoveredGraph', () => {
   it('does not mutate the input nodes', () => {
     const nodes = [node('a'), node('b')]
     layoutDiscoveredGraph(nodes, [edge('a', 'b')])
-    expect(nodes.every((n) => n.x === 0 && n.y === 0)).toBe(true)
+    expect(nodes.every(n => n.x === 0 && n.y === 0)).toBe(true)
   })
 
   it('ignores edges that reference unknown nodes', () => {
@@ -70,7 +70,7 @@ describe('layoutDiscoveredGraph', () => {
 })
 
 describe('layoutHierarchyGraph', () => {
-  const byId = (out: CanvasNode[]) => new Map(out.map((n) => [n.id, n]))
+  const byId = (out: CanvasNode[]) => new Map(out.map(n => [n.id, n]))
 
   it('returns an empty array for no nodes', () => {
     expect(layoutHierarchyGraph([], [])).toEqual([])
@@ -132,6 +132,6 @@ describe('layoutHierarchyGraph', () => {
   it('does not mutate the input nodes', () => {
     const nodes = [node('a'), node('b')]
     layoutHierarchyGraph(nodes, [edge('a', 'b')])
-    expect(nodes.every((n) => n.x === 0 && n.y === 0)).toBe(true)
+    expect(nodes.every(n => n.x === 0 && n.y === 0)).toBe(true)
   })
 })

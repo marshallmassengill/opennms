@@ -45,7 +45,9 @@ const SEVERITY_COLORS: Record<string, string> = {
 
 /** Color for a single severity, falling back to the default node color. */
 export const severityColor = (severity?: string): string => {
-  if (!severity) return DEFAULT_NODE_COLOR
+  if (!severity) {
+    return DEFAULT_NODE_COLOR
+  }
   return SEVERITY_COLORS[severity.toUpperCase()] ?? DEFAULT_NODE_COLOR
 }
 
@@ -58,7 +60,9 @@ export const highestSeverity = (severities: Array<string | undefined>): string |
   let best: string | undefined
   let bestLevel = -1
   for (const s of severities) {
-    if (!s) continue
+    if (!s) {
+      continue
+    }
     const level = numericSeverityLevel(s)
     if (level > bestLevel) {
       bestLevel = level
@@ -84,7 +88,9 @@ export const aggregateNodeSeverities = (
 ): Record<number, string> => {
   const byNode: Record<number, string> = {}
   for (const alarm of alarms) {
-    if (alarm.nodeId == null || !alarm.severity) continue
+    if (alarm.nodeId == null || !alarm.severity) {
+      continue
+    }
     const current = byNode[alarm.nodeId]
     if (!current || numericSeverityLevel(alarm.severity) > numericSeverityLevel(current)) {
       byNode[alarm.nodeId] = alarm.severity
