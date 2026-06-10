@@ -38,7 +38,7 @@ License.
     @mousemove="onCanvasMouseMove"
     @contextmenu.prevent
   >
-    <div class="topology-canvas-stats">
+    <div v-if="store.showCanvasStats" class="topology-canvas-stats">
       <span>Nodes: {{ placedCount }}</span>
       <span>Links: {{ linkCount }}</span>
       <span>Labels: {{ store.labels.length }}</span>
@@ -495,6 +495,7 @@ const mountSigma = (g: Graph) => {
   })
   resizeObserver.observe(canvasEl.value)
   attachInteractionHandlers(sigma, g)
+  applyViewStyle()
 }
 
 /**
@@ -1941,6 +1942,31 @@ const onShapeDrawEnd = () => {
   })
 }
 
+/**
+ * Apply the view's label-color defaults to the renderer. Unset fields
+ * reproduce sigma's own defaults exactly: black node labels, and link labels
+ * that take the link's color attribute.
+ */
+const applyViewStyle = () => {
+  if (!sigma) return
+  const style = store.viewStyle
+  sigma.setSetting(
+    'labelColor',
+    (style?.nodeLabelColor ? { color: style.nodeLabelColor } : { color: '#000' }) as never
+  )
+  sigma.setSetting(
+    'edgeLabelColor',
+    (style?.linkLabelColor ? { color: style.linkLabelColor } : { attribute: 'color' }) as never
+  )
+  sigma.refresh()
+}
+
+watch(
+  () => store.viewStyle,
+  () => applyViewStyle(),
+  { deep: true }
+)
+
 /** A node's persisted icon override (built-in glyph key or `asset:<id>`). */
 const getNodeIconOverride = (id: string): string | undefined => {
   if (!graph || !graph.hasNode(id)) return undefined
@@ -2010,7 +2036,7 @@ defineExpose({
 
 .topology-canvas-stats {
   position: absolute;
-  top: 0.5rem;
+  bottom: 0.5rem;
   right: 0.5rem;
   z-index: 1;
   background: rgba(255, 255, 255, 0.85);

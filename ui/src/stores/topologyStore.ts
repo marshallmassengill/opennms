@@ -28,6 +28,7 @@ import type {
   DiscoveredGraphSource,
   TopologyView,
   TopologyViewBackground,
+  TopologyViewStyle,
   TopologyViewSummary
 } from '@/types/topology'
 import {
@@ -124,6 +125,41 @@ export const useTopologyStore = defineStore('topologyStore', () => {
 
   const setBackgroundAdjustMode = (on: boolean) => {
     isBackgroundAdjustMode.value = on
+  }
+
+  /**
+   * Whether the canvas stats overlay (Nodes/Links/Labels/Selected) shows.
+   * A user preference, not view content -- kept in localStorage, never saved
+   * with a view.
+   */
+  const STATS_PREF_KEY = 'opennms.topology.showCanvasStats'
+  const readStatsPref = (): boolean => {
+    try {
+      return localStorage.getItem(STATS_PREF_KEY) !== 'false'
+    } catch {
+      return true
+    }
+  }
+  const showCanvasStats = ref<boolean>(readStatsPref())
+
+  const setShowCanvasStats = (on: boolean) => {
+    showCanvasStats.value = on
+    try {
+      localStorage.setItem(STATS_PREF_KEY, String(on))
+    } catch {
+      // Preference simply won't survive a reload.
+    }
+  }
+
+  /**
+   * Per-view rendering defaults (node/link label colors). Lives on
+   * currentView like the background, so Save persists it with the view.
+   */
+  const viewStyle = computed<TopologyViewStyle | undefined>(() => currentView.value?.style)
+
+  const setViewStyle = (patch: Partial<TopologyViewStyle>) => {
+    if (!currentView.value) return
+    currentView.value.style = { ...currentView.value.style, ...patch }
   }
 
   /** True while a save request is in flight; drives toolbar disabled state. */
@@ -506,6 +542,10 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     labels,
     background,
     setBackground,
+    showCanvasStats,
+    setShowCanvasStats,
+    viewStyle,
+    setViewStyle,
     isBackgroundAdjustMode,
     setBackgroundAdjustMode,
     newView,

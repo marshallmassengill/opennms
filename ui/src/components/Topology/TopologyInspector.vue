@@ -212,6 +212,36 @@ License.
       <div v-else-if="variant === 'props'" class="ti-section">
         <p class="ti-empty">Select a node, link, label, or box to edit its properties.</p>
         <div class="ti-field">
+          <label class="ti-label">Canvas</label>
+          <label class="ti-check">
+            <input
+              type="checkbox"
+              :checked="store.showCanvasStats"
+              @change="store.setShowCanvasStats(($event.target as HTMLInputElement).checked)"
+            />
+            Show stats overlay
+          </label>
+          <div class="ti-field">
+            <label class="ti-label">Node label color</label>
+            <input
+              type="color"
+              :value="store.viewStyle?.nodeLabelColor ?? '#000000'"
+              class="ti-color"
+              @input="onNodeLabelColor"
+            />
+          </div>
+          <div class="ti-field">
+            <label class="ti-label">Link label color</label>
+            <input
+              type="color"
+              :value="store.viewStyle?.linkLabelColor ?? '#9aa7b8'"
+              class="ti-color"
+              @input="onLinkLabelColor"
+            />
+          </div>
+          <p class="ti-hint">Label colors save with the view; the stats overlay is a personal preference.</p>
+        </div>
+        <div class="ti-field">
           <label class="ti-label">Background</label>
           <template v-if="store.background?.ref">
             <div class="ti-field">
@@ -440,6 +470,15 @@ watch(
   },
   { immediate: true }
 )
+
+/* ---- Canvas defaults (Edit mode, nothing selected) ---- */
+const onNodeLabelColor = (event: Event) => {
+  store.setViewStyle({ nodeLabelColor: (event.target as HTMLInputElement).value })
+}
+
+const onLinkLabelColor = (event: Event) => {
+  store.setViewStyle({ linkLabelColor: (event.target as HTMLInputElement).value })
+}
 
 /* ---- View background (Edit mode, nothing selected) ---- */
 const backgroundAssets = ref<TopologyAssetMeta[]>([])
@@ -718,6 +757,16 @@ const linkLabel = computed<string>({
 
 .ti-hidden-input {
   display: none;
+}
+
+.ti-check {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: #1d2939;
+  margin-bottom: 0.35rem;
+  cursor: pointer;
 }
 
 .ti-row {

@@ -107,6 +107,17 @@ export interface TopologyViewBackground {
 }
 
 /**
+ * Per-view rendering defaults, persisted with the view (they shape how the
+ * view looks for everyone, unlike UI preferences). Absent fields fall back
+ * to the renderer's defaults: black node labels, link labels that follow
+ * the link's color.
+ */
+export interface TopologyViewStyle {
+  nodeLabelColor?: string
+  linkLabelColor?: string
+}
+
+/**
  * A complete custom topology view. This is the unit that the views
  * catalog REST resource will persist.
  */
@@ -118,6 +129,8 @@ export interface TopologyView {
   labels: CanvasLabel[]
   /** Decorative annotation shapes (frames/boxes); absent in older views. */
   shapes?: CanvasShape[]
+  /** Per-view rendering defaults (label colors); absent in older views. */
+  style?: TopologyViewStyle
   viewport: {
     zoom: number
     panX: number

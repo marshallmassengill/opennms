@@ -205,3 +205,36 @@ describe('useTopologyStore - annotation shapes', () => {
     expect(store.isShapeDrawMode).toBe(false)
   })
 })
+
+describe('useTopologyStore - canvas prefs and view style', () => {
+  let store: ReturnType<typeof useTopologyStore>
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+    store = useTopologyStore()
+    store.newView()
+  })
+
+  it('stats overlay preference persists to localStorage, not the view', async () => {
+    expect(store.showCanvasStats).toBe(true)
+    store.setShowCanvasStats(false)
+    expect(localStorage.getItem('opennms.topology.showCanvasStats')).toBe('false')
+
+    vi.mocked(saveView).mockImplementation(async (v: TopologyView) => v)
+    await store.saveCurrentView(snapshot)
+    const savedArg = vi.mocked(saveView).mock.calls.at(-1)![0] as TopologyView & Record<string, unknown>
+    expect('showCanvasStats' in savedArg).toBe(false)
+  })
+
+  it('label colors live on the view so Save persists them', async () => {
+    store.setViewStyle({ nodeLabelColor: '#112233' })
+    store.setViewStyle({ linkLabelColor: '#445566' })
+    expect(store.viewStyle).toEqual({ nodeLabelColor: '#112233', linkLabelColor: '#445566' })
+
+    vi.mocked(saveView).mockImplementation(async (v: TopologyView) => v)
+    await store.saveCurrentView(snapshot)
+    const savedArg = vi.mocked(saveView).mock.calls.at(-1)![0] as TopologyView
+    expect(savedArg.style).toEqual({ nodeLabelColor: '#112233', linkLabelColor: '#445566' })
+  })
+})

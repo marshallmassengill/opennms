@@ -98,6 +98,7 @@ interface TopologyViewDefinition {
   links: TopologyView['links']
   labels: TopologyView['labels']
   shapes?: TopologyView['shapes']
+  style?: TopologyView['style']
   viewport: TopologyView['viewport']
   background?: TopologyView['background']
 }
@@ -119,6 +120,7 @@ const toDto = (view: TopologyView): TopologyViewDTO => ({
     links: view.links,
     labels: view.labels,
     shapes: view.shapes,
+    style: view.style,
     viewport: view.viewport,
     background: view.background
   }
@@ -131,6 +133,7 @@ const fromDto = (dto: TopologyViewDTO): TopologyView => ({
   links: dto.definition?.links ?? [],
   labels: dto.definition?.labels ?? [],
   shapes: dto.definition?.shapes ?? [],
+  style: dto.definition?.style,
   viewport: dto.definition?.viewport ?? { zoom: 1, panX: 0, panY: 0 },
   background: dto.definition?.background
 })
