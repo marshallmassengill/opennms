@@ -42,9 +42,24 @@ export interface CanvasNode {
 }
 
 /**
- * An edge between two CanvasNodes. The `origin` field is reserved for
- * Phase 2 (assisted composition): edges drawn by the user vs. surfaced
- * from discovered topology data.
+ * How a link maps onto the real network: the discovery protocol it was
+ * learned from and the interface (port) on each end, as reported by
+ * enlinkd. Set when a discovered adjacency is adopted into a custom view
+ * (Phase 2 assisted composition); absent on hand-drawn links. This is the
+ * identity the (future) link-metrics work resolves to interface counters.
+ * Ports are enlinkd's display strings (e.g. "eth1(interfaceName:...)"),
+ * not ifIndexes -- resolution to resources happens server-side later.
+ */
+export interface CanvasLinkBinding {
+  protocol: DiscoveredLinkType
+  sourcePort?: string
+  targetPort?: string
+}
+
+/**
+ * An edge between two CanvasNodes. `origin` distinguishes hand-drawn links
+ * from adopted discovered adjacencies (Phase 2 assisted composition); the
+ * latter carry a `binding` with their network identity.
  */
 export interface CanvasLink {
   id: string
@@ -53,6 +68,7 @@ export interface CanvasLink {
   label?: string
   style?: Record<string, unknown>
   origin: 'user' | 'discovered'
+  binding?: CanvasLinkBinding
 }
 
 /**

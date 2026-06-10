@@ -24,6 +24,7 @@ import { defineStore } from 'pinia'
 import type {
   CanvasLabel,
   CanvasShape,
+  DiscoveredNeighbor,
   DiscoveredGraph,
   DiscoveredGraphSource,
   TopologyView,
@@ -38,6 +39,7 @@ import {
   deleteView,
   getNodeSeverities,
   getNodeIconIds,
+  getNodeNeighbors,
   loadDiscoveredGraph
 } from '@/services/topologyService'
 import type { DeviceIconId } from '@/components/Topology/deviceIcons'
@@ -96,6 +98,32 @@ export const useTopologyStore = defineStore('topologyStore', () => {
    */
   const shapes = ref<CanvasShape[]>([])
   const isShapeDrawMode = ref<boolean>(false)
+
+  /**
+   * Discovered adjacencies per real node id, fetched from /api/v2/enlinkd
+   * for the placed nodes (Phase 2 assisted composition: ghost links + the
+   * neighbor tray). Adjacency is a property of the network, not of a view,
+   * so the cache survives view switches; ids fetch once per session.
+   */
+  const neighborsByNode = ref<Record<number, DiscoveredNeighbor[]>>({})
+  const isLinkHintsEnabled = ref<boolean>(true)
+
+  const setLinkHintsEnabled = (on: boolean) => {
+    isLinkHintsEnabled.value = on
+  }
+
+  const refreshNeighbors = async (): Promise<void> => {
+    const wanted = Array.from(placedNodeIds.value)
+      .map((id) => Number(id))
+      .filter((n) => Number.isInteger(n) && !(n in neighborsByNode.value))
+    if (wanted.length === 0) return
+    const fetched = await Promise.all(wanted.map((id) => getNodeNeighbors(id)))
+    const next = { ...neighborsByNode.value }
+    wanted.forEach((id, i) => {
+      next[id] = fetched[i]
+    })
+    neighborsByNode.value = next
+  }
 
   const setShapeDrawMode = (value: boolean) => {
     isShapeDrawMode.value = value
@@ -236,6 +264,8 @@ export const useTopologyStore = defineStore('topologyStore', () => {
   watch(placedNodeIds, () => {
     void refreshDeviceIcons()
     void refreshStatus()
+    // Ghost links / neighbor tray only matter while composing a custom view.
+    if (isEditMode.value && discoveredGraph.value === null) void refreshNeighbors()
   })
 
   /**
@@ -434,6 +464,8 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     if (!value) {
       isBackgroundAdjustMode.value = false
       isShapeDrawMode.value = false
+    } else if (discoveredGraph.value === null) {
+      void refreshNeighbors()
     }
   }
 
@@ -559,6 +591,10 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     setPlacedNodeIds,
     setLabels,
     shapes,
+    neighborsByNode,
+    isLinkHintsEnabled,
+    setLinkHintsEnabled,
+    refreshNeighbors,
     isShapeDrawMode,
     setShapeDrawMode,
     setShapes,

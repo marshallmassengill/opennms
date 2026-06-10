@@ -126,6 +126,21 @@ License.
         </span>
       </div>
     </div>
+    <!-- Ghost links (Phase 2 assisted composition): real discovered
+         adjacencies between placed nodes, shown faint and dashed while
+         composing; clicking one adopts it as a persisted link carrying its
+         interface binding. -->
+    <svg v-if="ghostHints.length > 0" class="topology-ghost-layer">
+      <line
+        v-for="hint in ghostHints"
+        :key="hint.sourceId + '|' + hint.targetId"
+        v-bind="ghostLineAttrs(hint, cameraVersion)"
+        class="topology-ghost-link"
+        @click.stop="adoptHint(hint)"
+      >
+        <title>Discovered ({{ hint.binding.protocol.toUpperCase() }}){{ hint.binding.sourcePort ? `: ${hint.binding.sourcePort} — ${hint.binding.targetPort ?? '?'}` : '' }} — click to add this link</title>
+      </line>
+    </svg>
     <!-- Annotation shapes (interaction skeleton, Edit mode): an invisible
          fat border per shape that takes clicks/drags via pointer-events:
          stroke -- the interior stays click-through to the nodes a frame
@@ -201,9 +216,11 @@ import {
   nodeIdFromPlacedId
 } from '@/components/Topology/nodeIds'
 import { layoutDiscoveredGraph, layoutHierarchyGraph } from '@/components/Topology/layout'
+import { computeGhostLinks, type LinkHint } from '@/components/Topology/linkHints'
 import { assetUrl } from '@/services/topologyService'
 import type {
   CanvasLink,
+  CanvasLinkBinding,
   CanvasLabel,
   CanvasNode,
   CanvasShape,
@@ -546,7 +563,8 @@ const serialize = (): Pick<TopologyView, 'nodes' | 'links' | 'viewport'> => {
         sourceId: source,
         targetId: target,
         label: (attrs.label as string | undefined) || undefined,
-        origin: (attrs.origin as string) === 'discovered' ? 'discovered' : 'user'
+        origin: (attrs.origin as string) === 'discovered' ? 'discovered' : 'user',
+        binding: (attrs.binding as CanvasLinkBinding | undefined) || undefined
       })
     })
   }
@@ -587,7 +605,8 @@ const loadView = (view: TopologyView) => {
         size: 2,
         color: '#1f5fb0',
         origin: e.origin,
-        label: e.label
+        label: e.label,
+        binding: e.binding
       })
     }
   }
@@ -1594,15 +1613,85 @@ onBeforeUnmount(() => {
  * Read a link's label and its endpoint labels, for the inspector. Returns
  * null if the id isn't a current link (graphology edge).
  */
-const getLink = (id: string): { label: string; sourceLabel: string; targetLabel: string } | null => {
+const getLink = (
+  id: string
+): { label: string; sourceLabel: string; targetLabel: string; origin: 'user' | 'discovered'; binding?: CanvasLinkBinding } | null => {
   if (!graph || !graph.hasEdge(id)) return null
   const source = graph.source(id)
   const target = graph.target(id)
   return {
     label: (graph.getEdgeAttribute(id, 'label') as string) ?? '',
     sourceLabel: (graph.getNodeAttribute(source, 'label') as string) ?? source,
-    targetLabel: (graph.getNodeAttribute(target, 'label') as string) ?? target
+    targetLabel: (graph.getNodeAttribute(target, 'label') as string) ?? target,
+    origin: (graph.getEdgeAttribute(id, 'origin') as string) === 'discovered' ? 'discovered' : 'user',
+    binding: (graph.getEdgeAttribute(id, 'binding') as CanvasLinkBinding | undefined) || undefined
   }
+}
+
+/**
+ * Place a discovered neighbor next to a placed node and link them in one
+ * step (the Inspector's neighbor tray). The neighbor lands on a ring around
+ * the source node, angled by how many links the source already has so
+ * successive placements fan out. One undo command covers node + link.
+ */
+const placeNeighbor = (fromId: string, neighbor: import('@/types/topology').DiscoveredNeighbor) => {
+  if (!graph || !store.isEditMode || !graph.hasNode(fromId)) return
+  const paletteId = String(neighbor.neighborNodeId)
+  const placedId = placedIdFor(paletteId)
+  const binding: CanvasLinkBinding = {
+    protocol: neighbor.linkType,
+    sourcePort: neighbor.localPort,
+    targetPort: neighbor.remotePort
+  }
+
+  // Already on the canvas: just add the missing link.
+  if (graph.hasNode(placedId)) {
+    if (!graph.hasEdge(fromId, placedId) && !graph.hasEdge(placedId, fromId)) {
+      adoptHint({ sourceId: fromId, targetId: placedId, binding })
+    }
+    return
+  }
+
+  const angle = (graph.degree(fromId) * 60 * Math.PI) / 180
+  const radius = Math.max(120, store.nodeSize * 7)
+  const nodeAttrs = {
+    label: neighbor.neighborLabel,
+    x: (graph.getNodeAttribute(fromId, 'x') as number) + radius * Math.cos(angle),
+    y: (graph.getNodeAttribute(fromId, 'y') as number) + radius * Math.sin(angle),
+    size: 20,
+    color: '#1f5fb0'
+  }
+  const linkId = newLinkId()
+  const linkAttrs = { size: 2, color: '#1f5fb0', origin: 'discovered', binding }
+
+  const apply = () => {
+    if (!graph) return
+    if (!graph.hasNode(placedId)) {
+      graph.addNode(placedId, nodeAttrs)
+      store.markPlaced(paletteId)
+      placedCount.value++
+    }
+    if (!graph.hasEdge(linkId) && graph.hasNode(fromId)) {
+      graph.addEdgeWithKey(linkId, fromId, placedId, linkAttrs)
+      linkCount.value = graph.size
+    }
+  }
+  apply()
+  store.selectOnly(placedId)
+  pushCommand({
+    label: `Add ${neighbor.neighborLabel} + link`,
+    do: apply,
+    undo: () => {
+      if (!graph) return
+      if (graph.hasEdge(linkId)) graph.dropEdge(linkId)
+      if (graph.hasNode(placedId)) {
+        graph.dropNode(placedId)
+        store.markUnplaced(paletteId)
+        placedCount.value = Math.max(0, placedCount.value - 1)
+      }
+      linkCount.value = graph.size
+    }
+  })
 }
 
 /**
@@ -1977,6 +2066,69 @@ watch(
   () => applyViewStyle()
 )
 
+/* ---- Ghost links (assisted composition) -------------------------------- */
+
+/**
+ * Discovered adjacencies between placed nodes with no link yet. linkCount /
+ * placedCount are the reactivity bridge to the (non-reactive) graphology
+ * graph: both change whenever links or nodes are added or removed.
+ */
+const ghostHints = computed<LinkHint[]>(() => {
+  if (!store.isEditMode || store.discoveredGraph !== null || !store.isLinkHintsEnabled) return []
+  void linkCount.value
+  void placedCount.value
+  return computeGhostLinks(store.neighborsByNode, store.placedNodeIds, (a, b) => {
+    if (!graph || !graph.hasNode(a) || !graph.hasNode(b)) return true
+    return graph.hasEdge(a, b) || graph.hasEdge(b, a)
+  })
+})
+
+const ghostLineAttrs = (hint: LinkHint, _cameraVersion: number) => {
+  void _cameraVersion
+  if (!sigma || !graph || !graph.hasNode(hint.sourceId) || !graph.hasNode(hint.targetId)) {
+    return { display: 'none' }
+  }
+  const s = sigma.graphToViewport({
+    x: graph.getNodeAttribute(hint.sourceId, 'x') as number,
+    y: graph.getNodeAttribute(hint.sourceId, 'y') as number
+  })
+  const t = sigma.graphToViewport({
+    x: graph.getNodeAttribute(hint.targetId, 'x') as number,
+    y: graph.getNodeAttribute(hint.targetId, 'y') as number
+  })
+  return { x1: s.x, y1: s.y, x2: t.x, y2: t.y }
+}
+
+/** Adopt a ghost: it becomes a real, persisted link carrying its binding. */
+const adoptHint = (hint: LinkHint) => {
+  if (!graph || !store.isEditMode) return
+  if (graph.hasEdge(hint.sourceId, hint.targetId) || graph.hasEdge(hint.targetId, hint.sourceId)) return
+  const id = newLinkId()
+  const attrs = {
+    size: 2,
+    color: '#1f5fb0',
+    origin: 'discovered',
+    binding: { ...hint.binding }
+  }
+  graph.addEdgeWithKey(id, hint.sourceId, hint.targetId, attrs)
+  linkCount.value = graph.size
+  store.selectOnly(id)
+  pushCommand({
+    label: 'Add discovered link',
+    do: () => {
+      if (!graph || graph.hasEdge(id)) return
+      if (!graph.hasNode(hint.sourceId) || !graph.hasNode(hint.targetId)) return
+      graph.addEdgeWithKey(id, hint.sourceId, hint.targetId, attrs)
+      linkCount.value = graph.size
+    },
+    undo: () => {
+      if (!graph || !graph.hasEdge(id)) return
+      graph.dropEdge(id)
+      linkCount.value = graph.size
+    }
+  })
+}
+
 /** A node's persisted icon override (built-in glyph key or `asset:<id>`). */
 const getNodeIconOverride = (id: string): string | undefined => {
   if (!graph || !graph.hasNode(id)) return undefined
@@ -2021,6 +2173,7 @@ defineExpose({
   loadDiscoveredGraph,
   getLink,
   setLinkLabel,
+  placeNeighbor,
   getNodeIconOverride,
   setNodeIconOverride,
   exportImage
@@ -2103,6 +2256,32 @@ defineExpose({
   border-radius: 3px;
   pointer-events: auto;
   cursor: nwse-resize;
+}
+
+/* Ghost links: above the canvas so they're clickable, but only the dashed
+   stroke takes the mouse -- everything else passes through to sigma. */
+.topology-ghost-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.topology-ghost-link {
+  stroke: #1f5fb0;
+  stroke-width: 3;
+  stroke-dasharray: 4 6;
+  opacity: 0.45;
+  pointer-events: stroke;
+  cursor: copy;
+}
+
+.topology-ghost-link:hover {
+  opacity: 0.9;
+  stroke-width: 4;
 }
 
 /* Annotation shapes: the visible layer sits below the sigma canvases and is

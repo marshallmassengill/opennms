@@ -167,6 +167,14 @@ License.
             :outlined="!store.isShapeDrawMode"
             @click="store.setShapeDrawMode(!store.isShapeDrawMode)"
           />
+          <PButton
+            v-if="store.isEditMode"
+            :label="store.isLinkHintsEnabled ? 'Hints: ON' : 'Hints'"
+            :severity="store.isLinkHintsEnabled ? 'primary' : 'secondary'"
+            :outlined="!store.isLinkHintsEnabled"
+            title="Show discovered adjacencies between placed nodes as ghost links"
+            @click="store.setLinkHintsEnabled(!store.isLinkHintsEnabled)"
+          />
           <span class="node-size-control" title="Node size">
             <i class="pi pi-circle-fill node-size-icon-sm" />
             <PSlider

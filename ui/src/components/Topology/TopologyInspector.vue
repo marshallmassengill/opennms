@@ -94,6 +94,10 @@ License.
         <div class="ti-node-header">
           <span class="ti-link-endpoints">{{ link.sourceLabel }} → {{ link.targetLabel }}</span>
         </div>
+        <p v-if="link.binding" class="ti-binding">
+          Discovered via {{ link.binding.protocol.toUpperCase() }}<template v-if="link.binding.sourcePort">
+            — {{ link.binding.sourcePort }} ↔ {{ link.binding.targetPort ?? '?' }}</template>
+        </p>
         <div class="ti-field">
           <label class="ti-label">Link label</label>
           <PInputText v-model="linkLabel" class="ti-input" placeholder="(none)" :disabled="!editable" />
@@ -202,6 +206,26 @@ License.
             @change="onIconFileChosen"
           />
           <p class="ti-hint">Applies immediately — <strong>Save</strong> the view to keep it.</p>
+        </div>
+        <!-- Phase 2 assisted composition: this node's discovered neighbors
+             that aren't on the canvas yet; one click places and links. -->
+        <div v-if="unplacedNeighbors.length > 0" class="ti-field">
+          <label class="ti-label">Discovered neighbors</label>
+          <ul class="ti-neighbors">
+            <li v-for="n in unplacedNeighbors" :key="n.neighborNodeId + n.linkType" class="ti-neighbor-row">
+              <span class="ti-neighbor-label" :title="n.localPort ? `${n.localPort} ↔ ${n.remotePort ?? '?'}` : undefined">
+                {{ n.neighborLabel }}
+                <span class="ti-neighbor-proto">{{ n.linkType.toUpperCase() }}</span>
+              </span>
+              <PButton
+                label="Add"
+                size="small"
+                text
+                title="Place this neighbor and link it"
+                @click="addNeighbor(n)"
+              />
+            </li>
+          </ul>
         </div>
       </div>
 
@@ -340,6 +364,7 @@ import {
 } from '@/services/topologyService'
 import DOMPurify from 'dompurify'
 import type { Node } from '@/types'
+import type { CanvasLinkBinding, DiscoveredNeighbor } from '@/types/topology'
 
 const PCard = Card
 const PButton = Button
@@ -348,8 +373,15 @@ const PInputNumber = InputNumber
 
 /** Minimal read/write surface the canvas exposes (via defineExpose). */
 interface CanvasLinkApi {
-  getLink: (id: string) => { label: string; sourceLabel: string; targetLabel: string } | null
+  getLink: (id: string) => {
+    label: string
+    sourceLabel: string
+    targetLabel: string
+    origin: 'user' | 'discovered'
+    binding?: CanvasLinkBinding
+  } | null
   setLinkLabel: (id: string, label: string) => void
+  placeNeighbor: (fromId: string, neighbor: DiscoveredNeighbor) => void
   getNodeIconOverride: (id: string) => string | undefined
   setNodeIconOverride: (id: string, override: string | undefined) => void
 }
@@ -497,6 +529,27 @@ watch(
   { immediate: true }
 )
 
+/* ---- Neighbor tray (Edit mode, node selected) ---- */
+const unplacedNeighbors = computed<DiscoveredNeighbor[]>(() => {
+  const id = selectedId.value
+  if (!id || kind.value !== 'node' || variant.value !== 'props') return []
+  const nid = nodeIdFromPlacedId(id)
+  if (nid === null) return []
+  const seen = new Set<number>()
+  return (store.neighborsByNode[nid] ?? []).filter((n) => {
+    if (store.placedNodeIds.has(String(n.neighborNodeId))) return false
+    if (seen.has(n.neighborNodeId)) return false
+    seen.add(n.neighborNodeId)
+    return true
+  })
+})
+
+const addNeighbor = (neighbor: DiscoveredNeighbor) => {
+  const id = selectedId.value
+  if (!id || !props.canvas) return
+  props.canvas.placeNeighbor(id, neighbor)
+}
+
 /* ---- Canvas defaults (Edit mode, nothing selected) ---- */
 const onNodeLabelColor = (event: Event) => {
   store.setViewStyle({ nodeLabelColor: (event.target as HTMLInputElement).value })
@@ -602,7 +655,7 @@ const onShapeOpacity = (event: Event) => {
 }
 
 /* ---- Link editing (reads/writes the canvas graph via the exposed API) ---- */
-const link = ref<{ label: string; sourceLabel: string; targetLabel: string } | null>(null)
+const link = ref<ReturnType<CanvasLinkApi['getLink']>>(null)
 
 watch(
   selectedId,
@@ -783,6 +836,43 @@ const linkLabel = computed<string>({
 
 .ti-hidden-input {
   display: none;
+}
+
+.ti-binding {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  color: var(--feather-secondary-text-on-surface);
+}
+
+.ti-neighbors {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ti-neighbor-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+  font-size: 0.8125rem;
+}
+
+.ti-neighbor-label {
+  color: var(--feather-primary-text-on-surface);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ti-neighbor-proto {
+  font-size: 0.65rem;
+  color: var(--feather-secondary-text-on-surface);
+  border: 1px solid var(--feather-border-on-surface);
+  border-radius: 3px;
+  padding: 0 0.25rem;
+  margin-left: 0.3rem;
 }
 
 .ti-inline-hint {
