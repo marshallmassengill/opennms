@@ -131,15 +131,24 @@ License.
          composing; clicking one adopts it as a persisted link carrying its
          interface binding. -->
     <svg v-if="ghostHints.length > 0" class="topology-ghost-layer">
-      <line
+      <!-- Per hint: a fat invisible hit line (the click/hover target -- a
+           3px dashed stroke is too easy to miss, and misses land on the
+           stage) over the visible dashed line, which stays mouse-inert. -->
+      <g
         v-for="hint in ghostHints"
         :key="hint.sourceId + '|' + hint.targetId"
-        v-bind="ghostLineAttrs(hint, cameraVersion)"
-        class="topology-ghost-link"
-        @click.stop="adoptHint(hint)"
+        class="topology-ghost"
       >
-        <title>Discovered ({{ hint.binding.protocol.toUpperCase() }}){{ hint.binding.sourcePort ? `: ${hint.binding.sourcePort} — ${hint.binding.targetPort ?? '?'}` : '' }} — click to add this link</title>
-      </line>
+        <line v-bind="ghostLineAttrs(hint, cameraVersion)" class="topology-ghost-link" />
+        <line
+          v-bind="ghostLineAttrs(hint, cameraVersion)"
+          class="topology-ghost-hit"
+          @click.stop="adoptHint(hint)"
+          @mousedown.stop.prevent
+        >
+          <title>Discovered ({{ hint.binding.protocol.toUpperCase() }}){{ hint.binding.sourcePort ? `: ${hint.binding.sourcePort} — ${hint.binding.targetPort ?? '?'}` : '' }} — click to add this link</title>
+        </line>
+      </g>
     </svg>
     <!-- Annotation shapes (interaction skeleton, Edit mode): an invisible
          fat border per shape that takes clicks/drags via pointer-events:
@@ -2345,11 +2354,17 @@ defineExpose({
   stroke-width: 3;
   stroke-dasharray: 4 6;
   opacity: 0.45;
+  pointer-events: none;
+}
+
+.topology-ghost-hit {
+  stroke: transparent;
+  stroke-width: 16;
   pointer-events: stroke;
   cursor: copy;
 }
 
-.topology-ghost-link:hover {
+.topology-ghost:hover .topology-ghost-link {
   opacity: 0.9;
   stroke-width: 4;
 }
