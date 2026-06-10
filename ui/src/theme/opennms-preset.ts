@@ -24,6 +24,25 @@ import { definePreset } from '@primevue/themes'
 import Aura from '@primevue/themes/aura'
 
 const OpenNMSPreset = definePreset(Aura, {
+  components: {
+    // Aura's dark ToggleButton (which SelectButton is built on) colors the
+    // checked option's label/icon with {surface.0} — white in stock Aura
+    // dark, but our dark surface.0 is the OpenNMS navy, leaving the active
+    // option dark-on-dark. Point the checked state at the text tokens, the
+    // same correction the semantic text/content/formField overrides make.
+    togglebutton: {
+      colorScheme: {
+        dark: {
+          root: {
+            checkedColor: '{text.color}'
+          },
+          icon: {
+            checkedColor: '{text.color}'
+          }
+        }
+      }
+    }
+  },
   semantic: {
     primary: {
       50: '#ecedf5',
