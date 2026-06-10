@@ -208,9 +208,9 @@ watch([collapsed, placedRealIds], ([isCollapsed]) => {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--feather-border-on-surface);
   border-radius: 6px;
-  background: #fff;
+  background: var(--feather-surface);
   overflow: hidden;
   max-height: 38vh;
 }
@@ -222,8 +222,8 @@ watch([collapsed, placedRealIds], ([isCollapsed]) => {
   align-items: center;
   gap: 1rem;
   padding: 0.35rem 0.6rem;
-  background: #f8fafc;
-  border-bottom: 1px solid #eef2f6;
+  background: rgba(31, 95, 176, 0.10);
+  border-bottom: 1px solid var(--feather-border-on-surface);
 }
 .topology-browse.collapsed .tb-header {
   border-bottom: none;
@@ -234,7 +234,7 @@ watch([collapsed, placedRealIds], ([isCollapsed]) => {
   font-weight: 600;
   font-size: 0.9rem;
   cursor: pointer;
-  color: #1d2939;
+  color: var(--feather-primary-text-on-surface);
 }
 .tb-caret {
   display: inline-block;
@@ -251,18 +251,18 @@ watch([collapsed, placedRealIds], ([isCollapsed]) => {
   border-radius: 4px;
   cursor: pointer;
   font-size: 0.85rem;
-  color: #475467;
+  color: var(--feather-primary-text-on-surface);
 }
 .tb-tabs button.active {
-  background: #eef4ff;
-  border-color: #c7d7fe;
+  background: rgba(31, 95, 176, 0.10);
+  border-color: var(--feather-border-on-surface);
   color: #1f5fb0;
   font-weight: 600;
 }
 .tb-filter {
   margin-left: auto;
   font-size: 0.8rem;
-  color: #667085;
+  color: var(--feather-secondary-text-on-surface);
 }
 .tb-body {
   flex: 1 1 auto;
@@ -272,7 +272,7 @@ watch([collapsed, placedRealIds], ([isCollapsed]) => {
 }
 .tb-empty {
   padding: 0.75rem;
-  color: #667085;
+  color: var(--feather-secondary-text-on-surface);
   font-size: 0.85rem;
 }
 .tb-dot {

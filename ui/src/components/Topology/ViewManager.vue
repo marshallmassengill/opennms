@@ -137,7 +137,7 @@ const onDelete = async (id: string, name: string) => {
 <style scoped>
 .tv-empty {
   padding: 1rem 0.25rem;
-  color: #475467;
+  color: var(--feather-secondary-text-on-surface);
 }
 
 .tv-row-actions {

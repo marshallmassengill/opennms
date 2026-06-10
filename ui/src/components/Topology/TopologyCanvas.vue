@@ -188,6 +188,7 @@ import { createNodeImageProgram } from '@sigma/node-image'
 import { downloadAsImage } from '@sigma/export-image'
 import { PALETTE_DRAG_MIME, type PaletteDragPayload } from '@/components/Topology/dragTypes'
 import { useTopologyStore } from '@/stores/topologyStore'
+import { useAppStore } from '@/stores/appStore'
 import { severityColor } from '@/components/Topology/severity'
 import { DEVICE_ICON_SVG } from '@/components/Topology/deviceIcons'
 import {
@@ -212,6 +213,7 @@ import type {
 } from '@/types/topology'
 
 const store = useTopologyStore()
+const appStore = useAppStore()
 
 /**
  * Resolve a node's persisted icon override to an image URL the sigma image
@@ -1943,16 +1945,18 @@ const onShapeDrawEnd = () => {
 }
 
 /**
- * Apply the view's label-color defaults to the renderer. Unset fields
- * reproduce sigma's own defaults exactly: black node labels, and link labels
- * that take the link's color attribute.
+ * Apply the view's label-color defaults to the renderer. Unset fields fall
+ * back to a theme-appropriate default -- sigma draws labels onto a canvas,
+ * which can't pick up the app's CSS theme variables -- while link labels
+ * keep sigma's own default of taking the link's color attribute.
  */
 const applyViewStyle = () => {
   if (!sigma) return
   const style = store.viewStyle
+  const themeDefault = appStore.theme === 'open-dark' ? '#dfe3e8' : '#000'
   sigma.setSetting(
     'labelColor',
-    (style?.nodeLabelColor ? { color: style.nodeLabelColor } : { color: '#000' }) as never
+    (style?.nodeLabelColor ? { color: style.nodeLabelColor } : { color: themeDefault }) as never
   )
   sigma.setSetting(
     'edgeLabelColor',
@@ -1965,6 +1969,12 @@ watch(
   () => store.viewStyle,
   () => applyViewStyle(),
   { deep: true }
+)
+
+// Re-derive the canvas-drawn label default when the app theme flips.
+watch(
+  () => appStore.theme,
+  () => applyViewStyle()
 )
 
 /** A node's persisted icon override (built-in glyph key or `asset:<id>`). */
@@ -2025,8 +2035,8 @@ defineExpose({
   min-height: 500px;
   display: flex;
   flex-direction: column;
-  background: #fafafa;
-  border: 1px solid #e0e0e0;
+  background: var(--feather-background);
+  border: 1px solid var(--feather-border-on-surface);
   transition: box-shadow 100ms ease-in;
 }
 
@@ -2039,7 +2049,9 @@ defineExpose({
   bottom: 0.5rem;
   right: 0.5rem;
   z-index: 1;
-  background: rgba(255, 255, 255, 0.85);
+  background: var(--feather-surface);
+  color: var(--feather-primary-text-on-surface);
+  border: 1px solid var(--feather-border-on-surface);
   padding: 0.25rem 0.5rem;
   border-radius: 4px;
   font-size: 0.75rem;
@@ -2212,26 +2224,26 @@ defineExpose({
   user-select: none;
   padding: 2px 6px;
   border-radius: 3px;
-  background: rgba(255, 255, 255, 0.85);
+  background: var(--feather-surface);
   font-size: 12px;
   font-weight: 500;
-  color: #1d2939;
+  color: var(--feather-primary-text-on-surface);
   white-space: nowrap;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
   border: 1px solid transparent;
 }
 
 .topology-label:hover {
-  border-color: #c0d1e8;
+  border-color: var(--feather-border-on-surface);
 }
 
 .topology-label.is-selected {
   border-color: #1f5fb0;
-  background: rgba(255, 255, 255, 0.95);
+  background: var(--feather-surface);
 }
 
 .topology-label.is-editing {
-  background: #fff;
+  background: var(--feather-surface);
   border-color: #1f5fb0;
   padding: 0;
   cursor: text;

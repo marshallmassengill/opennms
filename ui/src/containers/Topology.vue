@@ -828,7 +828,7 @@ const onDelete = () => {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  color: #98a2b3;
+  color: var(--feather-secondary-text-on-surface);
 }
 .node-size-slider {
   width: 6rem;
@@ -843,7 +843,7 @@ const onDelete = () => {
 .discovered-hint {
   font-size: 0.85rem;
   font-style: italic;
-  color: #6b7280;
+  color: var(--feather-secondary-text-on-surface);
 }
 
 .toolbar-controls {
@@ -899,7 +899,7 @@ const onDelete = () => {
   gap: 0.25rem;
   pointer-events: none;
   text-align: center;
-  color: #6b7280;
+  color: var(--feather-secondary-text-on-surface);
 }
 
 .discovered-empty-hint {

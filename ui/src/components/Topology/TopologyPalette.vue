@@ -176,8 +176,8 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #fff;
-  border: 1px solid #e0e0e0;
+  background: var(--feather-surface);
+  border: 1px solid var(--feather-border-on-surface);
   border-radius: 4px;
   min-width: 260px;
   width: 280px;
@@ -188,7 +188,7 @@ onMounted(() => {
   flex-direction: column;
   gap: 0.5rem;
   padding: 0.5rem;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--feather-border-on-surface);
 }
 
 .palette-search,
@@ -210,7 +210,7 @@ onMounted(() => {
 .palette-item {
   height: 56px;
   padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid #f5f5f5;
+  border-bottom: 1px solid var(--feather-border-on-surface);
   cursor: grab;
   display: flex;
   flex-direction: column;
@@ -220,7 +220,7 @@ onMounted(() => {
 }
 
 .palette-item:hover {
-  background: #f6f8fb;
+  background: rgba(31, 95, 176, 0.10);
 }
 
 .palette-item:active {
@@ -230,7 +230,7 @@ onMounted(() => {
 .palette-item-label {
   font-weight: 500;
   font-size: 0.875rem;
-  color: #1d2939;
+  color: var(--feather-primary-text-on-surface);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -241,7 +241,7 @@ onMounted(() => {
   align-items: center;
   gap: 0.5rem;
   font-size: 0.75rem;
-  color: #667085;
+  color: var(--feather-secondary-text-on-surface);
   overflow: hidden;
 }
 
@@ -250,25 +250,25 @@ onMounted(() => {
 }
 
 .palette-item-category {
-  background: #eaf0f7;
+  background: rgba(31, 95, 176, 0.10);
   border-radius: 3px;
   padding: 0 0.375rem;
   font-size: 0.6875rem;
-  color: #344054;
+  color: var(--feather-primary-text-on-surface);
 }
 
 .palette-status {
   padding: 1rem;
   text-align: center;
-  color: #667085;
+  color: var(--feather-secondary-text-on-surface);
   font-size: 0.875rem;
 }
 
 .palette-footer {
   padding: 0.5rem;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--feather-border-on-surface);
   font-size: 0.75rem;
-  color: #667085;
+  color: var(--feather-secondary-text-on-surface);
   text-align: right;
 }
 </style>

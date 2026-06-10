@@ -610,7 +610,7 @@ const linkLabel = computed<string>({
 }
 
 .ti-empty {
-  color: #667085;
+  color: var(--feather-secondary-text-on-surface);
   font-size: 0.875rem;
 }
 
@@ -629,7 +629,7 @@ const linkLabel = computed<string>({
 .ti-label {
   font-size: 0.75rem;
   font-weight: 600;
-  color: #475467;
+  color: var(--feather-secondary-text-on-surface);
 }
 
 .ti-input {
@@ -640,7 +640,7 @@ const linkLabel = computed<string>({
   width: 3rem;
   height: 2rem;
   padding: 0;
-  border: 1px solid #d0d5dd;
+  border: 1px solid var(--feather-border-on-surface);
   border-radius: 4px;
   background: none;
 }
@@ -678,7 +678,7 @@ const linkLabel = computed<string>({
 }
 
 .ti-detail dt {
-  color: #667085;
+  color: var(--feather-secondary-text-on-surface);
 }
 
 .ti-detail dd {
@@ -689,19 +689,19 @@ const linkLabel = computed<string>({
 .ti-infopanel-item {
   margin-top: 0.85rem;
   padding-top: 0.6rem;
-  border-top: 1px solid #eaecf0;
+  border-top: 1px solid var(--feather-border-on-surface);
 }
 
 .ti-infopanel-title {
   margin: 0 0 0.35rem;
   font-size: 0.8rem;
   font-weight: 600;
-  color: #667085;
+  color: var(--feather-secondary-text-on-surface);
 }
 
 .ti-infopanel-html {
   font-size: 0.85rem;
-  color: #1d2939;
+  color: var(--feather-primary-text-on-surface);
   overflow-x: auto;
 }
 
@@ -713,7 +713,7 @@ const linkLabel = computed<string>({
 .ti-hint {
   margin: 0.35rem 0 0;
   font-size: 0.75rem;
-  color: #667085;
+  color: var(--feather-secondary-text-on-surface);
 }
 
 .ti-icon-grid {
@@ -730,12 +730,12 @@ const linkLabel = computed<string>({
   align-items: center;
   justify-content: center;
   padding: 0;
-  border: 1px solid #d0d5dd;
+  border: 1px solid var(--feather-border-on-surface);
   border-radius: 4px;
-  background: #fff;
+  background: var(--feather-surface);
   cursor: pointer;
   font-size: 0.65rem;
-  color: #475467;
+  color: var(--feather-secondary-text-on-surface);
 }
 
 .ti-icon-option img {
@@ -764,7 +764,7 @@ const linkLabel = computed<string>({
   align-items: center;
   gap: 0.4rem;
   font-size: 0.85rem;
-  color: #1d2939;
+  color: var(--feather-primary-text-on-surface);
   margin-bottom: 0.35rem;
   cursor: pointer;
 }
