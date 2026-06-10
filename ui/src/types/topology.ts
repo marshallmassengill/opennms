@@ -69,6 +69,27 @@ export interface CanvasLabel {
 }
 
 /**
+ * A decorative annotation shape (NMS-7504 "frames/blocks"): a labeled box or
+ * ellipse drawn around nodes to visually group them. Purely visual in v1 --
+ * moving a shape does not move the nodes it frames. Same graph-coordinate
+ * rect convention as the background (x/y = top-left; sigma's y axis points
+ * up, so the shape spans [y - height, y]). The optional `label` renders as a
+ * title anchored at the shape's top edge, Visio-style.
+ */
+export interface CanvasShape {
+  id: string
+  type: 'rect' | 'ellipse'
+  x: number
+  y: number
+  width: number
+  height: number
+  label?: string
+  stroke?: string
+  fill?: string
+  opacity?: number
+}
+
+/**
  * A background image behind the canvas (NMS-7504: floor plans, rack
  * diagrams). `ref` is `asset:<id>` referencing an uploaded image asset. The
  * rect lives in graph coordinates (x/y = top-left corner; sigma's y axis
@@ -95,6 +116,8 @@ export interface TopologyView {
   nodes: CanvasNode[]
   links: CanvasLink[]
   labels: CanvasLabel[]
+  /** Decorative annotation shapes (frames/boxes); absent in older views. */
+  shapes?: CanvasShape[]
   viewport: {
     zoom: number
     panX: number

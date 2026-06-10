@@ -27,11 +27,13 @@
  *
  *  - placed nodes:  `placed-<paletteId>` where paletteId is the OnmsNode id
  *  - free labels:   `label-<seq>`
+ *  - shapes:        `shape-<seq>` (annotation frames/boxes)
  *  - edges:         `edge-<...>` (graphology edge keys)
  */
 
 export const PLACED_PREFIX = 'placed-'
 export const LABEL_PREFIX = 'label-'
+export const SHAPE_PREFIX = 'shape-'
 
 export const placedIdFor = (paletteId: string): string => `${PLACED_PREFIX}${paletteId}`
 
@@ -39,6 +41,8 @@ export const paletteIdFromPlacedId = (id: string): string | null =>
   id.startsWith(PLACED_PREFIX) ? id.slice(PLACED_PREFIX.length) : null
 
 export const isLabelId = (id: string): boolean => id.startsWith(LABEL_PREFIX)
+
+export const isShapeId = (id: string): boolean => id.startsWith(SHAPE_PREFIX)
 
 /** The real OnmsNode id for a placed node id, or null if not a placed node. */
 export const nodeIdFromPlacedId = (id: string): number | null => {

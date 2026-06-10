@@ -23,6 +23,7 @@
 import { defineStore } from 'pinia'
 import type {
   CanvasLabel,
+  CanvasShape,
   DiscoveredGraph,
   DiscoveredGraphSource,
   TopologyView,
@@ -85,6 +86,19 @@ export const useTopologyStore = defineStore('topologyStore', () => {
    * concepts. Persisted as part of TopologyView when save lands.
    */
   const labels = ref<CanvasLabel[]>([])
+
+  /**
+   * Decorative annotation shapes (frames/boxes), store-owned like labels --
+   * they live outside the graphology graph and are merged into the view at
+   * save time. `isShapeDrawMode` is the toolbar Draw Box gesture: drag on
+   * the stage to create a shape.
+   */
+  const shapes = ref<CanvasShape[]>([])
+  const isShapeDrawMode = ref<boolean>(false)
+
+  const setShapeDrawMode = (value: boolean) => {
+    isShapeDrawMode.value = value
+  }
 
   /**
    * The open view's background image, if any. Lives directly on currentView
@@ -214,8 +228,10 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     currentView.value = emptyView()
     selectedIds.value = []
     labels.value = []
+    shapes.value = []
     placedNodeIds.value = new Set()
     isBackgroundAdjustMode.value = false
+    isShapeDrawMode.value = false
   }
 
   /**
@@ -294,6 +310,7 @@ export const useTopologyStore = defineStore('topologyStore', () => {
         nodes: snapshot.nodes,
         links: snapshot.links,
         labels: labels.value.map((l) => ({ ...l })),
+        shapes: shapes.value.map((s) => ({ ...s })),
         viewport: snapshot.viewport
       }
       const saved = await saveView(view)
@@ -326,6 +343,7 @@ export const useTopologyStore = defineStore('topologyStore', () => {
         nodes: snapshot.nodes,
         links: snapshot.links,
         labels: labels.value.map((l) => ({ ...l })),
+        shapes: shapes.value.map((s) => ({ ...s })),
         viewport: snapshot.viewport
       }
       const saved = await saveView(candidate)
@@ -376,8 +394,11 @@ export const useTopologyStore = defineStore('topologyStore', () => {
 
   const setEditMode = (value: boolean) => {
     isEditMode.value = value
-    // Background adjustment is an Edit-mode gesture; never carry it across.
-    if (!value) isBackgroundAdjustMode.value = false
+    // Background adjustment / shape drawing are Edit-mode gestures.
+    if (!value) {
+      isBackgroundAdjustMode.value = false
+      isShapeDrawMode.value = false
+    }
   }
 
   const setLinkDrawMode = (value: boolean) => {
@@ -445,6 +466,25 @@ export const useTopologyStore = defineStore('topologyStore', () => {
   const getLabel = (id: string): CanvasLabel | undefined =>
     labels.value.find((l) => l.id === id)
 
+  const setShapes = (next: CanvasShape[]) => {
+    shapes.value = next.map((s) => ({ ...s }))
+  }
+
+  const addShape = (shape: CanvasShape) => {
+    shapes.value = [...shapes.value, shape]
+  }
+
+  const updateShape = (id: string, patch: Partial<CanvasShape>) => {
+    shapes.value = shapes.value.map((s) => (s.id === id ? { ...s, ...patch } : s))
+  }
+
+  const removeShape = (id: string) => {
+    shapes.value = shapes.value.filter((s) => s.id !== id)
+  }
+
+  const getShape = (id: string): CanvasShape | undefined =>
+    shapes.value.find((s) => s.id === id)
+
   return {
     catalog,
     currentView,
@@ -478,6 +518,14 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     renameView,
     setPlacedNodeIds,
     setLabels,
+    shapes,
+    isShapeDrawMode,
+    setShapeDrawMode,
+    setShapes,
+    addShape,
+    updateShape,
+    removeShape,
+    getShape,
     setSeverities,
     refreshStatus,
     nodeIconIds,

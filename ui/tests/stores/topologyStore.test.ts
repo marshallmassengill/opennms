@@ -158,3 +158,50 @@ describe('useTopologyStore - view background', () => {
     expect(store.isBackgroundAdjustMode).toBe(false)
   })
 })
+
+describe('useTopologyStore - annotation shapes', () => {
+  let store: ReturnType<typeof useTopologyStore>
+
+  const shape = (id: string) => ({
+    id,
+    type: 'rect' as const,
+    x: 0,
+    y: 100,
+    width: 200,
+    height: 100,
+    label: 'DC-1'
+  })
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    store = useTopologyStore()
+    store.newView()
+  })
+
+  it('supports CRUD on shapes', () => {
+    store.addShape(shape('shape-1'))
+    expect(store.getShape('shape-1')?.label).toBe('DC-1')
+    store.updateShape('shape-1', { label: 'DMZ', type: 'ellipse' })
+    expect(store.getShape('shape-1')).toMatchObject({ label: 'DMZ', type: 'ellipse', width: 200 })
+    store.removeShape('shape-1')
+    expect(store.getShape('shape-1')).toBeUndefined()
+  })
+
+  it('saves shapes with the view and resets them on New', async () => {
+    store.addShape(shape('shape-1'))
+    vi.mocked(saveView).mockImplementation(async (v: TopologyView) => v)
+    await store.saveCurrentView(snapshot)
+    const savedArg = vi.mocked(saveView).mock.calls.at(-1)![0] as TopologyView
+    expect(savedArg.shapes).toHaveLength(1)
+    expect(savedArg.shapes![0].id).toBe('shape-1')
+
+    store.newView()
+    expect(store.shapes).toHaveLength(0)
+  })
+
+  it('shape draw mode is an Edit-mode gesture', () => {
+    store.setShapeDrawMode(true)
+    store.setEditMode(false)
+    expect(store.isShapeDrawMode).toBe(false)
+  })
+})

@@ -160,6 +160,13 @@ License.
             :outlined="!store.isLinkDrawMode"
             @click="store.setLinkDrawMode(!store.isLinkDrawMode)"
           />
+          <PButton
+            v-if="store.isEditMode"
+            :label="store.isShapeDrawMode ? 'Box: drag to draw' : 'Draw Box'"
+            :severity="store.isShapeDrawMode ? 'primary' : 'secondary'"
+            :outlined="!store.isShapeDrawMode"
+            @click="store.setShapeDrawMode(!store.isShapeDrawMode)"
+          />
           <span class="node-size-control" title="Node size">
             <i class="pi pi-circle-fill node-size-icon-sm" />
             <PSlider

@@ -69,6 +69,7 @@ const dtoFor = (id: number, view: TopologyView) => ({
     nodes: view.nodes,
     links: view.links,
     labels: view.labels,
+    shapes: view.shapes,
     viewport: view.viewport
   }
 })
@@ -431,6 +432,23 @@ describe('topologyService discovered graph (Graph REST API)', () => {
     it('returns {} for an empty id list without calling the API', async () => {
       expect(await getNodeIconIds([])).toEqual({})
       expect(v2.get).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('view shapes round-trip', () => {
+    it('saveView sends shapes inside definition and getView restores them', async () => {
+      const view = flatView({
+        shapes: [{ id: 'shape-1', type: 'rect', x: -10, y: 20, width: 300, height: 150, label: 'DC-1' }]
+      })
+      vi.mocked(v2.post).mockResolvedValue({ status: 201, headers: { location: '/x/9' }, data: dtoFor(9, view) })
+      await saveView(view)
+      const sent = vi.mocked(v2.post).mock.calls[0][1] as { definition: { shapes?: unknown[] } }
+      expect(sent.definition.shapes).toHaveLength(1)
+
+      vi.mocked(v2.get).mockResolvedValue({ status: 200, data: dtoFor(9, view) })
+      const fetched = await getView('9')
+      expect(fetched).not.toBe(false)
+      expect((fetched as TopologyView).shapes).toEqual(view.shapes)
     })
   })
 

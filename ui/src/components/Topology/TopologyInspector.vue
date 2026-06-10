@@ -35,7 +35,7 @@ License.
     <template #content>
       <!-- Nothing selected (full/View only) -->
       <p v-if="kind === 'none' && variant === 'full'" class="ti-empty">
-        Select a node, link, or label to see its properties.
+        Select a node, link, label, or box to see its properties.
       </p>
 
       <!-- Multiple items (full/View only) -->
@@ -101,6 +101,57 @@ License.
         </div>
       </div>
 
+      <!-- An annotation shape (frame/box): title, rect/ellipse, colors,
+           opacity. Editable in Edit mode, read-only in View. -->
+      <div v-else-if="kind === 'shape' && shape" class="ti-section">
+        <div class="ti-field">
+          <label class="ti-label">Title</label>
+          <PInputText v-model="shapeLabel" class="ti-input" placeholder="(none)" :disabled="!editable" />
+        </div>
+        <div class="ti-field">
+          <label class="ti-label">Shape</label>
+          <div class="ti-row">
+            <PButton
+              label="Box"
+              size="small"
+              :outlined="shapeType !== 'rect'"
+              :disabled="!editable"
+              @click="shapeType = 'rect'"
+            />
+            <PButton
+              label="Ellipse"
+              size="small"
+              :outlined="shapeType !== 'ellipse'"
+              :disabled="!editable"
+              @click="shapeType = 'ellipse'"
+            />
+          </div>
+        </div>
+        <div class="ti-field">
+          <label class="ti-label">Border color</label>
+          <input type="color" :value="shape.stroke ?? '#64748b'" class="ti-color" :disabled="!editable" @input="onShapeStroke" />
+        </div>
+        <div class="ti-field">
+          <label class="ti-label">Fill color</label>
+          <input type="color" :value="shape.fill ?? '#cbd5e1'" class="ti-color" :disabled="!editable" @input="onShapeFill" />
+        </div>
+        <div class="ti-field">
+          <label class="ti-label">Fill opacity</label>
+          <input
+            type="range"
+            min="0"
+            max="0.9"
+            step="0.05"
+            :value="shape.opacity ?? 0.35"
+            :disabled="!editable"
+            @input="onShapeOpacity"
+          />
+        </div>
+        <p v-if="editable" class="ti-hint">
+          Drag the border to move, the corner handle to resize — <strong>Save</strong> the view to keep it.
+        </p>
+      </div>
+
       <p v-else-if="variant === 'full'" class="ti-empty">Link selected.</p>
 
       <!-- Edit-mode node: icon picker. Automatic (sysObjectId-derived) /
@@ -159,7 +210,7 @@ License.
            adjust placement, remove). The panel is always present (reserves
            layout) so selecting a link/label never shifts the canvas. -->
       <div v-else-if="variant === 'props'" class="ti-section">
-        <p class="ti-empty">Select a node, link, or label to edit its properties.</p>
+        <p class="ti-empty">Select a node, link, label, or box to edit its properties.</p>
         <div class="ti-field">
           <label class="ti-label">Background</label>
           <template v-if="store.background?.ref">
@@ -219,7 +270,7 @@ import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import InputNumber from 'primevue/inputnumber'
 import { useTopologyStore } from '@/stores/topologyStore'
-import { isLabelId, nodeIdFromPlacedId } from '@/components/Topology/nodeIds'
+import { isLabelId, isShapeId, nodeIdFromPlacedId } from '@/components/Topology/nodeIds'
 import { severityColor } from '@/components/Topology/severity'
 import { DEVICE_ICON_SVG } from '@/components/Topology/deviceIcons'
 import { getNodeById } from '@/services/nodeService'
@@ -268,11 +319,12 @@ const selectedId = computed<string | null>(() =>
   store.selectedIds.length === 1 ? store.selectedIds[0] : null
 )
 
-const kind = computed<'none' | 'multi' | 'label' | 'node' | 'link'>(() => {
+const kind = computed<'none' | 'multi' | 'label' | 'node' | 'shape' | 'link'>(() => {
   if (store.selectedIds.length === 0) return 'none'
   if (store.selectedIds.length > 1) return 'multi'
   const id = selectedId.value as string
   if (isLabelId(id)) return 'label'
+  if (isShapeId(id)) return 'shape'
   if (nodeIdFromPlacedId(id) !== null) return 'node'
   return 'link'
 })
@@ -456,6 +508,33 @@ const onBackgroundOpacity = (event: Event) => {
 }
 
 const removeBackground = () => store.setBackground(undefined)
+
+/* ---- Shape (annotation frame) editing, store-backed ---- */
+const shape = computed(() =>
+  selectedId.value && isShapeId(selectedId.value) ? store.getShape(selectedId.value) : undefined
+)
+
+const shapeLabel = computed<string>({
+  get: () => shape.value?.label ?? '',
+  set: (label) => shape.value && store.updateShape(shape.value.id, { label })
+})
+
+const shapeType = computed<'rect' | 'ellipse'>({
+  get: () => shape.value?.type ?? 'rect',
+  set: (type) => shape.value && store.updateShape(shape.value.id, { type })
+})
+
+const onShapeStroke = (event: Event) => {
+  if (shape.value) store.updateShape(shape.value.id, { stroke: (event.target as HTMLInputElement).value })
+}
+
+const onShapeFill = (event: Event) => {
+  if (shape.value) store.updateShape(shape.value.id, { fill: (event.target as HTMLInputElement).value })
+}
+
+const onShapeOpacity = (event: Event) => {
+  if (shape.value) store.updateShape(shape.value.id, { opacity: Number((event.target as HTMLInputElement).value) })
+}
 
 /* ---- Link editing (reads/writes the canvas graph via the exposed API) ---- */
 const link = ref<{ label: string; sourceLabel: string; targetLabel: string } | null>(null)

@@ -69,6 +69,33 @@ License.
         @mousedown.prevent.stop="onBackgroundHandleMouseDown"
       />
     </div>
+    <!-- Annotation shapes (visible layer): frames/boxes drawn below the
+         nodes, re-projected each frame like the background. Mouse-inert --
+         the interaction skeleton lives in a separate layer above the canvas
+         so a frame's interior never blocks the nodes inside it. -->
+    <svg v-if="visibleShapes.length > 0" class="topology-shapes-layer">
+      <template v-for="shape in visibleShapes" :key="shape.id">
+        <rect
+          v-if="shape.type === 'rect'"
+          v-bind="shapeRectAttrs(shape, cameraVersion)"
+          :class="{ 'is-selected': store.selectedIds.includes(shape.id) }"
+          class="topology-shape"
+        />
+        <ellipse
+          v-else
+          v-bind="shapeEllipseAttrs(shape, cameraVersion)"
+          :class="{ 'is-selected': store.selectedIds.includes(shape.id) }"
+          class="topology-shape"
+        />
+        <text
+          v-if="shape.label"
+          v-bind="shapeLabelAttrs(shape, cameraVersion)"
+          class="topology-shape-title"
+        >
+          {{ shape.label }}
+        </text>
+      </template>
+    </svg>
     <div ref="canvasEl" class="topology-canvas" />
     <div class="topology-labels-layer">
       <!-- Labels are reactively positioned in viewport space via
@@ -98,6 +125,41 @@ License.
           {{ label.text }}
         </span>
       </div>
+    </div>
+    <!-- Annotation shapes (interaction skeleton, Edit mode): an invisible
+         fat border per shape that takes clicks/drags via pointer-events:
+         stroke -- the interior stays click-through to the nodes a frame
+         surrounds -- plus a corner resize handle when selected. -->
+    <svg v-if="store.isEditMode && visibleShapes.length > 0" class="topology-shapes-hit-layer">
+      <template v-for="shape in visibleShapes" :key="shape.id">
+        <rect
+          v-if="shape.type === 'rect'"
+          v-bind="shapeHitRectAttrs(shape, cameraVersion)"
+          class="topology-shape-hit"
+          @mousedown.stop.prevent="onShapeBorderMouseDown(shape, $event)"
+        />
+        <ellipse
+          v-else
+          v-bind="shapeHitEllipseAttrs(shape, cameraVersion)"
+          class="topology-shape-hit"
+          @mousedown.stop.prevent="onShapeBorderMouseDown(shape, $event)"
+        />
+        <rect
+          v-if="store.selectedIds.includes(shape.id)"
+          v-bind="shapeHandleAttrs(shape, cameraVersion)"
+          class="topology-shape-resize-handle"
+          @mousedown.stop.prevent="onShapeHandleMouseDown(shape, $event)"
+        />
+      </template>
+    </svg>
+    <!-- Draw Box mode: a stage-covering overlay captures the drag so sigma
+         never sees it; releasing creates the shape and exits the mode. -->
+    <div
+      v-if="store.isShapeDrawMode && store.isEditMode"
+      class="topology-shape-draw-overlay"
+      @mousedown.prevent="onShapeDrawStart"
+    >
+      <div v-if="shapeDraft" class="topology-shape-draft" :style="shapeDraftStyle" />
     </div>
     <div
       v-if="rubberBand && rubberBandWidth > 1 && rubberBandHeight > 1"
@@ -130,7 +192,9 @@ import { severityColor } from '@/components/Topology/severity'
 import { DEVICE_ICON_SVG } from '@/components/Topology/deviceIcons'
 import {
   LABEL_PREFIX,
+  SHAPE_PREFIX,
   isLabelId,
+  isShapeId,
   placedIdFor,
   paletteIdFromPlacedId,
   nodeIdFromPlacedId
@@ -141,6 +205,7 @@ import type {
   CanvasLink,
   CanvasLabel,
   CanvasNode,
+  CanvasShape,
   DiscoveredGraph,
   TopologyView,
   TopologyViewBackground
@@ -539,6 +604,7 @@ const loadView = (view: TopologyView) => {
   store.setPlacedNodeIds(placed)
   placedCount.value = placed.length
   store.setLabels(view.labels)
+  store.setShapes(view.shapes ?? [])
   store.setNodeSizeForCount(g.order) // density-based default node size
 
   mountSigma(g)
@@ -675,6 +741,7 @@ const loadDiscoveredGraph = (dg: DiscoveredGraph) => {
   clearHistory()
   store.clearSelection()
   store.setLabels([]) // discovered topologies have no free-standing labels
+  store.setShapes([]) // ...nor annotation shapes
   mountSigma(g)
   fitCamera()
 }
@@ -1328,15 +1395,20 @@ const deleteSelected = () => {
   const ids = store.selectedIds.slice()
   if (ids.length === 0) return
 
-  // Partition into label ids, edge ids, and node ids. Labels live in
-  // the store; edges and nodes live in the graphology graph.
+  // Partition into label ids, shape ids, edge ids, and node ids. Labels and
+  // shapes live in the store; edges and nodes live in the graphology graph.
   const labelIds = ids.filter(isLabelId)
-  const edgeIds = ids.filter((id) => !isLabelId(id) && graph!.hasEdge(id))
-  const nodeIds = ids.filter((id) => !isLabelId(id) && graph!.hasNode(id))
+  const shapeIds = ids.filter(isShapeId)
+  const edgeIds = ids.filter((id) => !isLabelId(id) && !isShapeId(id) && graph!.hasEdge(id))
+  const nodeIds = ids.filter((id) => !isLabelId(id) && !isShapeId(id) && graph!.hasNode(id))
   const labelSnapshots: CanvasLabel[] = labelIds
     .map((id) => store.getLabel(id))
     .filter((l): l is CanvasLabel => l !== undefined)
     .map((l) => ({ ...l }))
+  const shapeSnapshots: CanvasShape[] = shapeIds
+    .map((id) => store.getShape(id))
+    .filter((s): s is CanvasShape => s !== undefined)
+    .map((s) => ({ ...s }))
   const edgeSnapshots: Array<{ id: string; source: string; target: string; attrs: Record<string, unknown> }> = []
   for (const eid of edgeIds) {
     if (!graph.hasEdge(eid)) continue
@@ -1387,6 +1459,9 @@ const deleteSelected = () => {
     for (const l of labelSnapshots) {
       store.removeLabel(l.id)
     }
+    for (const s of shapeSnapshots) {
+      store.removeShape(s.id)
+    }
     linkCount.value = graph.size
   }
 
@@ -1425,12 +1500,15 @@ const deleteSelected = () => {
     for (const l of labelSnapshots) {
       if (!store.getLabel(l.id)) store.addLabel(l)
     }
+    for (const s of shapeSnapshots) {
+      if (!store.getShape(s.id)) store.addShape(s)
+    }
     linkCount.value = graph.size
   }
 
   applyDelete()
   store.clearSelection()
-  const totalDeleted = snapshots.length + labelSnapshots.length + edgeSnapshots.length
+  const totalDeleted = snapshots.length + labelSnapshots.length + shapeSnapshots.length + edgeSnapshots.length
   if (totalDeleted === 0) return
   pushCommand({
     label: `Delete ${totalDeleted} item(s)`,
@@ -1470,6 +1548,11 @@ const onKeyDown = (e: KeyboardEvent) => {
       store.setLinkDrawMode(false)
       return
     }
+    if (store.isShapeDrawMode) {
+      e.preventDefault()
+      store.setShapeDrawMode(false)
+      return
+    }
     if (editingLabelId.value !== null) {
       e.preventDefault()
       cancelEdit()
@@ -1491,6 +1574,9 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeyDown)
   endBackgroundDrag()
+  endShapeDrag()
+  window.removeEventListener('mousemove', onShapeDrawMove)
+  window.removeEventListener('mouseup', onShapeDrawEnd)
   if (resizeObserver) {
     resizeObserver.disconnect()
     resizeObserver = null
@@ -1638,6 +1724,223 @@ const endBackgroundDrag = () => {
   window.removeEventListener('mouseup', endBackgroundDrag)
 }
 
+/* ---- Annotation shapes (frames/boxes) --------------------------------- */
+
+const SHAPE_DEFAULT_STROKE = '#64748b'
+const SHAPE_DEFAULT_FILL = '#cbd5e1'
+const SHAPE_DEFAULT_OPACITY = 0.35
+const SHAPE_MIN_DRAW_PX = 8
+
+let shapeIdSequence = 0
+const newShapeId = () => `${SHAPE_PREFIX}${Date.now()}-${shapeIdSequence++}`
+
+/** Shapes render for custom views only (discovered graphs are read-only). */
+const visibleShapes = computed<CanvasShape[]>(() =>
+  store.discoveredGraph === null ? store.shapes : []
+)
+
+/** The shape's graph rect projected to viewport px (same math as the background). */
+const shapeViewportRect = (shape: CanvasShape) => {
+  if (!sigma) return null
+  const topLeft = sigma.graphToViewport({ x: shape.x, y: shape.y })
+  const bottomRight = sigma.graphToViewport({ x: shape.x + shape.width, y: shape.y - shape.height })
+  return {
+    left: topLeft.x,
+    top: topLeft.y,
+    width: Math.max(1, bottomRight.x - topLeft.x),
+    height: Math.max(1, bottomRight.y - topLeft.y)
+  }
+}
+
+const shapeRectAttrs = (shape: CanvasShape, _cameraVersion: number) => {
+  void _cameraVersion
+  const r = shapeViewportRect(shape)
+  if (!r) return { display: 'none' }
+  return {
+    x: r.left,
+    y: r.top,
+    width: r.width,
+    height: r.height,
+    rx: 6,
+    stroke: shape.stroke ?? SHAPE_DEFAULT_STROKE,
+    fill: shape.fill ?? SHAPE_DEFAULT_FILL,
+    'fill-opacity': shape.opacity ?? SHAPE_DEFAULT_OPACITY
+  }
+}
+
+const shapeEllipseAttrs = (shape: CanvasShape, _cameraVersion: number) => {
+  void _cameraVersion
+  const r = shapeViewportRect(shape)
+  if (!r) return { display: 'none' }
+  return {
+    cx: r.left + r.width / 2,
+    cy: r.top + r.height / 2,
+    rx: r.width / 2,
+    ry: r.height / 2,
+    stroke: shape.stroke ?? SHAPE_DEFAULT_STROKE,
+    fill: shape.fill ?? SHAPE_DEFAULT_FILL,
+    'fill-opacity': shape.opacity ?? SHAPE_DEFAULT_OPACITY
+  }
+}
+
+/** Title anchored inside the shape's top edge, Visio-style. */
+const shapeLabelAttrs = (shape: CanvasShape, _cameraVersion: number) => {
+  void _cameraVersion
+  const r = shapeViewportRect(shape)
+  if (!r) return { display: 'none' }
+  return {
+    x: r.left + r.width / 2,
+    y: r.top + 16,
+    fill: shape.stroke ?? SHAPE_DEFAULT_STROKE
+  }
+}
+
+// Hit geometry mirrors the visible geometry; only the stroke is clickable
+// (pointer-events: stroke in CSS), so the interior stays click-through.
+const shapeHitRectAttrs = (shape: CanvasShape, cameraVersion: number) => shapeRectAttrs(shape, cameraVersion)
+const shapeHitEllipseAttrs = (shape: CanvasShape, cameraVersion: number) => shapeEllipseAttrs(shape, cameraVersion)
+
+const shapeHandleAttrs = (shape: CanvasShape, _cameraVersion: number) => {
+  void _cameraVersion
+  const r = shapeViewportRect(shape)
+  if (!r) return { display: 'none' }
+  return { x: r.left + r.width - 6, y: r.top + r.height - 6, width: 12, height: 12 }
+}
+
+/* Border drag = move (or, without movement, a selection click); corner
+   handle = resize. Mirrors the background-adjust drag pattern. */
+let shapeDrag: {
+  id: string
+  mode: 'move' | 'resize'
+  startGraphX: number
+  startGraphY: number
+  orig: { x: number; y: number; width: number; height: number }
+  moved: boolean
+  shiftKey: boolean
+} | null = null
+
+const onShapeBorderMouseDown = (shape: CanvasShape, event: MouseEvent) =>
+  beginShapeDrag(shape, event, 'move')
+const onShapeHandleMouseDown = (shape: CanvasShape, event: MouseEvent) =>
+  beginShapeDrag(shape, event, 'resize')
+
+const beginShapeDrag = (shape: CanvasShape, event: MouseEvent, mode: 'move' | 'resize') => {
+  if (!sigma || !canvasEl.value || !store.isEditMode) return
+  const g = backgroundMouseGraph(event)
+  shapeDrag = {
+    id: shape.id,
+    mode,
+    startGraphX: g.x,
+    startGraphY: g.y,
+    orig: { x: shape.x, y: shape.y, width: shape.width, height: shape.height },
+    moved: false,
+    shiftKey: event.shiftKey
+  }
+  window.addEventListener('mousemove', onShapeDragMove)
+  window.addEventListener('mouseup', endShapeDrag)
+}
+
+const onShapeDragMove = (event: MouseEvent) => {
+  if (!shapeDrag || !sigma || !canvasEl.value) return
+  const g = backgroundMouseGraph(event)
+  const dx = g.x - shapeDrag.startGraphX
+  const dy = g.y - shapeDrag.startGraphY
+  if (!shapeDrag.moved && Math.abs(dx) < 1 && Math.abs(dy) < 1) return
+  shapeDrag.moved = true
+  const { orig } = shapeDrag
+  if (shapeDrag.mode === 'move') {
+    store.updateShape(shapeDrag.id, { x: orig.x + dx, y: orig.y + dy })
+  } else {
+    store.updateShape(shapeDrag.id, {
+      width: Math.max(20, orig.width + dx),
+      // Dragging the handle downward is negative dy in graph coords.
+      height: Math.max(20, orig.height - dy)
+    })
+  }
+}
+
+const endShapeDrag = () => {
+  if (shapeDrag && !shapeDrag.moved && shapeDrag.mode === 'move') {
+    // No movement: it was a selection click on the border.
+    if (shapeDrag.shiftKey) store.toggleSelection(shapeDrag.id)
+    else store.selectOnly(shapeDrag.id)
+  }
+  shapeDrag = null
+  window.removeEventListener('mousemove', onShapeDragMove)
+  window.removeEventListener('mouseup', endShapeDrag)
+}
+
+/* Draw Box mode: drag out a rect on the stage-covering overlay. The draft is
+   tracked in *client* coordinates -- the preview converts them to
+   overlay-relative px for CSS, and the release converts them to canvas-
+   relative px for viewportToGraph (the overlay and the sigma container do
+   not share an origin). */
+const shapeDraft = ref<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
+let shapeDrawOverlayRect: DOMRect | null = null
+
+const shapeDraftStyle = computed(() => {
+  const d = shapeDraft.value
+  const o = shapeDrawOverlayRect
+  if (!d || !o) return {}
+  return {
+    left: Math.min(d.x1, d.x2) - o.left + 'px',
+    top: Math.min(d.y1, d.y2) - o.top + 'px',
+    width: Math.abs(d.x2 - d.x1) + 'px',
+    height: Math.abs(d.y2 - d.y1) + 'px'
+  }
+})
+
+const onShapeDrawStart = (event: MouseEvent) => {
+  shapeDrawOverlayRect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  shapeDraft.value = { x1: event.clientX, y1: event.clientY, x2: event.clientX, y2: event.clientY }
+  window.addEventListener('mousemove', onShapeDrawMove)
+  window.addEventListener('mouseup', onShapeDrawEnd)
+}
+
+const onShapeDrawMove = (event: MouseEvent) => {
+  if (!shapeDraft.value) return
+  shapeDraft.value = { ...shapeDraft.value, x2: event.clientX, y2: event.clientY }
+}
+
+const onShapeDrawEnd = () => {
+  window.removeEventListener('mousemove', onShapeDrawMove)
+  window.removeEventListener('mouseup', onShapeDrawEnd)
+  const d = shapeDraft.value
+  shapeDraft.value = null
+  shapeDrawOverlayRect = null
+  if (!d || !sigma || !canvasEl.value) return
+  if (Math.abs(d.x2 - d.x1) < SHAPE_MIN_DRAW_PX || Math.abs(d.y2 - d.y1) < SHAPE_MIN_DRAW_PX) {
+    // Too small to be a deliberate shape; treat as a cancel.
+    store.setShapeDrawMode(false)
+    return
+  }
+  const canvasRect = canvasEl.value.getBoundingClientRect()
+  const toGraph = (clientX: number, clientY: number) =>
+    sigma!.viewportToGraph({ x: clientX - canvasRect.left, y: clientY - canvasRect.top })
+  const g1 = toGraph(d.x1, d.y1)
+  const g2 = toGraph(d.x2, d.y2)
+  const shape: CanvasShape = {
+    id: newShapeId(),
+    type: 'rect',
+    x: Math.min(g1.x, g2.x),
+    y: Math.max(g1.y, g2.y),
+    width: Math.abs(g2.x - g1.x),
+    height: Math.abs(g2.y - g1.y),
+    label: '',
+    stroke: SHAPE_DEFAULT_STROKE,
+    fill: SHAPE_DEFAULT_FILL,
+    opacity: SHAPE_DEFAULT_OPACITY
+  }
+  store.addShape(shape)
+  store.selectOnly(shape.id)
+  store.setShapeDrawMode(false)
+  pushCommand({
+    label: 'Add shape',
+    do: () => store.getShape(shape.id) || store.addShape({ ...shape }),
+    undo: () => store.removeShape(shape.id)
+  })
+}
+
 /** A node's persisted icon override (built-in glyph key or `asset:<id>`). */
 const getNodeIconOverride = (id: string): string | undefined => {
   if (!graph || !graph.hasNode(id)) return undefined
@@ -1762,6 +2065,77 @@ defineExpose({
   border-radius: 3px;
   pointer-events: auto;
   cursor: nwse-resize;
+}
+
+/* Annotation shapes: the visible layer sits below the sigma canvases and is
+   mouse-inert; the hit layer sits above them, but only shape *borders* (and
+   the resize handle) accept the mouse, so frame interiors stay click-through
+   to the nodes they surround. */
+.topology-shapes-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.topology-shape {
+  stroke-width: 2;
+}
+
+.topology-shape.is-selected {
+  stroke: #1f5fb0;
+  stroke-width: 3;
+  stroke-dasharray: 8 4;
+}
+
+.topology-shape-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-anchor: middle;
+  user-select: none;
+}
+
+.topology-shapes-hit-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.topology-shapes-hit-layer .topology-shape-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
+  cursor: move;
+}
+
+.topology-shapes-hit-layer .topology-shape-resize-handle {
+  fill: #1f5fb0;
+  stroke: #fff;
+  stroke-width: 2;
+  pointer-events: all;
+  cursor: nwse-resize;
+}
+
+.topology-shape-draw-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  cursor: crosshair;
+}
+
+.topology-shape-draft {
+  position: absolute;
+  border: 2px dashed #1f5fb0;
+  background: rgba(31, 95, 176, 0.08);
+  border-radius: 6px;
+  pointer-events: none;
 }
 
 .topology-rubber-band {
