@@ -41,7 +41,12 @@ export const saveTheme = (theme: Theme): void => {
 }
 
 export const applyThemeClass = (theme: Theme): void => {
-  const body = document.body
-  body.classList.remove(LIGHT_THEME, DARK_THEME)
-  body.classList.add(theme)
+  // Both elements need the class: the Feather theme variables and our
+  // `.open-dark <descendant>` rules resolve from either, but PrimeVue
+  // anchors its dark token rules to the root element (`.open-dark:root`),
+  // so PrimeVue components only follow the theme when <html> carries it.
+  for (const el of [document.documentElement, document.body]) {
+    el.classList.remove(LIGHT_THEME, DARK_THEME)
+    el.classList.add(theme)
+  }
 }
