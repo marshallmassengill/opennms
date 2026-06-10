@@ -31,7 +31,11 @@ import {
   loadDiscoveredGraph,
   mapDiscoveredGraph,
   getNodeInfoPanel,
-  getNodeIconIds
+  getNodeIconIds,
+  assetUrl,
+  listAssets,
+  uploadAsset,
+  deleteAsset
 } from '@/services/topologyService'
 import { v2 } from '@/services/axiosInstances'
 import type { TopologyView } from '@/types/topology'
@@ -427,6 +431,56 @@ describe('topologyService discovered graph (Graph REST API)', () => {
     it('returns {} for an empty id list without calling the API', async () => {
       expect(await getNodeIconIds([])).toEqual({})
       expect(v2.get).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('topology assets', () => {
+    it('assetUrl points at the v2 assets endpoint and escapes the id', () => {
+      expect(assetUrl('abc-123')).toBe('/opennms/api/v2/topology/assets/abc-123')
+      expect(assetUrl('a/b')).toBe('/opennms/api/v2/topology/assets/a%2Fb')
+    })
+
+    it('listAssets passes the kind filter and returns [] on error', async () => {
+      vi.mocked(v2.get).mockResolvedValue({
+        status: 200,
+        data: [{ id: 'a1', name: 'glyph', kind: 'icon', mimeType: 'image/png', sizeBytes: 10 }]
+      })
+      const icons = await listAssets('icon')
+      expect(icons).toHaveLength(1)
+      expect(vi.mocked(v2.get).mock.calls[0][1]).toEqual({ params: { kind: 'icon' } })
+
+      vi.mocked(v2.get).mockRejectedValue(new Error('boom'))
+      expect(await listAssets()).toEqual([])
+    })
+
+    it('uploadAsset posts the file bytes under its own content type', async () => {
+      vi.mocked(v2.post).mockResolvedValue({
+        status: 201,
+        data: { id: 'a2', name: 'floor', kind: 'background', mimeType: 'image/png', sizeBytes: 3 }
+      })
+      const file = new File([new Uint8Array([1, 2, 3])], 'floor.png', { type: 'image/png' })
+      const created = await uploadAsset('floor', 'background', file)
+      expect(created).not.toBe(false)
+      expect((created as { id: string }).id).toBe('a2')
+      const [url, body, config] = vi.mocked(v2.post).mock.calls[0]
+      expect(url).toBe('topology/assets')
+      expect(body).toBe(file)
+      expect(config).toMatchObject({
+        params: { name: 'floor', kind: 'background' },
+        headers: { 'Content-Type': 'image/png' }
+      })
+    })
+
+    it('uploadAsset returns false on a server rejection (e.g. 413/415)', async () => {
+      vi.mocked(v2.post).mockRejectedValue(new Error('413'))
+      expect(await uploadAsset('big', 'icon', new Blob([new Uint8Array(4)], { type: 'image/png' }))).toBe(false)
+    })
+
+    it('deleteAsset reports success and failure', async () => {
+      vi.mocked(v2.delete).mockResolvedValue({ status: 204 })
+      expect(await deleteAsset('a1')).toBe(true)
+      vi.mocked(v2.delete).mockRejectedValue(new Error('404'))
+      expect(await deleteAsset('gone')).toBe(false)
     })
   })
 })

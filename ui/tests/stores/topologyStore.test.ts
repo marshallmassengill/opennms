@@ -121,3 +121,40 @@ describe('useTopologyStore - node size (density default + clamp)', () => {
     expect(store.nodeSize).toBe(14)
   })
 })
+
+describe('useTopologyStore - view background', () => {
+  let store: ReturnType<typeof useTopologyStore>
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    store = useTopologyStore()
+    store.newView()
+  })
+
+  it('setBackground writes to the open view (so Save persists it) and clears', () => {
+    expect(store.background).toBeUndefined()
+    store.setBackground({ type: 'image', ref: 'asset:a1', x: -300, y: 200, width: 600, height: 400, opacity: 0.5 })
+    expect(store.background?.ref).toBe('asset:a1')
+    // saveCurrentView spreads currentView, so the view itself must carry it.
+    expect(store.currentView?.background?.ref).toBe('asset:a1')
+    store.setBackground(undefined)
+    expect(store.background).toBeUndefined()
+  })
+
+  it('removing the background also leaves adjust mode', () => {
+    store.setBackground({ type: 'image', ref: 'asset:a1', x: 0, y: 0, width: 100, height: 100 })
+    store.setBackgroundAdjustMode(true)
+    store.setBackground(undefined)
+    expect(store.isBackgroundAdjustMode).toBe(false)
+  })
+
+  it('adjust mode never survives leaving Edit mode or switching views', () => {
+    store.setBackgroundAdjustMode(true)
+    store.setEditMode(false)
+    expect(store.isBackgroundAdjustMode).toBe(false)
+
+    store.setBackgroundAdjustMode(true)
+    store.newView()
+    expect(store.isBackgroundAdjustMode).toBe(false)
+  })
+})

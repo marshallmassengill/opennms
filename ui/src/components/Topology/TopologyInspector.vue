@@ -103,12 +103,111 @@ License.
 
       <p v-else-if="variant === 'full'" class="ti-empty">Link selected.</p>
 
-      <!-- Edit-mode Properties panel with nothing editable selected. The panel
-           is always present (reserves layout) so selecting a link/label never
-           shifts the canvas. -->
-      <p v-else-if="variant === 'props'" class="ti-empty">
-        Select a link or label to edit its properties.
-      </p>
+      <!-- Edit-mode node: icon picker. Automatic (sysObjectId-derived) /
+           built-in glyphs / uploaded icon assets, applied to the canvas
+           immediately and persisted with the view on Save. -->
+      <div v-else-if="kind === 'node' && variant === 'props'" class="ti-section">
+        <div class="ti-field">
+          <label class="ti-label">Icon</label>
+          <div class="ti-icon-grid">
+            <button
+              type="button"
+              class="ti-icon-option"
+              :class="{ 'is-selected': !iconOverride }"
+              title="Automatic (from SNMP)"
+              @click="applyIconOverride(undefined)"
+            >
+              Auto
+            </button>
+            <button
+              v-for="glyph in builtinIcons"
+              :key="glyph.id"
+              type="button"
+              class="ti-icon-option ti-icon-builtin"
+              :class="{ 'is-selected': iconOverride === glyph.id }"
+              :title="glyph.label"
+              @click="applyIconOverride(glyph.id)"
+            >
+              <img :src="glyph.url" :alt="glyph.label" />
+            </button>
+            <button
+              v-for="asset in iconAssets"
+              :key="asset.id"
+              type="button"
+              class="ti-icon-option"
+              :class="{ 'is-selected': iconOverride === 'asset:' + asset.id }"
+              :title="asset.name"
+              @click="applyIconOverride('asset:' + asset.id)"
+            >
+              <img :src="assetUrl(asset.id)" :alt="asset.name" />
+            </button>
+          </div>
+          <PButton label="Upload icon…" size="small" text @click="iconFileInput?.click()" />
+          <input
+            ref="iconFileInput"
+            type="file"
+            accept="image/png,image/jpeg,image/gif,image/webp"
+            class="ti-hidden-input"
+            @change="onIconFileChosen"
+          />
+          <p class="ti-hint">Applies immediately — <strong>Save</strong> the view to keep it.</p>
+        </div>
+      </div>
+
+      <!-- Edit-mode Properties panel with nothing selected: the hint, plus
+           the view background controls (pick/upload an image, opacity,
+           adjust placement, remove). The panel is always present (reserves
+           layout) so selecting a link/label never shifts the canvas. -->
+      <div v-else-if="variant === 'props'" class="ti-section">
+        <p class="ti-empty">Select a node, link, or label to edit its properties.</p>
+        <div class="ti-field">
+          <label class="ti-label">Background</label>
+          <template v-if="store.background?.ref">
+            <div class="ti-field">
+              <label class="ti-label">Opacity</label>
+              <input
+                type="range"
+                min="0.1"
+                max="1"
+                step="0.05"
+                :value="store.background?.opacity ?? 0.5"
+                @input="onBackgroundOpacity"
+              />
+            </div>
+            <div class="ti-row">
+              <PButton
+                :label="store.isBackgroundAdjustMode ? 'Done adjusting' : 'Adjust position/size'"
+                size="small"
+                :outlined="!store.isBackgroundAdjustMode"
+                @click="store.setBackgroundAdjustMode(!store.isBackgroundAdjustMode)"
+              />
+              <PButton label="Remove" size="small" severity="danger" text @click="removeBackground" />
+            </div>
+          </template>
+          <div class="ti-icon-grid">
+            <button
+              v-for="asset in backgroundAssets"
+              :key="asset.id"
+              type="button"
+              class="ti-icon-option ti-bg-option"
+              :class="{ 'is-selected': store.background?.ref === 'asset:' + asset.id }"
+              :title="asset.name"
+              @click="chooseBackground(asset)"
+            >
+              <img :src="assetUrl(asset.id)" :alt="asset.name" />
+            </button>
+          </div>
+          <PButton label="Upload background…" size="small" text @click="bgFileInput?.click()" />
+          <input
+            ref="bgFileInput"
+            type="file"
+            accept="image/png,image/jpeg,image/gif,image/webp"
+            class="ti-hidden-input"
+            @change="onBackgroundFileChosen"
+          />
+          <p class="ti-hint"><strong>Save</strong> the view to keep background changes.</p>
+        </div>
+      </div>
     </template>
   </PCard>
 </template>
@@ -116,24 +215,36 @@ License.
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import Card from 'primevue/card'
+import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import InputNumber from 'primevue/inputnumber'
 import { useTopologyStore } from '@/stores/topologyStore'
 import { isLabelId, nodeIdFromPlacedId } from '@/components/Topology/nodeIds'
 import { severityColor } from '@/components/Topology/severity'
+import { DEVICE_ICON_SVG } from '@/components/Topology/deviceIcons'
 import { getNodeById } from '@/services/nodeService'
-import { getNodeInfoPanel, type NodeInfoPanelItem } from '@/services/topologyService'
+import {
+  getNodeInfoPanel,
+  assetUrl,
+  listAssets,
+  uploadAsset,
+  type NodeInfoPanelItem,
+  type TopologyAssetMeta
+} from '@/services/topologyService'
 import DOMPurify from 'dompurify'
 import type { Node } from '@/types'
 
 const PCard = Card
+const PButton = Button
 const PInputText = InputText
 const PInputNumber = InputNumber
 
-/** Minimal link read/write surface the canvas exposes (via defineExpose). */
+/** Minimal read/write surface the canvas exposes (via defineExpose). */
 interface CanvasLinkApi {
   getLink: (id: string) => { label: string; sourceLabel: string; targetLabel: string } | null
   setLinkLabel: (id: string, label: string) => void
+  getNodeIconOverride: (id: string) => string | undefined
+  setNodeIconOverride: (id: string, override: string | undefined) => void
 }
 
 const props = defineProps<{
@@ -228,6 +339,123 @@ watch(
   },
   { immediate: true }
 )
+
+/* ---- Node icon picker (Edit mode) ---- */
+const builtinIcons = (Object.keys(DEVICE_ICON_SVG) as Array<keyof typeof DEVICE_ICON_SVG>).map((id) => ({
+  id: id as string,
+  label: id.charAt(0).toUpperCase() + id.slice(1),
+  url: DEVICE_ICON_SVG[id]
+}))
+
+const iconOverride = ref<string | undefined>(undefined)
+const iconAssets = ref<TopologyAssetMeta[]>([])
+const iconFileInput = ref<HTMLInputElement | null>(null)
+let iconAssetsLoaded = false
+
+const applyIconOverride = (override: string | undefined) => {
+  const id = selectedId.value
+  if (!id || !props.canvas) return
+  props.canvas.setNodeIconOverride(id, override)
+  iconOverride.value = override
+}
+
+const onIconFileChosen = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  const name = file.name.replace(/\.[^.]+$/, '') || file.name
+  const created = await uploadAsset(name, 'icon', file)
+  if (created === false) return
+  iconAssets.value = await listAssets('icon')
+  applyIconOverride('asset:' + created.id)
+}
+
+// Sync the current override on selection, and lazily load the uploaded-icon
+// catalog the first time the picker is shown.
+watch(
+  [selectedId, kind],
+  async ([id, k]) => {
+    if (k !== 'node' || !id || !props.canvas) {
+      iconOverride.value = undefined
+      return
+    }
+    iconOverride.value = props.canvas.getNodeIconOverride(id)
+    if (variant.value === 'props' && !iconAssetsLoaded) {
+      iconAssetsLoaded = true
+      iconAssets.value = await listAssets('icon')
+    }
+  },
+  { immediate: true }
+)
+
+/* ---- View background (Edit mode, nothing selected) ---- */
+const backgroundAssets = ref<TopologyAssetMeta[]>([])
+const bgFileInput = ref<HTMLInputElement | null>(null)
+let backgroundAssetsLoaded = false
+
+// Lazily load the background catalog the first time the empty Edit panel
+// (which hosts the background controls) is shown.
+watch(
+  [kind, variant],
+  async ([k, v]) => {
+    const showsBackgroundControls = v === 'props' && (k === 'none' || k === 'multi')
+    if (showsBackgroundControls && !backgroundAssetsLoaded) {
+      backgroundAssetsLoaded = true
+      backgroundAssets.value = await listAssets('background')
+    }
+  },
+  { immediate: true }
+)
+
+/**
+ * Use an asset as the view background. A first-time pick is placed centered
+ * at the origin, 600 graph units wide at the image's own aspect ratio;
+ * re-picking a different image keeps the current placement.
+ */
+const chooseBackground = (asset: TopologyAssetMeta) => {
+  const current = store.background
+  if (current?.x !== undefined && current.width) {
+    store.setBackground({ ...current, type: 'image', ref: 'asset:' + asset.id })
+    return
+  }
+  const img = new Image()
+  img.onload = () => {
+    const width = 600
+    const aspect = img.naturalWidth > 0 ? img.naturalHeight / img.naturalWidth : 2 / 3
+    const height = Math.max(50, Math.round(width * aspect))
+    store.setBackground({
+      type: 'image',
+      ref: 'asset:' + asset.id,
+      x: -width / 2,
+      y: height / 2,
+      width,
+      height,
+      opacity: 0.5
+    })
+  }
+  img.src = assetUrl(asset.id)
+}
+
+const onBackgroundFileChosen = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  const name = file.name.replace(/\.[^.]+$/, '') || file.name
+  const created = await uploadAsset(name, 'background', file)
+  if (created === false) return
+  backgroundAssets.value = await listAssets('background')
+  chooseBackground(created)
+}
+
+const onBackgroundOpacity = (event: Event) => {
+  if (!store.background) return
+  const opacity = Number((event.target as HTMLInputElement).value)
+  store.setBackground({ ...store.background, opacity })
+}
+
+const removeBackground = () => store.setBackground(undefined)
 
 /* ---- Link editing (reads/writes the canvas graph via the exposed API) ---- */
 const link = ref<{ label: string; sourceLabel: string; targetLabel: string } | null>(null)
@@ -368,5 +596,67 @@ const linkLabel = computed<string>({
   margin: 0.35rem 0 0;
   font-size: 0.75rem;
   color: #667085;
+}
+
+.ti-icon-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+
+.ti-icon-option {
+  width: 2.25rem;
+  height: 2.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid #d0d5dd;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.65rem;
+  color: #475467;
+}
+
+.ti-icon-option img {
+  width: 1.5rem;
+  height: 1.5rem;
+  object-fit: contain;
+}
+
+.ti-icon-option.is-selected {
+  border-color: #1f5fb0;
+  box-shadow: 0 0 0 1px #1f5fb0;
+}
+
+/* The built-in glyphs are white strokes (drawn over the node's colored disc
+   on the canvas), so preview them on a dark chip or they'd be invisible. */
+.ti-icon-option.ti-icon-builtin {
+  background: #5b6b80;
+}
+
+.ti-hidden-input {
+  display: none;
+}
+
+.ti-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+
+.ti-bg-option {
+  width: 3.5rem;
+  height: 2.5rem;
+}
+
+.ti-bg-option img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 3px;
 }
 </style>

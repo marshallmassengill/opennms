@@ -439,6 +439,78 @@ const getNodeInfoPanel = async (nodeId: number): Promise<NodeInfoPanelItem[]> =>
   }
 }
 
+/**
+ * Topology image assets (/api/v2/topology/assets): server-stored images that
+ * views reference by id -- background images (floor plans, rack diagrams) and
+ * custom node icons, distinguished by `kind`. Uploads are the raw image bytes
+ * under their own content type (no multipart); the server enforces a
+ * raster-only allowlist and a per-kind size cap (icons 512 KiB, backgrounds
+ * 10 MiB).
+ */
+export type TopologyAssetKind = 'background' | 'icon'
+
+export interface TopologyAssetMeta {
+  id: string
+  name: string
+  kind: TopologyAssetKind
+  mimeType: string
+  sizeBytes: number
+  owner?: string
+}
+
+const assetsEndpoint = 'topology/assets'
+
+/**
+ * The URL an asset's bytes are served from. Same-origin with session auth, so
+ * it works directly as an <img> / sigma image source; the server sends an
+ * ETag + max-age so repeated renders revalidate cheaply.
+ */
+const assetUrl = (id: string): string => {
+  const base = v2.defaults?.baseURL ?? '/opennms/api/v2'
+  return `${base}/${assetsEndpoint}/${encodeURIComponent(id)}`
+}
+
+/** List asset metadata, optionally only one kind. Returns [] on error. */
+const listAssets = async (kind?: TopologyAssetKind): Promise<TopologyAssetMeta[]> => {
+  try {
+    const resp = await v2.get<TopologyAssetMeta[]>(assetsEndpoint, { params: kind ? { kind } : {} })
+    return Array.isArray(resp.data) ? resp.data : []
+  } catch (err) {
+    return []
+  }
+}
+
+/**
+ * Upload an image file as a new asset; the file's own MIME type travels as
+ * the request content type. Returns the created metadata, or false on any
+ * failure (oversized, non-raster type, missing name).
+ */
+const uploadAsset = async (
+  name: string,
+  kind: TopologyAssetKind,
+  file: File | Blob
+): Promise<TopologyAssetMeta | false> => {
+  try {
+    const resp = await v2.post<TopologyAssetMeta>(assetsEndpoint, file, {
+      params: { name, kind },
+      headers: { 'Content-Type': file.type || 'application/octet-stream' }
+    })
+    return resp.data ?? false
+  } catch (err) {
+    return false
+  }
+}
+
+/** Delete an asset (metadata and bytes). */
+const deleteAsset = async (id: string): Promise<boolean> => {
+  try {
+    await v2.delete(`${assetsEndpoint}/${encodeURIComponent(id)}`)
+    return true
+  } catch (err) {
+    return false
+  }
+}
+
 export {
   fetchPaletteNodes,
   getNodeSeverities,
@@ -451,5 +523,9 @@ export {
   loadDiscoveredGraph,
   mapDiscoveredGraph,
   getNodeInfoPanel,
-  getNodeIconIds
+  getNodeIconIds,
+  assetUrl,
+  listAssets,
+  uploadAsset,
+  deleteAsset
 }

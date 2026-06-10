@@ -44,6 +44,31 @@ License.
       <span>Labels: {{ store.labels.length }}</span>
       <span>Selected: {{ store.selectedIds.length }}</span>
     </div>
+    <!-- Background image (floor plan / rack diagram), positioned in graph
+         coordinates and re-projected each frame so it pans/zooms with the
+         nodes. Sits below the (transparent) sigma canvases; only intercepts
+         the mouse in background-adjust mode, where the layer is raised above
+         the canvas so the image can be dragged/resized. -->
+    <div
+      v-if="backgroundVisible"
+      class="topology-background-layer"
+      :class="{ 'is-adjusting': store.isBackgroundAdjustMode && store.isEditMode }"
+    >
+      <img
+        class="topology-background-image"
+        :src="backgroundSrc"
+        :style="backgroundStyle(cameraVersion)"
+        alt=""
+        draggable="false"
+        @mousedown.prevent="onBackgroundMouseDown"
+      />
+      <div
+        v-if="store.isBackgroundAdjustMode && store.isEditMode"
+        class="topology-background-handle"
+        :style="backgroundHandleStyle(cameraVersion)"
+        @mousedown.prevent.stop="onBackgroundHandleMouseDown"
+      />
+    </div>
     <div ref="canvasEl" class="topology-canvas" />
     <div class="topology-labels-layer">
       <!-- Labels are reactively positioned in viewport space via
@@ -111,9 +136,29 @@ import {
   nodeIdFromPlacedId
 } from '@/components/Topology/nodeIds'
 import { layoutDiscoveredGraph, layoutHierarchyGraph } from '@/components/Topology/layout'
-import type { CanvasLink, CanvasLabel, CanvasNode, DiscoveredGraph, TopologyView } from '@/types/topology'
+import { assetUrl } from '@/services/topologyService'
+import type {
+  CanvasLink,
+  CanvasLabel,
+  CanvasNode,
+  DiscoveredGraph,
+  TopologyView,
+  TopologyViewBackground
+} from '@/types/topology'
 
 const store = useTopologyStore()
+
+/**
+ * Resolve a node's persisted icon override to an image URL the sigma image
+ * program can load: `asset:<id>` -> the asset bytes endpoint, a built-in
+ * glyph key -> its data URL. Unknown values (e.g. a stale glyph key) resolve
+ * to undefined so the automatic icon takes over rather than a broken image.
+ */
+const iconOverrideUrl = (override: string | undefined): string | undefined => {
+  if (!override) return undefined
+  if (override.startsWith('asset:')) return assetUrl(override.slice('asset:'.length))
+  return DEVICE_ICON_SVG[override as keyof typeof DEVICE_ICON_SVG]
+}
 
 /**
  * Right-click on a node bubbles up to the page, which hosts the context menu
@@ -330,8 +375,15 @@ const mountSigma = (g: Graph) => {
         const nid = Number(paletteId)
         const severity = store.severities[nid]
         if (severity) res = { ...res, color: severityColor(severity) }
-        const iconId = store.nodeIconIds[nid]
-        if (iconId) res = { ...res, type: 'image', image: DEVICE_ICON_SVG[iconId] }
+        // Icon resolution: a user-chosen override (built-in glyph or uploaded
+        // asset) wins over the automatic sysObjectId-derived glyph.
+        const overrideUrl = iconOverrideUrl(attrs.iconOverride as string | undefined)
+        if (overrideUrl) {
+          res = { ...res, type: 'image', image: overrideUrl }
+        } else {
+          const iconId = store.nodeIconIds[nid]
+          if (iconId) res = { ...res, type: 'image', image: DEVICE_ICON_SVG[iconId] }
+        }
       }
       return res
     },
@@ -411,7 +463,8 @@ const serialize = (): Pick<TopologyView, 'nodes' | 'links' | 'viewport'> => {
         label: (attrs.label as string) ?? '',
         x: attrs.x as number,
         y: attrs.y as number,
-        color: attrs.color as string | undefined
+        color: attrs.color as string | undefined,
+        iconOverride: (attrs.iconOverride as string | undefined) || undefined
       })
     })
     graph.forEachEdge((id, attrs, source, target) => {
@@ -446,7 +499,8 @@ const loadView = (view: TopologyView) => {
       x: n.x,
       y: n.y,
       size: 20,
-      color: n.color ?? '#1f5fb0'
+      color: n.color ?? '#1f5fb0',
+      iconOverride: n.iconOverride
     })
   }
   for (const e of view.links) {
@@ -1431,6 +1485,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeyDown)
+  endBackgroundDrag()
   if (resizeObserver) {
     resizeObserver.disconnect()
     resizeObserver = null
@@ -1467,6 +1522,137 @@ const setLinkLabel = (id: string, label: string) => {
   sigma?.refresh()
 }
 
+/* ---- Background image layer ------------------------------------------- */
+
+const BG_MIN_SIZE = 50
+
+/** Custom views only (discovered graphs have no background concept). */
+const backgroundVisible = computed<boolean>(() => {
+  const bg = store.background
+  return (
+    store.discoveredGraph === null &&
+    !!bg &&
+    bg.type === 'image' &&
+    !!bg.ref?.startsWith('asset:')
+  )
+})
+
+const backgroundSrc = computed<string>(() => {
+  const ref = store.background?.ref
+  return ref?.startsWith('asset:') ? assetUrl(ref.slice('asset:'.length)) : ''
+})
+
+/**
+ * Project the background's graph-space rect to viewport CSS. Referencing
+ * cameraVersion (bumped on each sigma render) keeps it locked to pan/zoom,
+ * exactly like the free-standing labels overlay.
+ */
+const backgroundStyle = (_cameraVersion: number) => {
+  void _cameraVersion
+  const bg = store.background
+  if (!sigma || !bg || bg.x === undefined || bg.y === undefined || !bg.width || !bg.height) {
+    return { display: 'none' }
+  }
+  // Graph y points up: the rect spans [y - height, y].
+  const topLeft = sigma.graphToViewport({ x: bg.x, y: bg.y })
+  const bottomRight = sigma.graphToViewport({ x: bg.x + bg.width, y: bg.y - bg.height })
+  return {
+    left: topLeft.x + 'px',
+    top: topLeft.y + 'px',
+    width: Math.max(1, bottomRight.x - topLeft.x) + 'px',
+    height: Math.max(1, bottomRight.y - topLeft.y) + 'px',
+    opacity: bg.opacity ?? 0.5
+  }
+}
+
+const backgroundHandleStyle = (_cameraVersion: number) => {
+  void _cameraVersion
+  const bg = store.background
+  if (!sigma || !bg || bg.x === undefined || bg.y === undefined || !bg.width || !bg.height) {
+    return { display: 'none' }
+  }
+  const bottomRight = sigma.graphToViewport({ x: bg.x + bg.width, y: bg.y - bg.height })
+  return { left: bottomRight.x + 'px', top: bottomRight.y + 'px' }
+}
+
+let backgroundDrag: {
+  mode: 'move' | 'resize'
+  startGraphX: number
+  startGraphY: number
+  orig: { x: number; y: number; width: number; height: number }
+} | null = null
+
+const backgroundMouseGraph = (event: MouseEvent) => {
+  const rect = canvasEl.value!.getBoundingClientRect()
+  return sigma!.viewportToGraph({ x: event.clientX - rect.left, y: event.clientY - rect.top })
+}
+
+const beginBackgroundDrag = (event: MouseEvent, mode: 'move' | 'resize') => {
+  const bg = store.background
+  if (!sigma || !canvasEl.value || !bg || !store.isEditMode || !store.isBackgroundAdjustMode) return
+  const g = backgroundMouseGraph(event)
+  backgroundDrag = {
+    mode,
+    startGraphX: g.x,
+    startGraphY: g.y,
+    orig: {
+      x: bg.x ?? 0,
+      y: bg.y ?? 0,
+      width: bg.width ?? BG_MIN_SIZE,
+      height: bg.height ?? BG_MIN_SIZE
+    }
+  }
+  window.addEventListener('mousemove', onBackgroundDragMove)
+  window.addEventListener('mouseup', endBackgroundDrag)
+}
+
+const onBackgroundMouseDown = (event: MouseEvent) => beginBackgroundDrag(event, 'move')
+const onBackgroundHandleMouseDown = (event: MouseEvent) => beginBackgroundDrag(event, 'resize')
+
+const onBackgroundDragMove = (event: MouseEvent) => {
+  if (!backgroundDrag || !sigma || !canvasEl.value || !store.background) return
+  const g = backgroundMouseGraph(event)
+  const dx = g.x - backgroundDrag.startGraphX
+  const dy = g.y - backgroundDrag.startGraphY
+  const { orig } = backgroundDrag
+  const next: TopologyViewBackground =
+    backgroundDrag.mode === 'move'
+      ? { ...store.background, x: orig.x + dx, y: orig.y + dy }
+      : {
+          ...store.background,
+          width: Math.max(BG_MIN_SIZE, orig.width + dx),
+          // Dragging the handle downward is negative dy in graph coords.
+          height: Math.max(BG_MIN_SIZE, orig.height - dy)
+        }
+  store.setBackground(next)
+}
+
+const endBackgroundDrag = () => {
+  backgroundDrag = null
+  window.removeEventListener('mousemove', onBackgroundDragMove)
+  window.removeEventListener('mouseup', endBackgroundDrag)
+}
+
+/** A node's persisted icon override (built-in glyph key or `asset:<id>`). */
+const getNodeIconOverride = (id: string): string | undefined => {
+  if (!graph || !graph.hasNode(id)) return undefined
+  return (graph.getNodeAttribute(id, 'iconOverride') as string | undefined) || undefined
+}
+
+/**
+ * Set or clear (undefined) a node's icon override. The nodeReducer resolves
+ * it on the next repaint; persisted by serialize() with the view.
+ */
+const setNodeIconOverride = (id: string, override: string | undefined) => {
+  if (!graph || !graph.hasNode(id)) return
+  if (override) {
+    graph.setNodeAttribute(id, 'iconOverride', override)
+  } else {
+    graph.removeNodeAttribute(id, 'iconOverride')
+  }
+  sigma?.refresh()
+}
+
 /**
  * Export the current map as a raster image. Uses @sigma/export-image, which
  * re-renders the scene into a temporary renderer (so the WebGL layers capture
@@ -1491,6 +1677,8 @@ defineExpose({
   loadDiscoveredGraph,
   getLink,
   setLinkLabel,
+  getNodeIconOverride,
+  setNodeIconOverride,
   exportImage
 })
 </script>
@@ -1531,6 +1719,44 @@ defineExpose({
   flex: 1 1 auto;
   width: 100%;
   min-height: 500px;
+}
+
+/* Background image layer: below the (transparent) sigma canvases, mouse-inert
+   unless adjusting -- then raised above the canvas so the image/handle take
+   the drag, while the rest of the layer stays click-through. */
+.topology-background-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.topology-background-image {
+  position: absolute;
+  pointer-events: none;
+  user-select: none;
+}
+
+.topology-background-layer.is-adjusting {
+  z-index: 4;
+}
+
+.topology-background-layer.is-adjusting .topology-background-image {
+  pointer-events: auto;
+  cursor: move;
+  outline: 2px dashed #1f5fb0;
+}
+
+.topology-background-handle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  transform: translate(-50%, -50%);
+  background: #1f5fb0;
+  border: 2px solid #fff;
+  border-radius: 3px;
+  pointer-events: auto;
+  cursor: nwse-resize;
 }
 
 .topology-rubber-band {

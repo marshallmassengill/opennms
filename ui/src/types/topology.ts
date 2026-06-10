@@ -33,6 +33,12 @@ export interface CanvasNode {
   y: number
   icon?: string
   color?: string
+  /**
+   * User-chosen icon, persisted with the view. Either a built-in glyph key
+   * (see deviceIcons DEVICE_ICON_SVG) or `asset:<id>` for an uploaded image
+   * asset. Absent = automatic (sysObjectId-derived glyph, else a circle).
+   */
+  iconOverride?: string
 }
 
 /**
@@ -63,12 +69,20 @@ export interface CanvasLabel {
 }
 
 /**
- * Scaffolded for a roadmap item (NMS-7504): background images, racks,
- * floor plans. Only `type: 'none'` is supported in the MVP.
+ * A background image behind the canvas (NMS-7504: floor plans, rack
+ * diagrams). `ref` is `asset:<id>` referencing an uploaded image asset. The
+ * rect lives in graph coordinates (x/y = top-left corner; sigma's y axis
+ * points up, so the image spans [y - height, y]) so it pans and zooms with
+ * the nodes. Opacity is capped in the UI so status colors stay legible.
  */
 export interface TopologyViewBackground {
   type: 'none' | 'image'
   ref?: string
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+  opacity?: number
 }
 
 /**

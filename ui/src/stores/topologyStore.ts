@@ -26,6 +26,7 @@ import type {
   DiscoveredGraph,
   DiscoveredGraphSource,
   TopologyView,
+  TopologyViewBackground,
   TopologyViewSummary
 } from '@/types/topology'
 import {
@@ -84,6 +85,32 @@ export const useTopologyStore = defineStore('topologyStore', () => {
    * concepts. Persisted as part of TopologyView when save lands.
    */
   const labels = ref<CanvasLabel[]>([])
+
+  /**
+   * The open view's background image, if any. Lives directly on currentView
+   * (saveCurrentView spreads currentView, so it persists with no extra
+   * plumbing); this computed + setter pair is the canvas/Inspector surface.
+   */
+  const background = computed<TopologyViewBackground | undefined>(
+    () => currentView.value?.background
+  )
+
+  const setBackground = (bg: TopologyViewBackground | undefined) => {
+    if (!currentView.value) return
+    currentView.value.background = bg
+    if (!bg) isBackgroundAdjustMode.value = false
+  }
+
+  /**
+   * While true (Edit mode only), the background image accepts mouse input on
+   * the canvas: drag to move, corner handle to resize. Off by default so the
+   * image never swallows node/stage clicks during normal composing.
+   */
+  const isBackgroundAdjustMode = ref<boolean>(false)
+
+  const setBackgroundAdjustMode = (on: boolean) => {
+    isBackgroundAdjustMode.value = on
+  }
 
   /** True while a save request is in flight; drives toolbar disabled state. */
   const isSaving = ref<boolean>(false)
@@ -188,6 +215,7 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     selectedIds.value = []
     labels.value = []
     placedNodeIds.value = new Set()
+    isBackgroundAdjustMode.value = false
   }
 
   /**
@@ -319,6 +347,7 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     const view = await getView(id)
     if (view === false) return false
     currentView.value = view
+    isBackgroundAdjustMode.value = false
     return view
   }
 
@@ -347,6 +376,8 @@ export const useTopologyStore = defineStore('topologyStore', () => {
 
   const setEditMode = (value: boolean) => {
     isEditMode.value = value
+    // Background adjustment is an Edit-mode gesture; never carry it across.
+    if (!value) isBackgroundAdjustMode.value = false
   }
 
   const setLinkDrawMode = (value: boolean) => {
@@ -433,6 +464,10 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     selectedIds,
     placedNodeIds,
     labels,
+    background,
+    setBackground,
+    isBackgroundAdjustMode,
+    setBackgroundAdjustMode,
     newView,
     refreshCatalog,
     renameCurrent,
