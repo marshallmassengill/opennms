@@ -223,23 +223,49 @@ License.
           </label>
           <div class="ti-field">
             <label class="ti-label">Node label color</label>
-            <input
-              type="color"
-              :value="store.viewStyle?.nodeLabelColor ?? '#000000'"
-              class="ti-color"
-              @input="onNodeLabelColor"
-            />
+            <div class="ti-row">
+              <input
+                type="color"
+                :value="store.viewStyle?.nodeLabelColor ?? '#000000'"
+                class="ti-color"
+                @input="onNodeLabelColor"
+              />
+              <PButton
+                v-if="store.viewStyle?.nodeLabelColor"
+                label="Auto"
+                size="small"
+                text
+                title="Follow the light/dark theme"
+                @click="store.setViewStyle({ nodeLabelColor: undefined })"
+              />
+              <span v-else class="ti-inline-hint">automatic (theme)</span>
+            </div>
           </div>
           <div class="ti-field">
             <label class="ti-label">Link label color</label>
-            <input
-              type="color"
-              :value="store.viewStyle?.linkLabelColor ?? '#9aa7b8'"
-              class="ti-color"
-              @input="onLinkLabelColor"
-            />
+            <div class="ti-row">
+              <input
+                type="color"
+                :value="store.viewStyle?.linkLabelColor ?? '#9aa7b8'"
+                class="ti-color"
+                @input="onLinkLabelColor"
+              />
+              <PButton
+                v-if="store.viewStyle?.linkLabelColor"
+                label="Auto"
+                size="small"
+                text
+                title="Follow the light/dark theme"
+                @click="store.setViewStyle({ linkLabelColor: undefined })"
+              />
+              <span v-else class="ti-inline-hint">automatic (theme)</span>
+            </div>
           </div>
-          <p class="ti-hint">Label colors save with the view; the stats overlay is a personal preference.</p>
+          <p class="ti-hint">
+            Custom label colors save with the view and don't follow the light/dark
+            theme — <strong>Auto</strong> re-derives them from it. The stats overlay
+            is a personal preference.
+          </p>
         </div>
         <div class="ti-field">
           <label class="ti-label">Background</label>
@@ -757,6 +783,11 @@ const linkLabel = computed<string>({
 
 .ti-hidden-input {
   display: none;
+}
+
+.ti-inline-hint {
+  font-size: 0.75rem;
+  color: var(--feather-secondary-text-on-surface);
 }
 
 .ti-check {

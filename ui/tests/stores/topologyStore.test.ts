@@ -238,3 +238,15 @@ describe('useTopologyStore - canvas prefs and view style', () => {
     expect(savedArg.style).toEqual({ nodeLabelColor: '#112233', linkLabelColor: '#445566' })
   })
 })
+
+describe('useTopologyStore - clearing view style back to automatic', () => {
+  it('setViewStyle(undefined field) removes the override so theme defaults apply', () => {
+    setActivePinia(createPinia())
+    const store = useTopologyStore()
+    store.newView()
+    store.setViewStyle({ nodeLabelColor: '#112233', linkLabelColor: '#445566' })
+    store.setViewStyle({ nodeLabelColor: undefined })
+    expect(store.viewStyle?.nodeLabelColor).toBeUndefined()
+    expect(store.viewStyle?.linkLabelColor).toBe('#445566')
+  })
+})
