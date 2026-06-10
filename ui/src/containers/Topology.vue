@@ -169,7 +169,7 @@ License.
           />
           <PButton
             v-if="store.isEditMode"
-            :label="store.isLinkHintsEnabled ? 'Hints: ON' : 'Hints'"
+            :label="store.isLinkHintsEnabled ? 'Link Hints: ON' : 'Link Hints'"
             :severity="store.isLinkHintsEnabled ? 'primary' : 'secondary'"
             :outlined="!store.isLinkHintsEnabled"
             title="Show discovered adjacencies between placed nodes as ghost links"
