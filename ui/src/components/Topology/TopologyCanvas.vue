@@ -350,6 +350,11 @@ const mountSigma = (g: Graph) => {
     // can be clicked to select it (and then have its label edited in the
     // Inspector). Without this the 'clickEdge' handler below never fires.
     enableEdgeEvents: true,
+    // Gentler zoom: sigma's defaults (1.7 per wheel notch, 2.2 per
+    // double-click) jump roughly twice as far as feels right here. Using
+    // ~the square root halves each step, so two steps cover what one did.
+    zoomingRatio: 1.3,
+    doubleClickZoomingRatio: 1.5,
     // This is a positioning editor: node x/y are absolute graph coordinates we
     // persist and expect to render consistently. Disable sigma's auto-rescale
     // (which re-normalizes coordinates to fit the node extent on every change)
