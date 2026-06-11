@@ -112,6 +112,10 @@ License.
           <PInputText v-model="linkLabel" class="ti-input" placeholder="(none)" :disabled="!editable" />
           <p v-if="editable" class="ti-hint">Applies as you type — <strong>Save</strong> the view to keep it.</p>
         </div>
+        <div v-for="item in edgeInfoPanelItems" :key="item.title + item.order" class="ti-infopanel-item">
+          <h4 class="ti-infopanel-title">{{ item.title }}</h4>
+          <div class="ti-infopanel-html" v-html="sanitizeHtml(item.html)" />
+        </div>
       </div>
 
       <!-- An annotation shape (frame/box): title, rect/ellipse, colors,
@@ -366,6 +370,7 @@ import { severityColor } from '@/components/Topology/severity'
 import { DEVICE_ICON_SVG } from '@/components/Topology/deviceIcons'
 import { getNodeById } from '@/services/nodeService'
 import {
+  getEdgeInfoPanel,
   getNodeInfoPanel,
   assetUrl,
   listAssets,
@@ -775,6 +780,9 @@ watch(
  * LLDP and CDP shows both.
  */
 const resolvedBindings = ref<CanvasLinkBinding[]>([])
+// Edge-scoped etc/infopanel templates for the selected link (parity with the
+// legacy map's edge context); same render/sanitize path as the node panels.
+const edgeInfoPanelItems = ref<NodeInfoPanelItem[]>([])
 
 const linkBindings = computed<CanvasLinkBinding[]>(() =>
   link.value?.binding ? [link.value.binding] : resolvedBindings.value
@@ -784,12 +792,21 @@ watch(
   link,
   async (l) => {
     resolvedBindings.value = []
-    if (!l || l.binding) {
+    edgeInfoPanelItems.value = []
+    if (!l) {
       return
     }
     const sourceNodeId = nodeIdFromPlacedId(l.sourceId)
     const targetNodeId = nodeIdFromPlacedId(l.targetId)
     if (sourceNodeId === null || targetNodeId === null) {
+      return
+    }
+    getEdgeInfoPanel(sourceNodeId, targetNodeId, l.binding).then((items) => {
+      if (link.value === l) {
+        edgeInfoPanelItems.value = items
+      }
+    })
+    if (l.binding) {
       return
     }
     const neighbors = await store.getNeighborsFor(sourceNodeId)

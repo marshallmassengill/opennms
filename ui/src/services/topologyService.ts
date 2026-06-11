@@ -460,6 +460,27 @@ const getNodeIconIds = async (nodeIds: number[]): Promise<Record<number, DeviceI
   }
 }
 
+const getEdgeInfoPanel = async (
+  sourceNodeId: number,
+  targetNodeId: number,
+  binding?: { protocol: string; sourcePort?: string; targetPort?: string }
+): Promise<NodeInfoPanelItem[]> => {
+  try {
+    const resp = await v2.get<NodeInfoPanelItem[]>(`${infopanelEndpoint}/edge`, {
+      params: {
+        sourceNodeId,
+        targetNodeId,
+        sourcePort: binding?.sourcePort,
+        targetPort: binding?.targetPort,
+        protocol: binding?.protocol
+      }
+    })
+    return Array.isArray(resp.data) ? resp.data : []
+  } catch {
+    return []
+  }
+}
+
 const getNodeInfoPanel = async (nodeId: number): Promise<NodeInfoPanelItem[]> => {
   try {
     const resp = await v2.get<NodeInfoPanelItem[]>(infopanelEndpoint, { params: { nodeId }})
@@ -552,6 +573,7 @@ export {
   parseEnlinkdNeighbors,
   loadDiscoveredGraph,
   mapDiscoveredGraph,
+  getEdgeInfoPanel,
   getNodeInfoPanel,
   getNodeIconIds,
   assetUrl,
