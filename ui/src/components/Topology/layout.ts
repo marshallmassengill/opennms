@@ -22,6 +22,8 @@
 
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, stratify, tree } from 'd3'
 import type { SimulationLinkDatum, SimulationNodeDatum } from 'd3'
+import Graph from 'graphology'
+import forceAtlas2 from 'graphology-layout-forceatlas2'
 import type { CanvasLink, CanvasNode } from '@/types/topology'
 
 /**
@@ -50,26 +52,79 @@ interface LayoutOptions {
   chargeStrength?: number
   /** Minimum separation so node glyphs don't overlap. */
   collideRadius?: number
-  /** Simulation ticks to run before reading positions (default adapts to graph size). */
+  /** Simulation ticks to run before reading positions. */
   ticks?: number
 }
 
-const DEFAULTS: Required<Omit<LayoutOptions, 'ticks'>> = {
+const DEFAULTS: Required<LayoutOptions> = {
   linkDistance: 100,
   chargeStrength: -280,
-  collideRadius: 30
+  collideRadius: 30,
+  ticks: 400
 }
 
 /**
- * Tick budget by graph size: each tick costs a full force pass (~n log n), so
- * a fixed 400 ticks makes a 2000-node graph take ~7s to lay out. Small graphs
- * keep the generous budget; large ones scale down to a floor of 120, which
- * paired with a matched alpha decay (the simulation converges *within* the
- * budget instead of coasting past it) still settles into a stable layout
- * (~2s at 2000 nodes).
+ * Above this size d3-force needs several seconds to untangle a graph (its
+ * 400 ticks take ~7s at 2000 nodes, and fewer ticks visibly under-converge),
+ * so larger graphs lay out with ForceAtlas2 instead -- the sigma ecosystem's
+ * standard for big graphs (typed-array implementation, Barnes-Hut): ~2s at
+ * 2000 nodes with better cluster separation. Small and medium graphs keep
+ * d3-force, whose collision spacing suits them well.
  */
-const adaptiveTicks = (nodeCount: number): number =>
-  Math.max(120, Math.min(400, Math.round(200_000 / Math.max(1, nodeCount))))
+const FORCEATLAS2_THRESHOLD = 300
+
+const layoutWithForceAtlas2 = (
+  nodes: CanvasNode[],
+  links: CanvasLink[],
+  opts: Required<LayoutOptions>
+): CanvasNode[] => {
+  const g = new Graph()
+  nodes.forEach((n, i) => {
+    if (g.hasNode(n.id)) {
+      return
+    }
+    // Deterministic phyllotaxis seeding (same spiral d3-force uses), so a
+    // given graph lays out the same way on every load.
+    const angle = i * 2.3999632297286533
+    const radius = opts.collideRadius * Math.sqrt(i)
+    g.addNode(n.id, { x: radius * Math.cos(angle), y: radius * Math.sin(angle) })
+  })
+  for (const e of links) {
+    if (
+      g.hasNode(e.sourceId) &&
+      g.hasNode(e.targetId) &&
+      e.sourceId !== e.targetId &&
+      !g.hasEdge(e.sourceId, e.targetId)
+    ) {
+      g.addEdge(e.sourceId, e.targetId)
+    }
+  }
+  forceAtlas2.assign(g, {
+    iterations: 300,
+    // inferSettings only enables Barnes-Hut above 2000 nodes; everything on
+    // this path is large enough to want it.
+    settings: { ...forceAtlas2.inferSettings(g), barnesHutOptimize: true }
+  })
+  // Rescale so the mean linked-pair distance matches the d3 path's
+  // linkDistance: downstream consumers think in those units (the curvature
+  // clearance, node pixel size relative to spacing).
+  let total = 0
+  let count = 0
+  g.forEachEdge((_e, _attrs, _s, _t, sa, ta) => {
+    total += Math.hypot((sa.x as number) - (ta.x as number), (sa.y as number) - (ta.y as number))
+    count++
+  })
+  const scale = count > 0 && total > 0 ? opts.linkDistance / (total / count) : 1
+  return nodes.map(n =>
+    g.hasNode(n.id)
+      ? {
+        ...n,
+        x: (g.getNodeAttribute(n.id, 'x') as number) * scale,
+        y: (g.getNodeAttribute(n.id, 'y') as number) * scale
+      }
+      : { ...n, x: 0, y: 0 }
+  )
+}
 
 /**
  * Return a new node array with computed x/y positions. Input nodes are not
@@ -86,7 +141,9 @@ export const layoutDiscoveredGraph = (
   if (nodes.length === 0) {
     return []
   }
-  const ticks = Math.max(1, options.ticks ?? adaptiveTicks(nodes.length))
+  if (nodes.length > FORCEATLAS2_THRESHOLD) {
+    return layoutWithForceAtlas2(nodes, links, opts)
+  }
 
   const simNodes: SimNode[] = nodes.map(n => ({ id: n.id }))
   const ids = new Set(simNodes.map(n => n.id))
@@ -108,11 +165,7 @@ export const layoutDiscoveredGraph = (
     .force('collide', forceCollide<SimNode>(opts.collideRadius).iterations(3))
     .stop()
 
-  // Decay alpha to the simulation's stop threshold over exactly our budget,
-  // so every tick contributes movement (d3's default decay is tuned for ~300
-  // ticks; past convergence, ticks cost the same but move nothing).
-  simulation.alphaDecay(1 - Math.pow(0.001, 1 / ticks))
-  simulation.tick(ticks)
+  simulation.tick(opts.ticks)
 
   const posById = new Map(simNodes.map(n => [n.id, n]))
   return nodes.map((n) => {

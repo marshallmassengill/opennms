@@ -187,3 +187,33 @@ describe('computeEdgeCurvatures', () => {
     expect(computeEdgeCurvatures(nodes, links, 20).size).toBe(0)
   })
 })
+
+describe('layoutDiscoveredGraph (ForceAtlas2 path, > 300 nodes)', () => {
+  it('lays out a large graph with finite, spread, deterministic positions', () => {
+    const nodes = Array.from({ length: 350 }, (_, i) => node(`n${i}`))
+    // tree-ish wiring: every node hangs off an earlier one
+    const edges = Array.from({ length: 349 }, (_, i) => edge(`n${i + 1}`, `n${Math.floor(i / 3)}`))
+    const out = layoutDiscoveredGraph(nodes, edges)
+    expect(out).toHaveLength(350)
+    for (const n of out) {
+      expect(Number.isFinite(n.x)).toBe(true)
+      expect(Number.isFinite(n.y)).toBe(true)
+    }
+    const distinct = new Set(out.map(n => `${Math.round(n.x)},${Math.round(n.y)}`))
+    expect(distinct.size).toBeGreaterThan(340)
+    // deterministic: a second run reproduces the same layout
+    const again = layoutDiscoveredGraph(nodes, edges)
+    expect(again.map(n => [Math.round(n.x), Math.round(n.y)])).toEqual(
+      out.map(n => [Math.round(n.x), Math.round(n.y)])
+    )
+  })
+
+  it('preserves non-position fields and node order', () => {
+    const nodes = Array.from({ length: 301 }, (_, i) =>
+      ({ id: `n${i}`, nodeId: i, label: `node ${i}`, x: 0, y: 0 }))
+    const out = layoutDiscoveredGraph(nodes, [])
+    expect(out[42].id).toBe('n42')
+    expect(out[42].nodeId).toBe(42)
+    expect(out[42].label).toBe('node 42')
+  })
+})
