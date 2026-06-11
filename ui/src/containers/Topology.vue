@@ -208,6 +208,26 @@ License.
           <p>No discovered topology for <strong>{{ store.discoveredGraph?.label }}</strong>.</p>
           <p class="discovered-empty-hint">Nothing was found from current discovery data for this source.</p>
         </div>
+        <!-- Large graphs are gated instead of rendered: the layout + first
+             render are client-side and grow with node count, so past the
+             threshold the user picks a focus (small, fast) or opts in. -->
+        <div v-if="isLargeGraphGated" class="large-graph-gate">
+          <p>
+            <strong>{{ store.discoveredGraph?.label }}</strong> has
+            {{ discoveredNodeCount.toLocaleString() }} nodes and
+            {{ (store.discoveredGraph?.links.length ?? 0).toLocaleString() }} links.
+          </p>
+          <p class="discovered-empty-hint">
+            Laying out a graph this large can take a long time in the browser.
+            Use <em>Search nodes</em> above to focus on a node's neighborhood instead.
+          </p>
+          <PButton
+            :label="`Render all ${discoveredNodeCount.toLocaleString()} nodes`"
+            severity="secondary"
+            outlined
+            @click="renderAllAnyway"
+          />
+        </div>
       </div>
       <!-- View: full read-only Inspector on the left (order -1).
            Edit: slim Properties panel on the right, only when a label/edge
@@ -359,6 +379,28 @@ const discoveredEmpty = computed<boolean>(
     store.discoveredGraph.nodes.length === 0
 )
 
+// --- Large-graph gate -------------------------------------------------------
+// Fetching a big discovered graph is cheap (the server serves a cached,
+// pre-built graph; ~0.8 MB per 2000 nodes); LAYING IT OUT and rendering it is
+// the expensive, client-side part. Above this node count we hold the render
+// and let the user either focus on a neighborhood (rendering just the focus
+// subgraph, which is fast at any inventory size) or explicitly opt in.
+const LARGE_GRAPH_THRESHOLD = 3000
+// Per-load opt-in ("Render all N nodes"); reset whenever a source/variant loads.
+const renderAllAccepted = ref(false)
+const discoveredNodeCount = computed<number>(() => store.discoveredGraph?.nodes.length ?? 0)
+const isLargeGraphGated = computed<boolean>(
+  () =>
+    !!store.discoveredGraph &&
+    discoveredNodeCount.value > LARGE_GRAPH_THRESHOLD &&
+    !store.focusNodeId &&
+    !renderAllAccepted.value
+)
+const renderAllAnyway = () => {
+  renderAllAccepted.value = true
+  renderDiscovered()
+}
+
 // Right-click a node -> context menu of node-data cross-links (Node Details,
 // Resource Graphs, Events, Alarms), plus "Set as focus point" in discovered
 // views. Built per-click for the targeted node.
@@ -412,6 +454,7 @@ const loadSource = async (): Promise<void> => {
     const gs = graphSourceFor(option, variantKey.value)
     const graph = gs ? await store.loadDiscoveredSource(gs) : false
     if (graph && store.discoveredGraph) {
+      renderAllAccepted.value = false // each load re-arms the large-graph gate
       applyRouteFocus() // restore focus/SZL from the URL before the first render
       renderDiscovered()
       store.refreshStatus()
@@ -452,6 +495,12 @@ const selectedNodeId = computed<string | null>(() =>
 // focus is set (else the whole graph). Re-runs the auto-layout each time.
 const renderDiscovered = () => {
   if (!store.discoveredGraph) {
+    return
+  }
+  // Gated: clear the canvas (a previous variant may still be mounted) and let
+  // the overlay take over. Focusing or "Render all" re-enters below.
+  if (isLargeGraphGated.value) {
+    canvasRef.value?.loadDiscoveredGraph({ ...store.discoveredGraph, nodes: [], links: [] })
     return
   }
   const graph = focusSubgraph(store.discoveredGraph, store.focusNodeId, store.semanticZoomLevel)
@@ -969,6 +1018,19 @@ const onDelete = () => {
 
 .discovered-empty-hint {
   font-size: 0.85rem;
+}
+
+.large-graph-gate {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  text-align: center;
+  color: var(--feather-secondary-text-on-surface);
+  background: var(--feather-surface);
 }
 
 .topology-inspector-pane {
