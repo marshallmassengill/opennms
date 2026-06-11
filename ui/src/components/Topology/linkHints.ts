@@ -104,3 +104,26 @@ export const computeGhostLinks = (
 
   return [...byPair.values()]
 }
+
+/**
+ * The discovery detail for one node pair: every protocol entry the source
+ * node's adjacency reports toward the target, one binding per protocol.
+ * Used by the Inspector for links that carry no persisted binding (links in
+ * discovered views, hand-drawn links).
+ */
+export const resolveLinkBindings = (
+  neighbors: DiscoveredNeighbor[],
+  targetNodeId: number
+): CanvasLinkBinding[] => {
+  const seen = new Set<string>()
+  return neighbors
+    .filter(n => n.neighborNodeId === targetNodeId)
+    .filter(n => {
+      if (seen.has(n.linkType)) {
+        return false
+      }
+      seen.add(n.linkType)
+      return true
+    })
+    .map(n => ({ protocol: n.linkType, sourcePort: n.localPort, targetPort: n.remotePort }))
+}

@@ -21,7 +21,7 @@
 ///
 
 import { describe, it, expect } from 'vitest'
-import { computeGhostLinks } from '@/components/Topology/linkHints'
+import { computeGhostLinks, resolveLinkBindings } from '@/components/Topology/linkHints'
 import type { DiscoveredNeighbor } from '@/types/topology'
 
 const lldp = (neighborNodeId: number, localPort?: string, remotePort?: string): DiscoveredNeighbor => ({
@@ -84,5 +84,25 @@ describe('computeGhostLinks', () => {
     expect(hint.targetId).toBe('placed-9')
     expect(hint.binding.sourcePort).toBe('ge-0/0/1')
     expect(hint.binding.targetPort).toBe('xe-1/0/3')
+  })
+})
+
+describe('resolveLinkBindings', () => {
+  it('returns one binding per protocol toward the target, ports oriented from the source', () => {
+    const neighbors: DiscoveredNeighbor[] = [
+      { neighborNodeId: 2, neighborLabel: 'b', linkType: 'lldp', localPort: 'eth1', remotePort: 'eth7' },
+      { neighborNodeId: 2, neighborLabel: 'b', linkType: 'cdp', localPort: 'Gi0/1', remotePort: 'Gi0/7' },
+      { neighborNodeId: 2, neighborLabel: 'b', linkType: 'lldp', localPort: 'dup', remotePort: 'dup' },
+      { neighborNodeId: 9, neighborLabel: 'other', linkType: 'lldp' }
+    ]
+    const out = resolveLinkBindings(neighbors, 2)
+    expect(out).toEqual([
+      { protocol: 'lldp', sourcePort: 'eth1', targetPort: 'eth7' },
+      { protocol: 'cdp', sourcePort: 'Gi0/1', targetPort: 'Gi0/7' }
+    ])
+  })
+
+  it('returns [] when the pair has no discovered adjacency', () => {
+    expect(resolveLinkBindings([lldp(5)], 2)).toEqual([])
   })
 })

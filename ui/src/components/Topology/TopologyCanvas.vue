@@ -1801,7 +1801,15 @@ onBeforeUnmount(() => {
  */
 const getLink = (
   id: string
-): { label: string; sourceLabel: string; targetLabel: string; origin: 'user' | 'discovered'; binding?: CanvasLinkBinding } | null => {
+): {
+  label: string
+  sourceLabel: string
+  targetLabel: string
+  sourceId: string
+  targetId: string
+  origin: 'user' | 'discovered'
+  binding?: CanvasLinkBinding
+} | null => {
   if (!graph || !graph.hasEdge(id)) {
     return null
   }
@@ -1811,6 +1819,8 @@ const getLink = (
     label: (graph.getEdgeAttribute(id, 'label') as string) ?? '',
     sourceLabel: (graph.getNodeAttribute(source, 'label') as string) ?? source,
     targetLabel: (graph.getNodeAttribute(target, 'label') as string) ?? target,
+    sourceId: source,
+    targetId: target,
     origin: (graph.getEdgeAttribute(id, 'origin') as string) === 'discovered' ? 'discovered' : 'user',
     binding: (graph.getEdgeAttribute(id, 'binding') as CanvasLinkBinding | undefined) || undefined
   }

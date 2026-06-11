@@ -113,6 +113,20 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     isLinkHintsEnabled.value = on
   }
 
+  /**
+   * Discovered adjacency for one node, cached. Used by the Inspector to
+   * resolve protocol/port detail for a selected link that carries no
+   * binding (links in discovered views, hand-drawn links).
+   */
+  const getNeighborsFor = async (nodeId: number): Promise<DiscoveredNeighbor[]> => {
+    if (nodeId in neighborsByNode.value) {
+      return neighborsByNode.value[nodeId]
+    }
+    const fetched = await getNodeNeighbors(nodeId)
+    neighborsByNode.value = { ...neighborsByNode.value, [nodeId]: fetched }
+    return fetched
+  }
+
   const refreshNeighbors = async (): Promise<void> => {
     const wanted = Array.from(placedNodeIds.value)
       .map(id => Number(id))
@@ -632,6 +646,7 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     setLabels,
     shapes,
     neighborsByNode,
+    getNeighborsFor,
     isLinkHintsEnabled,
     setLinkHintsEnabled,
     refreshNeighbors,

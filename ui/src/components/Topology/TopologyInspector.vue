@@ -94,9 +94,9 @@ License.
         <div class="ti-node-header">
           <span class="ti-link-endpoints">{{ link.sourceLabel }} → {{ link.targetLabel }}</span>
         </div>
-        <p v-if="link.binding" class="ti-binding">
-          Discovered via {{ link.binding.protocol.toUpperCase() }}<template v-if="link.binding.sourcePort">
-            — {{ link.binding.sourcePort }} ↔ {{ link.binding.targetPort ?? '?' }}</template>
+        <p v-for="b in linkBindings" :key="b.protocol + (b.sourcePort ?? '')" class="ti-binding">
+          Discovered via {{ b.protocol.toUpperCase() }}<template v-if="b.sourcePort">
+            — {{ b.sourcePort }} ↔ {{ b.targetPort ?? '?' }}</template>
         </p>
         <div class="ti-field">
           <label class="ti-label">Link label</label>
@@ -351,6 +351,7 @@ import InputText from 'primevue/inputtext'
 import InputNumber from 'primevue/inputnumber'
 import { useTopologyStore } from '@/stores/topologyStore'
 import { isLabelId, isShapeId, nodeIdFromPlacedId } from '@/components/Topology/nodeIds'
+import { resolveLinkBindings } from '@/components/Topology/linkHints'
 import { severityColor } from '@/components/Topology/severity'
 import { DEVICE_ICON_SVG } from '@/components/Topology/deviceIcons'
 import { getNodeById } from '@/services/nodeService'
@@ -377,6 +378,8 @@ interface CanvasLinkApi {
     label: string
     sourceLabel: string
     targetLabel: string
+    sourceId: string
+    targetId: string
     origin: 'user' | 'discovered'
     binding?: CanvasLinkBinding
   } | null
@@ -707,6 +710,51 @@ watch(
   selectedId,
   (id) => {
     link.value = id && kind.value === 'link' && props.canvas ? props.canvas.getLink(id) : null
+  },
+  { immediate: true }
+)
+
+/**
+ * The discovery detail lines for the selected link. An adopted link carries
+ * its own binding; otherwise (links in discovered views, hand-drawn links)
+ * the per-node enlinkd adjacency is consulted: every protocol entry between
+ * the two endpoints renders as its own line, so a pair discovered over both
+ * LLDP and CDP shows both.
+ */
+const resolvedBindings = ref<CanvasLinkBinding[]>([])
+
+const linkBindings = computed<CanvasLinkBinding[]>(() =>
+  link.value?.binding ? [link.value.binding] : resolvedBindings.value
+)
+
+watch(
+  link,
+  async (l) => {
+    resolvedBindings.value = []
+    if (!l || l.binding) {
+      return
+    }
+    const sourceNodeId = nodeIdFromPlacedId(l.sourceId)
+    const targetNodeId = nodeIdFromPlacedId(l.targetId)
+    if (sourceNodeId === null || targetNodeId === null) {
+      return
+    }
+    const neighbors = await store.getNeighborsFor(sourceNodeId)
+    // Still looking at the same link? (selection may have moved meanwhile)
+    if (link.value !== l) {
+      return
+    }
+    const seen = new Set<string>()
+    resolvedBindings.value = neighbors
+      .filter(n => n.neighborNodeId === targetNodeId)
+      .filter((n) => {
+        if (seen.has(n.linkType)) {
+          return false
+        }
+        seen.add(n.linkType)
+        return true
+      })
+      .map(n => ({ protocol: n.linkType, sourcePort: n.localPort, targetPort: n.remotePort }))
   },
   { immediate: true }
 )
