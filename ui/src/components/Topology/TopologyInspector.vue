@@ -28,6 +28,15 @@ License.
 -->
 
 <template>
+  <div class="ti-resizable" :style="{ width: panelWidth + 'px' }">
+    <!-- Drag strip on the canvas-facing edge: right of the View-mode (left)
+         panel, left of the Edit-mode (right) panel. Width persists. -->
+    <div
+      class="ti-resize-handle"
+      :class="variant === 'props' ? 'ti-resize-left' : 'ti-resize-right'"
+      title="Drag to resize"
+      @mousedown.prevent="startResize"
+    />
   <PCard class="topology-inspector">
     <template #title>
       <span class="ti-title">{{ variant === 'props' ? 'Properties' : 'Inspector' }}</span>
@@ -341,10 +350,11 @@ License.
       </div>
     </template>
   </PCard>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import Card from 'primevue/card'
 import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
@@ -400,6 +410,49 @@ const props = defineProps<{
 }>()
 
 const variant = computed<'full' | 'props'>(() => props.variant ?? 'full')
+
+// --- Panel resize -----------------------------------------------------------
+// Drag the canvas-facing edge to resize; the width persists across sessions.
+// The canvas pane flexes to absorb the change and repaints via its own
+// ResizeObserver (preserving zoom/pan), so no coordination is needed here.
+const WIDTH_STORAGE_KEY = 'opennms.topology.inspectorWidth'
+const WIDTH_MIN = 220
+const WIDTH_MAX = 640
+const WIDTH_DEFAULT = 288 // matches the previous fixed 18rem
+const storedWidth = Number(localStorage.getItem(WIDTH_STORAGE_KEY))
+const panelWidth = ref(
+  Number.isFinite(storedWidth) && storedWidth >= WIDTH_MIN && storedWidth <= WIDTH_MAX
+    ? storedWidth
+    : WIDTH_DEFAULT
+)
+let resizeStart: { x: number; width: number } | null = null
+const onResizeMove = (e: MouseEvent) => {
+  if (!resizeStart) {
+    return
+  }
+  const delta = e.clientX - resizeStart.x
+  // View mode: panel sits left, its right edge drags (+x grows). Edit mode:
+  // panel sits right, its left edge drags (+x shrinks).
+  const next = variant.value === 'props' ? resizeStart.width - delta : resizeStart.width + delta
+  panelWidth.value = Math.min(WIDTH_MAX, Math.max(WIDTH_MIN, next))
+}
+const endResize = () => {
+  if (!resizeStart) {
+    return
+  }
+  resizeStart = null
+  window.removeEventListener('mousemove', onResizeMove)
+  window.removeEventListener('mouseup', endResize)
+  document.body.style.userSelect = ''
+  localStorage.setItem(WIDTH_STORAGE_KEY, String(panelWidth.value))
+}
+const startResize = (e: MouseEvent) => {
+  resizeStart = { x: e.clientX, width: panelWidth.value }
+  document.body.style.userSelect = 'none' // no text selection mid-drag
+  window.addEventListener('mousemove', onResizeMove)
+  window.addEventListener('mouseup', endResize)
+}
+onBeforeUnmount(endResize)
 
 const store = useTopologyStore()
 
@@ -775,10 +828,36 @@ const linkLabel = computed<string>({
 </script>
 
 <style scoped>
+.ti-resizable {
+  position: relative;
+  height: 100%;
+}
+
 .topology-inspector {
-  width: 18rem;
+  width: 100%;
   height: 100%;
   overflow-y: auto;
+}
+
+.ti-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 2;
+}
+
+.ti-resize-handle:hover {
+  background: var(--feather-border-on-surface);
+}
+
+.ti-resize-right {
+  right: -3px;
+}
+
+.ti-resize-left {
+  left: -3px;
 }
 
 .ti-title {
