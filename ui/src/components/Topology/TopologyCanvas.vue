@@ -208,6 +208,7 @@ License.
 import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import Graph from 'graphology'
 import Sigma from 'sigma'
+import EdgeCurveProgram from '@sigma/edge-curve'
 import { createNodeImageProgram } from '@sigma/node-image'
 import { drawDiscNodeLabel } from 'sigma/rendering'
 import { downloadAsImage } from '@sigma/export-image'
@@ -225,7 +226,7 @@ import {
   paletteIdFromPlacedId,
   nodeIdFromPlacedId
 } from '@/components/Topology/nodeIds'
-import { layoutDiscoveredGraph, layoutHierarchyGraph } from '@/components/Topology/layout'
+import { computeEdgeCurvatures, layoutDiscoveredGraph, layoutHierarchyGraph } from '@/components/Topology/layout'
 import { computeGhostLinks, type LinkHint } from '@/components/Topology/linkHints'
 import { assetUrl } from '@/services/topologyService'
 import type {
@@ -476,6 +477,12 @@ const mountSigma = (g: Graph) => {
     // disc) via the image node program; everything else stays a plain circle.
     nodeProgramClasses: {
       image: createNodeImageProgram({ drawingMode: 'background', padding: 0.15 })
+    },
+    // Obstructed discovered links (straight run would pass under another
+    // node) render as arcs so each stays visible and clickable; the curve
+    // program participates in edge picking like the default line program.
+    edgeProgramClasses: {
+      curved: EdgeCurveProgram
     },
     // Theme-aware hover/selection halo (see drawThemedNodeHover).
     defaultDrawNodeHover: drawThemedNodeHover as never,
@@ -817,6 +824,10 @@ const loadDiscoveredGraph = (dg: DiscoveredGraph) => {
       color: n.color ?? '#1f5fb0'
     })
   }
+  // Links whose straight run would pass under a third node render curved so
+  // they stay individually visible and clickable (clearance ~ the rendered
+  // node radius, store.nodeSize, plus a small margin).
+  const curvatures = computeEdgeCurvatures(positioned, dg.links, store.nodeSize + 6)
   for (const e of dg.links) {
     if (
       g.hasNode(e.sourceId) &&
@@ -824,7 +835,13 @@ const loadDiscoveredGraph = (dg: DiscoveredGraph) => {
       !g.hasEdge(e.id) &&
       !g.hasEdge(e.sourceId, e.targetId)
     ) {
-      g.addEdgeWithKey(e.id, e.sourceId, e.targetId, { size: 2, color: '#9aa7b8', origin: e.origin })
+      const curvature = curvatures.get(e.id)
+      g.addEdgeWithKey(e.id, e.sourceId, e.targetId, {
+        size: 2,
+        color: '#9aa7b8',
+        origin: e.origin,
+        ...(curvature !== undefined ? { type: 'curved', curvature } : {})
+      })
     }
   }
   graph = g

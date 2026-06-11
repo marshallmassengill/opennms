@@ -106,6 +106,68 @@ export const layoutDiscoveredGraph = (
   })
 }
 
+/**
+ * Decide which links should render curved instead of straight. A straight
+ * edge that passes under a third node (common in dense graphs -- e.g. a
+ * dual-homed fabric where dist-to-far-core lines cross the near core) is both
+ * hard to see and impossible to click where it is covered. For each link,
+ * any non-endpoint node within `clearance` of the segment marks it as
+ * obstructed; the link is then bent away from the side most offenders sit on.
+ * This also separates collinear links that share an endpoint, since the third
+ * node of the shorter run lies on the longer run's segment.
+ *
+ * Returns link id -> curvature (the @sigma/edge-curve attribute; sign picks
+ * the bend side). Links with no obstruction are absent and stay straight.
+ */
+export const computeEdgeCurvatures = (
+  nodes: CanvasNode[],
+  links: CanvasLink[],
+  clearance: number
+): Map<string, number> => {
+  const CURVATURE = 0.25
+  const pos = new Map(nodes.map(n => [n.id, { x: n.x, y: n.y }]))
+  const out = new Map<string, number>()
+  for (const link of links) {
+    const a = pos.get(link.sourceId)
+    const b = pos.get(link.targetId)
+    if (!a || !b || link.sourceId === link.targetId) {
+      continue
+    }
+    const dx = b.x - a.x
+    const dy = b.y - a.y
+    const len2 = dx * dx + dy * dy
+    if (len2 === 0) {
+      continue
+    }
+    let obstructions = 0
+    let sideSum = 0
+    for (const n of nodes) {
+      if (n.id === link.sourceId || n.id === link.targetId) {
+        continue
+      }
+      const p = pos.get(n.id)!
+      // Closest point on the segment (clamped); only interior hits count --
+      // a node merely near an endpoint doesn't obscure the link.
+      const t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2
+      if (t <= 0.05 || t >= 0.95) {
+        continue
+      }
+      const ox = a.x + t * dx - p.x
+      const oy = a.y + t * dy - p.y
+      if (ox * ox + oy * oy > clearance * clearance) {
+        continue
+      }
+      obstructions++
+      const cross = dx * (p.y - a.y) - dy * (p.x - a.x)
+      sideSum += cross >= 0 ? 1 : -1
+    }
+    if (obstructions > 0) {
+      out.set(link.id, sideSum > 0 ? -CURVATURE : CURVATURE)
+    }
+  }
+  return out
+}
+
 interface HierarchyLayoutOptions {
   /** Vertical distance between tiers (parent row to child row). */
   levelSpacing?: number

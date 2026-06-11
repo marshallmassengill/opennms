@@ -21,7 +21,7 @@
 ///
 
 import { describe, it, expect } from 'vitest'
-import { layoutDiscoveredGraph, layoutHierarchyGraph } from '@/components/Topology/layout'
+import { computeEdgeCurvatures, layoutDiscoveredGraph, layoutHierarchyGraph } from '@/components/Topology/layout'
 import type { CanvasLink, CanvasNode } from '@/types/topology'
 
 const node = (id: string): CanvasNode => ({ id, label: id, x: 0, y: 0 })
@@ -133,5 +133,57 @@ describe('layoutHierarchyGraph', () => {
     const nodes = [node('a'), node('b')]
     layoutHierarchyGraph(nodes, [edge('a', 'b')])
     expect(nodes.every(n => n.x === 0 && n.y === 0)).toBe(true)
+  })
+})
+
+describe('computeEdgeCurvatures', () => {
+  const at = (id: string, x: number, y: number): CanvasNode => ({ id, label: id, x, y })
+
+  it('curves a link whose segment passes under a third node', () => {
+    // b sits exactly on the straight a-c run (the "link under the near core" case)
+    const nodes = [at('a', 0, 0), at('b', 100, 0), at('c', 200, 0)]
+    const links = [edge('a', 'c'), edge('a', 'b'), edge('b', 'c')]
+    const out = computeEdgeCurvatures(nodes, links, 20)
+    expect(out.has('a-c')).toBe(true)
+    expect(out.get('a-c')).not.toBe(0)
+    // the short runs have no interior obstruction and stay straight
+    expect(out.has('a-b')).toBe(false)
+    expect(out.has('b-c')).toBe(false)
+  })
+
+  it('bends away from the obstructing node', () => {
+    // obstructor slightly above the segment -> curve should pick the side
+    // away from it (opposite sign to one placed below)
+    const above = computeEdgeCurvatures(
+      [at('a', 0, 0), at('x', 100, 5), at('c', 200, 0)],
+      [edge('a', 'c')],
+      20
+    ).get('a-c')
+    const below = computeEdgeCurvatures(
+      [at('a', 0, 0), at('x', 100, -5), at('c', 200, 0)],
+      [edge('a', 'c')],
+      20
+    ).get('a-c')
+    expect(above).toBeDefined()
+    expect(below).toBeDefined()
+    expect(Math.sign(above!)).toBe(-Math.sign(below!))
+  })
+
+  it('leaves links alone when nothing is within clearance', () => {
+    const nodes = [at('a', 0, 0), at('b', 200, 0), at('far', 100, 80)]
+    const out = computeEdgeCurvatures(nodes, [edge('a', 'b')], 20)
+    expect(out.size).toBe(0)
+  })
+
+  it('ignores nodes hovering near an endpoint rather than the interior', () => {
+    const nodes = [at('a', 0, 0), at('b', 200, 0), at('hub', 5, 5)]
+    const out = computeEdgeCurvatures(nodes, [edge('a', 'b')], 20)
+    expect(out.size).toBe(0)
+  })
+
+  it('skips self-loops and links with missing endpoints', () => {
+    const nodes = [at('a', 0, 0), at('b', 100, 0)]
+    const links = [edge('a', 'a'), edge('a', 'ghost')]
+    expect(computeEdgeCurvatures(nodes, links, 20).size).toBe(0)
   })
 })
