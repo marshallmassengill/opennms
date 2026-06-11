@@ -320,6 +320,9 @@ const LINK_HOVER_SIZE = 6
 const LINK_SELECTED_SIZE = 4
 // Transient hovered link id (cleared on leave). Drives the reducer + cursor.
 const hoveredLinkId = ref<string | null>(null)
+// Hovered node id: with it (or a single selected node), incident links are
+// emphasized and the rest dimmed, so dense graphs stay legible.
+const hoveredNodeId = ref<string | null>(null)
 let draggedNode: string | null = null
 let dragStartPos: { x: number; y: number } | null = null
 
@@ -517,6 +520,18 @@ const mountSigma = (g: Graph) => {
       }
       if ((attrs as { _selected?: boolean })._selected) {
         return { ...attrs, color: '#1f5fb0', size: LINK_SELECTED_SIZE }
+      }
+      // Emphasize the hovered/selected node's links: with many straight lines
+      // crossing under nodes (e.g. a dual-homed fabric), it is otherwise hard
+      // to tell which links belong to a node. Others dim while emphasizing.
+      const emphasisNode =
+        hoveredNodeId.value ??
+        (store.selectedIds.length === 1 && g.hasNode(store.selectedIds[0]) ? store.selectedIds[0] : null)
+      if (emphasisNode) {
+        if (g.source(edge) === emphasisNode || g.target(edge) === emphasisNode) {
+          return { ...attrs, color: '#1f5fb0', size: LINK_SELECTED_SIZE }
+        }
+        return { ...attrs, color: 'rgba(154, 167, 184, 0.25)', size: LINK_SIZE }
       }
       return { ...attrs, size: LINK_SIZE }
     }
@@ -1052,6 +1067,19 @@ const attachInteractionHandlers = (s: Sigma, g: Graph) => {
       return
     }
     hoveredLinkId.value = null
+    s.refresh()
+  })
+
+  // Node hover drives the incident-link emphasis in the edgeReducer.
+  s.on('enterNode', (e) => {
+    hoveredNodeId.value = e.node
+    s.refresh()
+  })
+  s.on('leaveNode', (e) => {
+    if (hoveredNodeId.value !== e.node) {
+      return
+    }
+    hoveredNodeId.value = null
     s.refresh()
   })
 
