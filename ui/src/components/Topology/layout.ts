@@ -50,16 +50,26 @@ interface LayoutOptions {
   chargeStrength?: number
   /** Minimum separation so node glyphs don't overlap. */
   collideRadius?: number
-  /** Simulation ticks to run before reading positions. */
+  /** Simulation ticks to run before reading positions (default adapts to graph size). */
   ticks?: number
 }
 
-const DEFAULTS: Required<LayoutOptions> = {
+const DEFAULTS: Required<Omit<LayoutOptions, 'ticks'>> = {
   linkDistance: 100,
   chargeStrength: -280,
-  collideRadius: 30,
-  ticks: 400
+  collideRadius: 30
 }
+
+/**
+ * Tick budget by graph size: each tick costs a full force pass (~n log n), so
+ * a fixed 400 ticks makes a 2000-node graph take ~7s to lay out. Small graphs
+ * keep the generous budget; large ones scale down to a floor of 120, which
+ * paired with a matched alpha decay (the simulation converges *within* the
+ * budget instead of coasting past it) still settles into a stable layout
+ * (~2s at 2000 nodes).
+ */
+const adaptiveTicks = (nodeCount: number): number =>
+  Math.max(120, Math.min(400, Math.round(200_000 / Math.max(1, nodeCount))))
 
 /**
  * Return a new node array with computed x/y positions. Input nodes are not
@@ -76,6 +86,7 @@ export const layoutDiscoveredGraph = (
   if (nodes.length === 0) {
     return []
   }
+  const ticks = Math.max(1, options.ticks ?? adaptiveTicks(nodes.length))
 
   const simNodes: SimNode[] = nodes.map(n => ({ id: n.id }))
   const ids = new Set(simNodes.map(n => n.id))
@@ -97,7 +108,11 @@ export const layoutDiscoveredGraph = (
     .force('collide', forceCollide<SimNode>(opts.collideRadius).iterations(3))
     .stop()
 
-  simulation.tick(opts.ticks)
+  // Decay alpha to the simulation's stop threshold over exactly our budget,
+  // so every tick contributes movement (d3's default decay is tuned for ~300
+  // ticks; past convergence, ticks cost the same but move nothing).
+  simulation.alphaDecay(1 - Math.pow(0.001, 1 / ticks))
+  simulation.tick(ticks)
 
   const posById = new Map(simNodes.map(n => [n.id, n]))
   return nodes.map((n) => {
