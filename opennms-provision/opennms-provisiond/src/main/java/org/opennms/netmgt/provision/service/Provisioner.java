@@ -114,6 +114,11 @@ public class Provisioner implements SpringServiceDaemon {
             .build();
     private ExecutorService m_newSuspectExecutor = Executors.newSingleThreadExecutor(newSuspectThreadFactory);
 
+    private final ThreadFactory importEventThreadFactory = new ThreadFactoryBuilder()
+            .setNameFormat("importEventExecutor")
+            .build();
+    private ExecutorService m_importEventExecutor = Executors.newSingleThreadExecutor(importEventThreadFactory);
+
     @Autowired
     private ProvisioningAdapterManager m_manager;
 
@@ -261,6 +266,7 @@ public class Provisioner implements SpringServiceDaemon {
         m_importSchedule.stop();
         m_scheduledExecutor.shutdown();
         m_newSuspectExecutor.shutdown();
+        m_importEventExecutor.shutdown();
         monitorHolder.shutdown();
     }
 
@@ -508,19 +514,26 @@ public class Provisioner implements SpringServiceDaemon {
      * @param event a {@link org.opennms.netmgt.events.api.model.IEvent} object.
      */
     @EventHandler(uei = EventConstants.RELOAD_IMPORT_UEI)
-    public void doImport(final IEvent event) throws ExecutionException {
-        final String url = getEventUrl(event);
-        final String rescanExistingOnImport = getEventRescanExistingOnImport(event);
-
-        ProvisionMonitor monitor = monitorHolder.createMonitor(url);
-        monitor.start();
-        if (url != null) {
-            doImport(url, rescanExistingOnImport, monitor);
-        } else {
-            final String msg = "reloadImport event requires 'url' parameter";
-            LOG.error("doImport: {}", msg);
-            send(importFailedEvent(msg, url, rescanExistingOnImport), monitor);
-        }
+    public void doImport(final IEvent event) {
+        // Run the (potentially long/blocking) import off the single provisiond
+        // event-listener thread so it cannot starve forceRescan and other events.
+        m_importEventExecutor.execute(() -> {
+            final String url = getEventUrl(event);
+            final String rescanExistingOnImport = getEventRescanExistingOnImport(event);
+            try {
+                ProvisionMonitor monitor = monitorHolder.createMonitor(url);
+                monitor.start();
+                if (url != null) {
+                    doImport(url, rescanExistingOnImport, monitor);
+                } else {
+                    final String msg = "reloadImport event requires 'url' parameter";
+                    LOG.error("doImport: {}", msg);
+                    send(importFailedEvent(msg, url, rescanExistingOnImport), monitor);
+                }
+            } catch (ExecutionException e) {
+                LOG.error("doImport: failed to handle reloadImport for url {}", url, e);
+            }
+        });
     }
 
     /**
