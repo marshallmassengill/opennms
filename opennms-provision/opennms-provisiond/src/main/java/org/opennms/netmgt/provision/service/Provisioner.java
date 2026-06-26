@@ -622,15 +622,17 @@ public class Provisioner implements SpringServiceDaemon {
                     ForceRescanScan scan = createForceRescanScan(nodeId, monitorKey);
                     Task t = scan.createTask();
                     t.schedule();
-                    t.waitFor();
+                    // NMS-19547: bound the wait so a wedged rescan can't park this scan thread forever.
+                    if (!t.waitFor(NodeScan.SCAN_WAIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                        LOG.warn("Forced rescan of nodeId {} did not complete within {} ms; releasing the scan thread", nodeId, NodeScan.SCAN_WAIT_TIMEOUT_MS);
+                        return;
+                    }
                     NodeScanSchedule scheduleForNode = getProvisionService().getScheduleForNode(nodeId, false, monitorKey); // It has 'false' because a node scan was already executed by ForceRescanScan.
                     if (scheduleForNode != null) {
                         addToScheduleQueue(scheduleForNode);
                     }
                 } catch (InterruptedException ex) {
                     LOG.error("Task interrupted waiting for rescan of nodeId {} to finish", nodeId, ex);
-                } catch (ExecutionException ex) {
-                    LOG.error("An expected execution occurred waiting for rescan of nodeId {} to finish", nodeId, ex);
                 }
             }
         };
@@ -684,7 +686,10 @@ public class Provisioner implements SpringServiceDaemon {
                     final NewSuspectScan scan = createNewSuspectScan(addr, foreignSource, effectiveLocation, getMonitorKey(event));
                     Task t = scan.createTask();
                     t.schedule();
-                    t.waitFor();
+                    // NMS-19547: bound the wait so a wedged suspect scan can't block the single new-suspect thread forever.
+                    if (!t.waitFor(NodeScan.SCAN_WAIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                        LOG.warn("New suspect scan of {} at location {} did not complete within {} ms; releasing the scan thread", addr, effectiveLocation, NodeScan.SCAN_WAIT_TIMEOUT_MS);
+                    }
                 } catch (InterruptedException ex) {
                     LOG.error("Task interrupted waiting for new suspect scan of {} at location {} to finish", ip, ex);
                 } catch (Exception ex) {

@@ -44,6 +44,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.lang.builder.ToStringBuilder;
+import org.opennms.core.sysprops.SystemProperties;
 import org.opennms.core.tasks.BatchTask;
 import org.opennms.core.tasks.ContainerTask;
 import org.opennms.core.tasks.NeedsContainer;
@@ -74,6 +75,9 @@ import io.opentracing.Span;
 // FIXME inner non static class with backreference, bad design, keeps objects alive
 public class NodeScan implements Scan {
     private static final Logger LOG = LoggerFactory.getLogger(NodeScan.class);
+
+    // Safety net (NMS-19547): bound how long a scan thread waits so one wedged scan can't leak a pool thread. Generous; large nodes can take minutes.
+    public static final long SCAN_WAIT_TIMEOUT_MS = SystemProperties.getLong("org.opennms.provisiond.scan.timeout", TimeUnit.MINUTES.toMillis(30));
 
     private final Integer m_nodeId;
     private final String m_foreignSource;
@@ -368,18 +372,17 @@ public class NodeScan implements Scan {
                     sendScheduledNodeScanStartedEvent();
                     final Task t = createTask();
                     t.schedule();
-                    // NMS-5593 shows 10 provisioning threads all waiting on these
-                    // latches which is probably exhausting the thread pool
-                    t.waitFor();
-
-                    LOG.info("Finished scanning node {}/{}/{}", getNodeId(), getForeignSource(), getForeignId());
+                    // NMS-5593: threads waiting on these latches can exhaust the pool; NMS-19547: bound the wait so a wedged scan can't park this thread forever.
+                    if (t.waitFor(SCAN_WAIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                        LOG.info("Finished scanning node {}/{}/{}", getNodeId(), getForeignSource(), getForeignId());
+                    } else {
+                        LOG.warn("Node scan for node {}/{}/{} did not complete within {} ms; abandoning the wait and releasing the scan thread",
+                                getNodeId(), getForeignSource(), getForeignId(), SCAN_WAIT_TIMEOUT_MS);
+                    }
                 } catch (final InterruptedException e) {
                     LOG.warn("The node scan for node {}/{}/{} was interrupted", getNodeId(), getForeignSource(),
                             getForeignId(), e);
                     Thread.currentThread().interrupt();
-                } catch (final ExecutionException e) {
-                    LOG.warn("An error occurred while scanning node {}/{}/{}", getNodeId(), getForeignSource(),
-                            getForeignId(), e);
                 }
             }
         };
