@@ -31,6 +31,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.opennms.core.utils.DBUtils;
+import org.opennms.core.utils.IplikeSqlTranslator;
 
 public class IPLikeCoverageIT {
     private TemporaryDatabasePostgreSQL m_db;
@@ -153,6 +154,23 @@ public class IPLikeCoverageIT {
             rs.next();
             final boolean result = rs.getBoolean(1);
             assertEquals("SELECT iplike(" + value + "," + rule + ") === " + expected, expected, result);
+
+            // Where the rule translates to a native-inet predicate (what the
+            // SQL emitters produce instead of the iplike() call), the
+            // database must give the same answer for the same value.
+            final String predicate = IplikeSqlTranslator.toSqlPredicate(rule, "v");
+            if (predicate != null) {
+                final PreparedStatement nativeSt = c.prepareStatement(
+                        "SELECT " + predicate + " FROM (VALUES (CAST(? AS TEXT))) AS t(v)");
+                util.watch(nativeSt);
+                nativeSt.setString(1, value);
+                nativeSt.execute();
+                final ResultSet nativeRs = nativeSt.getResultSet();
+                util.watch(nativeRs);
+                nativeRs.next();
+                assertEquals("native predicate for rule " + rule + " on value " + value
+                        + ": " + predicate, expected, nativeRs.getBoolean(1));
+            }
         } finally {
             util.cleanUp();
         }
