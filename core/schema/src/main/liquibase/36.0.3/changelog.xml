@@ -43,7 +43,11 @@ $safeinet$ LANGUAGE sql IMMUTABLE PARALLEL SAFE RETURNS NULL ON NULL INPUT;
     <!-- Partial: most events carry no ipaddr, and skipping them keeps the
          per-insert index-maintenance cost on this high-churn table low.
          Translated predicates always include "ipaddr IS NOT NULL" so the
-         planner can prove this index applicable. -->
+         planner can prove this index applicable.
+         The existing events_ipaddr_idx btree deliberately stays: the v1
+         event-list exact-interface filter (IPADDR = ?), ORDER BY ipaddr
+         sorting, and the REST v2 ipinterface join still compare the text
+         column directly and would regress to sequential scans without it. -->
     <changeSet runInTransaction="false" author="mmassengill" id="36.0.3-events-safe-inet-index">
         <sql>DROP INDEX IF EXISTS events_safe_inet_idx;</sql>
         <sql>CREATE INDEX CONCURRENTLY events_safe_inet_idx ON events (opennms_safe_inet(ipaddr)) WHERE ipaddr IS NOT NULL;</sql>
