@@ -62,6 +62,56 @@ public abstract class RestUtils {
 	        new HashSet<>(Arrays.asList("id", "nodeId", "authorizedGroups")));
 
 	/**
+	 * Node identity and provisioning-ownership properties. Shared by the endpoints that can
+	 * reach an {@code OnmsNode}, directly or through a nested path.
+	 */
+	public static final Set<String> PROTECTED_NODE_PROPERTIES = Collections.unmodifiableSet(
+	        new HashSet<>(Arrays.asList("foreignSource", "foreignId", "type")));
+
+	/**
+	 * Whether a request parameter name resolves to a protected property. The name is normalized
+	 * first and every segment of a nested path is checked, so neither key variants
+	 * ({@code foreign_source}) nor traversal ({@code asset_record.node.foreign_source}) can
+	 * reach a protected property.
+	 */
+	public static boolean isProtectedProperty(final String key, final Set<String> additionalProtectedProperties) {
+	    return pathReachesProperty(key, IMMUTABLE_PROPERTIES) || pathReachesProperty(key, additionalProtectedProperties);
+	}
+
+	/**
+	 * Whether any request parameter resolves to the given property, accounting for name
+	 * normalization and nested paths. For endpoints that reject such a request outright.
+	 */
+	public static boolean containsProperty(final MultivaluedMap<String,String> properties, final String propertyName) {
+	    final Set<String> wanted = Collections.singleton(propertyName);
+	    for (final String key : properties.keySet()) {
+	        if (pathReachesProperty(key, wanted)) {
+	            return true;
+	        }
+	    }
+	    return false;
+	}
+
+	/**
+	 * Whether any segment of the given request key names one of the properties. Callers bind
+	 * either the raw key or the normalized one, and normalization is not case-preserving, so
+	 * both spellings are compared and the comparison ignores case. Spring's BeanWrapper resolves
+	 * nested ('.') and indexed ('[') paths, hence the per-segment check.
+	 */
+	private static boolean pathReachesProperty(final String key, final Set<String> propertyNames) {
+	    for (final String path : new String[] { key, convertNameToPropertyName(key) }) {
+	        for (final String segment : path.split("[.\\[]")) {
+	            for (final String propertyName : propertyNames) {
+	                if (propertyName.equalsIgnoreCase(segment)) {
+	                    return true;
+	                }
+	            }
+	        }
+	    }
+	    return false;
+	}
+
+	/**
 	 * <p>Use Spring's {@link PropertyAccessorFactory} to set values on the specified bean.
 	 * This call registers several {@link PropertyEditor} classes to properly convert
 	 * values.</p>
@@ -95,7 +145,7 @@ public abstract class RestUtils {
 	    wrapper.registerCustomEditor(PrimaryType.class, new PrimaryTypeEditor());
 	    for(final String key : properties.keySet()) {
 	        final String propertyName = convertNameToPropertyName(key);
-	        if (IMMUTABLE_PROPERTIES.contains(propertyName) || additionalProtectedProperties.contains(propertyName)) {
+	        if (isProtectedProperty(key, additionalProtectedProperties)) {
 	            LOG.warn("Ignoring attempt to set protected property '{}' from request parameters", propertyName);
 	            continue;
 	        }

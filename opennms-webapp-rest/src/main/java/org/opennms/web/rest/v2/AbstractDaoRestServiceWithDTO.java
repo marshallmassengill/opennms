@@ -476,7 +476,16 @@ public abstract class AbstractDaoRestServiceWithDTO<T,D,Q,K extends Serializable
             for (T object : objects) {
                 // Applying the params is doUpdateProperties' responsibility; do not copy them
                 // onto the entity here.
-                doUpdateProperties(securityContext, uriInfo, object, params);
+                final Response response = doUpdateProperties(securityContext, uriInfo, object, params);
+                // Propagate a failure (including NOT_IMPLEMENTED) rather than reporting success
+                // for an update that did not happen. A non-error status such as 304 Not Modified
+                // means this item was simply unchanged, so keep going.
+                if (response != null) {
+                    final Response.Status.Family family = response.getStatusInfo().getFamily();
+                    if (family == Response.Status.Family.CLIENT_ERROR || family == Response.Status.Family.SERVER_ERROR) {
+                        return response;
+                    }
+                }
             }
             return Response.noContent().build();
         } finally {
