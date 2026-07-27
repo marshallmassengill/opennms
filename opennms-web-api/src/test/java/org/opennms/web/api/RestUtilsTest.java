@@ -36,7 +36,9 @@ import static org.junit.Assert.assertTrue;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
 
@@ -60,6 +62,9 @@ import org.springframework.beans.PropertyAccessorFactory;
 public class RestUtilsTest {
 
     private static final Set<String> NONE = Collections.emptySet();
+
+    /** Distinct from every identifier the fixture assigns, so a write is always observable. */
+    private static final int FORGED_ID = 999;
 
     private static boolean isProtected(final String key) {
         return RestUtils.isProtectedProperty(key, RestUtils.PROTECTED_NODE_PROPERTIES);
@@ -366,8 +371,12 @@ public class RestUtilsTest {
      */
     @Test
     public void noRequestKeyReachesProtectedNodeFieldsThroughAnyPath() {
+        // 'ForeignSource' belongs here because Spring falls back to the uncapitalized name, so a
+        // capitalized first letter does bind. 'FOREIGNSOURCE' does not: it normalizes to
+        // 'foreignsource', which is no property at all, so it is covered by the name-only tests
+        // instead of sitting here writing nothing.
         final List<String> leaves = Arrays.asList("foreignSource", "foreign_source", "foreign-source",
-                "FOREIGNSOURCE", "ForeignSource", "foreignId", "foreign_id", "type", "Type", "TYPE",
+                "ForeignSource", "foreignId", "foreign_id", "type", "Type", "TYPE",
                 "id", "Id", "nodeId", "node_id");
         final List<String> prefixes = Arrays.asList("", "node.", "Node.", "NODE.", "node[0].",
                 "assetRecord.node.", "asset_record.node.", "assetRecord.node.assetRecord.node.",
@@ -376,7 +385,10 @@ public class RestUtilsTest {
                 "monitoredServices[0].ipInterface.node.", "ipInterfaces[0].node.", "children[0].node.",
                 "node.categories[0].");
 
-        int reached = 0;
+        final Map<String,Integer> writesByLeaf = new LinkedHashMap<>();
+        for (final String leaf : leaves) {
+            writesByLeaf.put(leaf, 0);
+        }
         for (final Supplier<Object[]> target : targets()) {
             final Class<?> rootType = target.get()[0].getClass();
             for (final String prefix : prefixes) {
@@ -390,7 +402,7 @@ public class RestUtilsTest {
                         if (before.equals(fingerprint(owner, pair[0]))) {
                             continue;
                         }
-                        reached++;
+                        writesByLeaf.merge(leaf, 1, Integer::sum);
                         assertTrue("unguarded bind of '" + bound + "' on " + rootType.getSimpleName()
                                         + " wrote a protected field, but the guard allows key '" + key + "'",
                                 RestUtils.isProtectedProperty(rootType, key, NONE));
@@ -398,7 +410,17 @@ public class RestUtilsTest {
                 }
             }
         }
-        assertTrue("the matrix must actually exercise some writes", reached > 0);
+
+        // A leaf that never writes anything asserts nothing, so treat lost coverage as a failure
+        // rather than letting the token sit in the list looking like it still tests something.
+        final List<String> inert = new ArrayList<>();
+        for (final Map.Entry<String,Integer> entry : writesByLeaf.entrySet()) {
+            if (entry.getValue() == 0) {
+                inert.add(entry.getKey());
+            }
+        }
+        assertEquals("every leaf token must produce at least one real write, got " + writesByLeaf,
+                Collections.emptyList(), inert);
     }
 
     /** Each entry supplies a freshly built bind target plus the node it can reach. */
@@ -436,15 +458,54 @@ public class RestUtilsTest {
         return targets;
     }
 
+    /**
+     * Write through a bare BeanWrapper, trying values the property can actually hold. Converting
+     * one literal for every property silently turned an enum or integer target into a no-op,
+     * which made the matrix look like it covered those leaves when it exercised nothing.
+     */
     private static void bindUnguarded(final Object bean, final String path) {
+        final BeanWrapper wrapper = PropertyAccessorFactory.forBeanPropertyAccess(bean);
+        final Class<?> propertyType;
         try {
-            final BeanWrapper wrapper = PropertyAccessorFactory.forBeanPropertyAccess(bean);
-            if (wrapper.isWritableProperty(path)) {
-                wrapper.setPropertyValue(path, wrapper.convertIfNecessary("Forged", wrapper.getPropertyType(path)));
+            if (!wrapper.isWritableProperty(path)) {
+                return;
             }
+            propertyType = wrapper.getPropertyType(path);
         } catch (final Exception e) {
-            // an unbindable path is not an exploit
+            return; // an unbindable path is not an exploit
         }
+        for (final Object value : forgedValues(wrapper, path, propertyType)) {
+            try {
+                wrapper.setPropertyValue(path, value);
+                return;
+            } catch (final Exception e) {
+                // a value this property cannot hold is not an exploit; try the next candidate
+            }
+        }
+    }
+
+    /** Candidate forged values for a property, each distinct from what it currently holds. */
+    private static List<Object> forgedValues(final BeanWrapper wrapper, final String path, final Class<?> propertyType) {
+        Object current = null;
+        try {
+            current = wrapper.getPropertyValue(path);
+        } catch (final Exception e) {
+            // unreadable is fine, it only costs us the distinctness filter
+        }
+        final List<Object> candidates = new ArrayList<>();
+        if (propertyType != null && propertyType.isEnum()) {
+            candidates.addAll(Arrays.asList(propertyType.getEnumConstants()));
+        } else {
+            candidates.add("Forged");
+            candidates.add(Integer.valueOf(FORGED_ID));
+        }
+        final List<Object> distinct = new ArrayList<>();
+        for (final Object candidate : candidates) {
+            if (!String.valueOf(candidate).equals(String.valueOf(current))) {
+                distinct.add(candidate);
+            }
+        }
+        return distinct;
     }
 
     private static String fingerprint(final OnmsNode node, final Object bean) {
