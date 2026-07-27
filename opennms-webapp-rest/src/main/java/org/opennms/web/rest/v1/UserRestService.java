@@ -52,6 +52,7 @@ import org.opennms.netmgt.config.UserManager;
 import org.opennms.netmgt.model.OnmsUser;
 import org.opennms.netmgt.model.OnmsUserList;
 import org.opennms.web.api.Authentication;
+import org.opennms.web.api.RestUtils;
 import org.opennms.web.rest.support.MultivaluedMapImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -150,6 +151,10 @@ public class UserRestService extends OnmsRestService {
             boolean hashPassword = false;
             final BeanWrapper wrapper = PropertyAccessorFactory.forBeanPropertyAccess(user);
             for(final String key : params.keySet()) {
+                if (RestUtils.isProtectedProperty(user.getClass(), key, Collections.emptySet())) {
+                    LOG.warn("updateUser: ignoring attempt to set protected property '{}'", key);
+                    continue;
+                }
                 if (wrapper.isWritableProperty(key)) {
                     final String stringValue = params.getFirst(key);
                     final Object value = wrapper.convertIfNecessary(stringValue, wrapper.getPropertyType(key));

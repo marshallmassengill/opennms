@@ -235,7 +235,7 @@ public class NodeRestService extends AbstractDaoRestService<OnmsNode,SearchBean,
 
     @Override
     protected Response doUpdateProperties(SecurityContext securityContext, UriInfo uriInfo, OnmsNode targetObject, MultivaluedMapImpl params) {
-        RestUtils.setBeanProperties(targetObject, params, RestUtils.PROTECTED_NODE_PROPERTIES);
+        RestUtils.setBeanProperties(targetObject, params);
         getDao().update(targetObject);
         return Response.noContent().build();
     }

@@ -28,6 +28,8 @@
 
 package org.opennms.web.rest.v1;
 
+import java.util.Collections;
+
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
@@ -56,6 +58,7 @@ import org.opennms.netmgt.model.OnmsSnmpInterface;
 import org.opennms.netmgt.model.OnmsSnmpInterfaceList;
 import org.opennms.netmgt.model.events.EventBuilder;
 import org.opennms.netmgt.xml.event.Event;
+import org.opennms.web.api.RestUtils;
 import org.opennms.web.rest.support.MultivaluedMapImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -231,6 +234,11 @@ public class OnmsSnmpInterfaceResource extends OnmsRestService {
 
                 // don't try setting ipinterface data
                 if ("ipInterface".equals(key) || "ipInterfaces".equals(key)) continue;
+
+                if (RestUtils.isProtectedProperty(snmpInterface.getClass(), key, Collections.emptySet())) {
+                    LOG.warn("updateSnmpInterface: ignoring attempt to set protected property '{}'", key);
+                    continue;
+                }
 
                 if (wrapper.isWritableProperty(key)) {
                     final String stringValue = params.getFirst(key);

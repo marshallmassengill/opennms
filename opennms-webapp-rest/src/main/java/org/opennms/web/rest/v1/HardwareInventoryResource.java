@@ -28,6 +28,7 @@
 
 package org.opennms.web.rest.v1;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -51,6 +52,7 @@ import org.opennms.netmgt.model.HwEntityAttributeType;
 import org.opennms.netmgt.model.OnmsHwEntity;
 import org.opennms.netmgt.model.OnmsHwEntityAttribute;
 import org.opennms.netmgt.model.OnmsNode;
+import org.opennms.web.api.RestUtils;
 import org.opennms.web.rest.support.MultivaluedMapImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -218,6 +220,10 @@ public class HardwareInventoryResource extends OnmsRestService {
             BeanWrapper wrapper = PropertyAccessorFactory.forBeanPropertyAccess(entity);
             for(String key : params.keySet()) {
                 if (key.startsWith("entPhysical")) {
+                    if (RestUtils.isProtectedProperty(entity.getClass(), key, Collections.emptySet())) {
+                        LOG.warn("updateHwEntity: ignoring attempt to set protected property '{}'", key);
+                        continue;
+                    }
                     if (wrapper.isWritableProperty(key)) {
                         String stringValue = params.getFirst(key);
                         Object value = wrapper.convertIfNecessary(stringValue, (Class<?>)wrapper.getPropertyType(key));

@@ -28,6 +28,7 @@
 
 package org.opennms.web.rest.v1;
 
+import java.util.Collections;
 import java.util.Date;
 
 import javax.servlet.http.HttpServletRequest;
@@ -126,9 +127,7 @@ public class AssetRecordResource extends OnmsRestService {
         BeanWrapper wrapper = PropertyAccessorFactory.forBeanPropertyAccess(assetRecord);
         wrapper.registerCustomEditor(Date.class, new ISO8601DateEditor());
         for(String key : params.keySet()) {
-            // The asset record holds a back-reference to its node, so without this guard a
-            // nested path here reaches the node's protected properties.
-            if (RestUtils.isProtectedProperty(key, RestUtils.PROTECTED_NODE_PROPERTIES)) {
+            if (RestUtils.isProtectedProperty(assetRecord.getClass(), key, Collections.emptySet())) {
                 LOG.warn("updateAssetRecord: ignoring attempt to set protected property '{}'", key);
                 continue;
             }

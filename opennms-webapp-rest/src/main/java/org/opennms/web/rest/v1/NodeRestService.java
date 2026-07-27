@@ -29,10 +29,8 @@
 package org.opennms.web.rest.v1;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -297,7 +295,7 @@ public class NodeRestService extends OnmsRestService {
             boolean modified = false;
             final BeanWrapper wrapper = PropertyAccessorFactory.forBeanPropertyAccess(node);
             for(final String key : params.keySet()) {
-                if (RestUtils.isProtectedProperty(key, RestUtils.PROTECTED_NODE_PROPERTIES)) {
+                if (RestUtils.isProtectedProperty(node.getClass(), key, Collections.emptySet())) {
                     LOG.warn("updateNode: ignoring attempt to set protected property '{}'", key);
                     continue;
                 }
@@ -474,7 +472,7 @@ public class NodeRestService extends OnmsRestService {
             BeanWrapper wrapper = PropertyAccessorFactory.forBeanPropertyAccess(category);
             boolean updated = false;
             for(String key : params.keySet()) {
-                if (RestUtils.isProtectedProperty(key, Collections.singleton("name"))) {
+                if (RestUtils.isProtectedProperty(category.getClass(), key, Collections.singleton("name"))) {
                     LOG.warn("updateCategoryForNode: ignoring attempt to set protected property '{}'", key);
                     continue;
                 }

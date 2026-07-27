@@ -28,6 +28,8 @@
 
 package org.opennms.web.rest.v1;
 
+import java.util.Collections;
+
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
@@ -58,6 +60,7 @@ import org.opennms.netmgt.model.OnmsServiceType;
 import org.opennms.netmgt.model.events.EventBuilder;
 import org.opennms.netmgt.model.events.EventUtils;
 import org.opennms.netmgt.xml.event.Event;
+import org.opennms.web.api.RestUtils;
 import org.opennms.web.rest.support.MultivaluedMapImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -226,6 +229,10 @@ public class OnmsMonitoredServiceResource extends OnmsRestService {
             boolean modified = false;
             BeanWrapper wrapper = PropertyAccessorFactory.forBeanPropertyAccess(service);
             for(String key : params.keySet()) {
+                if (RestUtils.isProtectedProperty(service.getClass(), key, Collections.emptySet())) {
+                    LOG.warn("updateService: ignoring attempt to set protected property '{}'", key);
+                    continue;
+                }
                 if (wrapper.isWritableProperty(key)) {
                     String stringValue = params.getFirst(key);
                     Object value = wrapper.convertIfNecessary(stringValue, (Class<?>)wrapper.getPropertyType(key));

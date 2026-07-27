@@ -53,6 +53,7 @@ import org.opennms.netmgt.model.OnmsGroup;
 import org.opennms.netmgt.model.OnmsGroupList;
 import org.opennms.netmgt.model.OnmsUser;
 import org.opennms.netmgt.model.OnmsUserList;
+import org.opennms.web.api.RestUtils;
 import org.opennms.web.rest.support.MultivaluedMapImpl;
 import org.opennms.web.svclayer.api.GroupService;
 import org.slf4j.Logger;
@@ -139,6 +140,10 @@ public class GroupRestService extends OnmsRestService {
             boolean modified = false;
             final BeanWrapper wrapper = PropertyAccessorFactory.forBeanPropertyAccess(group);
             for(final String key : params.keySet()) {
+                if (RestUtils.isProtectedProperty(group.getClass(), key, Collections.emptySet())) {
+                    LOG.warn("updateGroup: ignoring attempt to set protected property '{}'", key);
+                    continue;
+                }
                 if (wrapper.isWritableProperty(key)) {
                     final String stringValue = params.getFirst(key);
                     final Object value = wrapper.convertIfNecessary(stringValue, wrapper.getPropertyType(key));

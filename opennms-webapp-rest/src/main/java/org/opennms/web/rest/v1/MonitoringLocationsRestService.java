@@ -53,6 +53,7 @@ import org.opennms.netmgt.dao.api.MonitoringLocationDao;
 import org.opennms.netmgt.events.api.EventProxy;
 import org.opennms.netmgt.model.monitoringLocations.OnmsMonitoringLocation;
 import org.opennms.netmgt.provision.persist.StringIntervalPropertyEditor;
+import org.opennms.web.api.RestUtils;
 import org.opennms.web.rest.support.MultivaluedMapImpl;
 import org.opennms.web.rest.v1.support.OnmsMonitoringLocationDefinitionList;
 import org.slf4j.Logger;
@@ -143,6 +144,10 @@ public class MonitoringLocationsRestService extends OnmsRestService {
 			final BeanWrapper wrapper = PropertyAccessorFactory.forBeanPropertyAccess(def);
 			wrapper.registerCustomEditor(Duration.class, new StringIntervalPropertyEditor());
 			for(final String key : params.keySet()) {
+				if (RestUtils.isProtectedProperty(def.getClass(), key, Collections.emptySet())) {
+					LOG.warn("updateMonitoringLocation: ignoring attempt to set protected property '{}'", key);
+					continue;
+				}
 				if (wrapper.isWritableProperty(key)) {
 					String stringValue = params.getFirst(key);
 					Object value = wrapper.convertIfNecessary(stringValue, (Class<?>)wrapper.getPropertyType(key));

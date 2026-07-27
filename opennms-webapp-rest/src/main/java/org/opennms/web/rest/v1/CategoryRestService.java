@@ -29,6 +29,7 @@
 package org.opennms.web.rest.v1;
 
 import java.util.ArrayList;
+import java.util.Collections;
 
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
@@ -110,7 +111,7 @@ public class CategoryRestService extends OnmsRestService {
             BeanWrapper wrapper = PropertyAccessorFactory.forBeanPropertyAccess(category);
             boolean modified = false;
             for(String key : params.keySet()) {
-                if (RestUtils.isProtectedProperty(key, java.util.Collections.emptySet())) {
+                if (RestUtils.isProtectedProperty(category.getClass(), key, Collections.emptySet())) {
                     LOG.warn("updateCategory: ignoring attempt to set protected property '{}'", key);
                     continue;
                 }

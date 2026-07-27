@@ -28,6 +28,7 @@
 
 package org.opennms.web.rest.v1;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
@@ -56,6 +57,7 @@ import org.opennms.netmgt.provision.persist.foreignsource.ForeignSourceCollectio
 import org.opennms.netmgt.provision.persist.foreignsource.PluginConfig;
 import org.opennms.netmgt.provision.persist.foreignsource.PolicyCollection;
 import org.opennms.netmgt.provision.persist.foreignsource.PolicyWrapper;
+import org.opennms.web.api.RestUtils;
 import org.opennms.web.rest.support.MultivaluedMapImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -436,6 +438,10 @@ public class ForeignSourceRestService extends OnmsRestService {
             final BeanWrapper wrapper = PropertyAccessorFactory.forBeanPropertyAccess(fs);
             wrapper.registerCustomEditor(Duration.class, new StringIntervalPropertyEditor());
             for(final String key : params.keySet()) {
+                if (RestUtils.isProtectedProperty(fs.getClass(), key, Collections.emptySet())) {
+                    LOG.warn("updateForeignSource: ignoring attempt to set protected property '{}'", key);
+                    continue;
+                }
                 if (wrapper.isWritableProperty(key)) {
                     Object value = null;
                     String stringValue = params.getFirst(key);
