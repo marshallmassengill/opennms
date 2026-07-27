@@ -377,7 +377,7 @@ public class NodeRestServiceIT extends AbstractSpringJerseyRestTestCase {
         sendPut("/nodes/1/ipinterfaces/10.10.10.10/services/ICMP",
                 "status=A&ipInterface.node.foreignSource=AttackerReq", 204);
 
-        final String xml = sendRequest(GET, "/nodes/1", 200);
+        final String xml = getNodeXml("/nodes/1");
         assertFalse("no child endpoint may write the node's foreignSource", xml.contains("AttackerReq"));
         assertEquals("foreignSource must remain unset", "", rootAttribute(xml, "foreignSource"));
         assertEquals("foreignId must remain unset", "", rootAttribute(xml, "foreignId"));
@@ -400,18 +400,28 @@ public class NodeRestServiceIT extends AbstractSpringJerseyRestTestCase {
         params.put("entPhysicalNode.foreignSource", "AttackerReq");
         sendRequest(PUT, "/nodes/1/hardwareInventory/9", params, 204);
 
-        final String xml = sendRequest(GET, "/nodes/1", 200);
+        final String xml = getNodeXml("/nodes/1");
         assertFalse("the hardware endpoint may not write the node", xml.contains("AttackerReq"));
         assertEquals("", rootAttribute(xml, "foreignSource"));
         assertTrue(sendRequest(GET, "/nodes/1/hardwareInventory/9", 200).contains("123456789"));
     }
 
+    /**
+     * The plain sendRequest sends no Accept header at all, so the format follows the resource's
+     * @Produces order. It is XML first here and JSON first on v2; ask for XML outright rather than
+     * depend on that ordering.
+     */
+    private String getNodeXml(final String url) throws Exception {
+        final MockHttpServletRequest request = createRequest(servletContext, GET, url, getUser(), getUserRoles());
+        request.addHeader(ACCEPT, MediaType.APPLICATION_XML);
+        return sendRequest(request, 200);
+    }
+
     /** foreignSource, foreignId and type are XML attributes of the node element. */
     private static String rootAttribute(final String xml, final String name) throws Exception {
-        final DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-        final Document document = factory.newDocumentBuilder()
-                .parse(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
-        return document.getDocumentElement().getAttribute(name);
+        return DocumentBuilderFactory.newInstance().newDocumentBuilder()
+                .parse(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)))
+                .getDocumentElement().getAttribute(name);
     }
 
     @Test

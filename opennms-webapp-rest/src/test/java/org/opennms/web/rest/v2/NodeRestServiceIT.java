@@ -56,6 +56,7 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.web.WebAppConfiguration;
 import org.w3c.dom.Document;
+import org.w3c.dom.NodeList;
 
 /**
  * TODO
@@ -278,12 +279,12 @@ public class NodeRestServiceIT extends AbstractSpringJerseyRestTestCase {
         sendPut("/nodes/1", "sys_contact=LegitContact&foreign_source=AttackerReq&foreign_id=999&Type=D"
                 + "&asset_record.node.foreign_source=NestedReq", 204);
 
-        final String xml = sendRequest(GET, "/nodes/1", 200);
+        final String xml = getNodeXml("/nodes/1");
         assertEquals("foreignSource must not be reassignable via update", "JUnit", rootAttribute(xml, "foreignSource"));
         assertEquals("foreignId must not be reassignable via update", "TestMachine1", rootAttribute(xml, "foreignId"));
         assertEquals("type must not be reassignable via update", "A", rootAttribute(xml, "type"));
         assertFalse("foreignSource must not be reachable through a nested path", xml.contains("NestedReq"));
-        assertTrue("legitimate fields still update", xml.contains("LegitContact"));
+        assertEquals("legitimate fields still update", "LegitContact", elementText(xml, "sysContact"));
     }
 
     /**
@@ -304,7 +305,7 @@ public class NodeRestServiceIT extends AbstractSpringJerseyRestTestCase {
                 "ip_interface.node.foreign_source=AttackerReq&ipInterface.node.foreignSource=AttackerReq");
         assertUpdateNotRejected("/nodes/1/categories/Production", "node.foreign_source=AttackerReq");
 
-        final String xml = sendRequest(GET, "/nodes/1", 200);
+        final String xml = getNodeXml("/nodes/1");
         assertFalse("no child endpoint may write the node's foreignSource", xml.contains("AttackerReq"));
         assertEquals("JUnit", rootAttribute(xml, "foreignSource"));
         assertEquals("TestMachine1", rootAttribute(xml, "foreignId"));
@@ -332,9 +333,9 @@ public class NodeRestServiceIT extends AbstractSpringJerseyRestTestCase {
         createNodeWithChildren();
 
         sendPut("/nodes/1", "asset_record.manufacturer=Apple&asset_record.operating_system=MacOSX", 204);
-        final String xml = sendRequest(GET, "/nodes/1", 200);
-        assertTrue("nested asset writes must keep working", xml.contains("Apple"));
-        assertTrue("nested asset writes must keep working", xml.contains("MacOSX"));
+        final String xml = getNodeXml("/nodes/1");
+        assertEquals("nested asset writes must keep working", "Apple", elementText(xml, "manufacturer"));
+        assertEquals("nested asset writes must keep working", "MacOSX", elementText(xml, "operatingSystem"));
     }
 
     /**
@@ -351,12 +352,32 @@ public class NodeRestServiceIT extends AbstractSpringJerseyRestTestCase {
         assertTrue("PUT " + url + " was rejected with " + response.getStatus(), response.getStatus() < 400);
     }
 
+    /**
+     * The plain sendRequest sends no Accept header at all, so the format follows the resource's
+     * @Produces order, which is JSON first on v2 and XML first on v1. Ask for XML outright rather
+     * than depend on that ordering.
+     */
+    private String getNodeXml(final String url) throws Exception {
+        final MockHttpServletRequest request = createRequest(servletContext, GET, url, getUser(), getUserRoles());
+        request.addHeader(ACCEPT, MediaType.APPLICATION_XML);
+        return sendRequest(request, 200);
+    }
+
     /** foreignSource, foreignId and type are XML attributes of the node element. */
     private static String rootAttribute(final String xml, final String name) throws Exception {
-        final DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-        final Document document = factory.newDocumentBuilder()
+        return parse(xml).getDocumentElement().getAttribute(name);
+    }
+
+    /** Everything else, including the asset record's fields, is a nested element. */
+    private static String elementText(final String xml, final String name) throws Exception {
+        final NodeList elements = parse(xml).getElementsByTagName(name);
+        assertTrue("no <" + name + "> element in " + xml, elements.getLength() > 0);
+        return elements.item(0).getTextContent();
+    }
+
+    private static Document parse(final String xml) throws Exception {
+        return DocumentBuilderFactory.newInstance().newDocumentBuilder()
                 .parse(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
-        return document.getDocumentElement().getAttribute(name);
     }
 
     private void createNodeWithChildren() throws Exception {
