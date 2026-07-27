@@ -33,6 +33,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import java.beans.PropertyDescriptor;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -54,6 +55,7 @@ import org.opennms.netmgt.model.OnmsIpInterface;
 import org.opennms.netmgt.model.OnmsMonitoredService;
 import org.opennms.netmgt.model.OnmsNode;
 import org.opennms.netmgt.model.OnmsNode.NodeType;
+import org.opennms.netmgt.model.OnmsServiceType;
 import org.opennms.netmgt.model.OnmsSnmpInterface;
 import org.opennms.netmgt.provision.persist.requisition.Requisition;
 import org.opennms.netmgt.provision.persist.requisition.RequisitionNode;
@@ -213,20 +215,60 @@ public class RestUtilsTest {
     }
 
     /**
-     * Collection and map hops cannot be walked to an owning type reliably, so a nested path
-     * through one is refused outright rather than guessed at. A trailing index is just a write to
-     * the collection property itself, which is judged on that property's own name.
+     * An indexed hop is walked, not rejected: the element type comes from the property's generic
+     * signature, so the leaf check still applies behind it. Only a hop whose element type cannot
+     * be resolved at all is refused outright. A trailing index is a write to the collection
+     * property itself and is judged on that property's own name.
      */
     @Test
-    public void refusesNestedPathsThroughIndexedAndKeyedHops() {
+    public void resolvesIndexedHopsAndStillGuardsTheLeaf() {
         assertTrue(isProtected(OnmsNode.class, "ipInterfaces[0].node.foreignSource"));
+        assertTrue(isProtected(OnmsNode.class, "ip_interfaces[0].node.foreign_source"));
         assertTrue(isProtected(OnmsNode.class, "categories[0].authorizedGroups"));
+        assertTrue(isProtected(OnmsNode.class, "categories[0].id"));
         assertTrue(isProtected(OnmsHwEntity.class, "children[0].node.foreignSource"));
+        assertTrue(isProtected(OnmsNode.class, "ipInterfaces[0].monitoredServices[0].ipInterface.node.foreignSource"));
+        // 'node' is not a collection, so Spring cannot index it and neither can the walk
+        assertTrue(isProtected(OnmsIpInterface.class, "node[0].foreignSource"));
         assertTrue(isProtected(OnmsNode.class, "nosuchcollection[0].foreignSource"));
         assertTrue(isProtected(OnmsNode.class, "[0].foreignSource"));
 
         assertFalse(isProtected(OnmsNode.class, "categories[0]"));
         assertFalse(isProtected(OnmsNode.class, "ipInterfaces[2]"));
+        assertFalse(isProtected(OnmsNode.class, "ipInterfaces[0].ipHostName"));
+        assertFalse(isProtected(OnmsHwEntity.class, "children[0].entPhysicalName"));
+    }
+
+    /**
+     * The type map is the only thing standing between a request parameter and an ownership field,
+     * so an omission from it is not caught anywhere else. Reflect over what OnmsNode actually
+     * exposes and fail on anything ownership-shaped the guard does not already refuse. A property
+     * that trips this and is genuinely harmless belongs in the exempt set below, which is a
+     * deliberate, reviewable act; the alternative is finding out from a takeover report.
+     */
+    @Test
+    public void nodeOwnershipPropertiesAreAllListed() {
+        final Set<String> exempt = Collections.singleton("sysObjectId");
+        final List<String> unguarded = new ArrayList<>();
+        for (final PropertyDescriptor descriptor
+                : PropertyAccessorFactory.forBeanPropertyAccess(new OnmsNode()).getPropertyDescriptors()) {
+            final String name = descriptor.getName();
+            if (descriptor.getWriteMethod() == null || exempt.contains(name) || !isOwnershipShaped(name)) {
+                continue;
+            }
+            if (!isProtected(OnmsNode.class, name)) {
+                unguarded.add(name);
+            }
+        }
+        assertEquals("OnmsNode exposes ownership-shaped writable properties the guard does not refuse."
+                        + " Add them to RestUtils.PROTECTED_NODE_PROPERTIES, or to this test's exempt set"
+                        + " if they really are not ownership fields",
+                Collections.emptyList(), unguarded);
+    }
+
+    private static boolean isOwnershipShaped(final String name) {
+        final String lower = name.toLowerCase();
+        return lower.startsWith("foreign") || lower.endsWith("id");
     }
 
     /** UserDefinedLink names its primary key dbId, which is mass-assignable like any other. */
@@ -441,15 +483,21 @@ public class RestUtilsTest {
         // instead of sitting here writing nothing.
         final List<String> leaves = Arrays.asList("foreignSource", "foreign_source", "foreign-source",
                 "ForeignSource", "foreignId", "foreign_id", "type", "Type", "TYPE",
-                "id", "Id", "nodeId", "node_id");
-        // Every prefix here has to be able to bind, and the assertion at the end enforces that.
-        // Collection hops such as ipInterfaces[0]. are deliberately absent: the relations are all
-        // Sets, which Spring cannot index, so they would sit here writing nothing and looking like
-        // coverage. Indexed and unresolvable paths are covered by their own tests.
+                "id", "Id", "nodeId", "node_id", "authorizedGroups", "authorized_groups");
+        // Every prefix here has to be able to bind, and the assertion at the end enforces that, so
+        // the fixture has to wire up each relation these walk. The collection hops do bind: Spring
+        // indexes a Set for navigation and refuses only element replacement, so ipInterfaces[0].x
+        // is a live write path. 'node[0].' is absent because indexed access needs an array, List,
+        // Set or Map and 'node' is a single reference; it is asserted as a refusal instead.
         final List<String> prefixes = Arrays.asList("", "node.", "Node.", "NODE.",
                 "assetRecord.node.", "asset_record.node.", "assetRecord.node.assetRecord.node.",
                 "ipInterface.node.", "ip_interface.node.", "snmpInterface.node.", "snmp_interface.node.",
                 "ipInterface.snmpInterface.node.",
+                // indexed traversal, where the walk has to resolve an element type from generics
+                "ipInterfaces[0].node.", "ip_interfaces[0].node.", "snmpInterfaces[0].node.",
+                "categories[0].", "monitoredServices[0].ipInterface.node.",
+                "snmpInterface.ipInterfaces[0].node.", "children[0].node.",
+                "ipInterfaces[0].monitoredServices[0].ipInterface.node.",
                 // the parent hop reaches a different node than the request targets
                 "parent.", "node.parent.", "parent.parent.", "parent.asset_record.node.");
 
@@ -512,7 +560,8 @@ public class RestUtilsTest {
         final List<Supplier<Object[]>> targets = new ArrayList<>();
         targets.add(() -> { final OnmsNode n = node(); return new Object[] { n, n }; });
         targets.add(() -> { final OnmsNode n = node(); return new Object[] { n.getAssetRecord(), n }; });
-        targets.add(() -> { final OnmsNode n = node(); return new Object[] { ipInterface(n), n }; });
+        targets.add(() -> { final OnmsNode n = node(); return new Object[] { n.getIpInterfaces().iterator().next(), n }; });
+        targets.add(() -> { final OnmsNode n = node(); return new Object[] { n.getCategories().iterator().next(), n }; });
         targets.add(() -> {
             final OnmsNode n = node();
             final OnmsSnmpInterface snmpIface = new OnmsSnmpInterface();
@@ -521,17 +570,20 @@ public class RestUtilsTest {
         });
         targets.add(() -> {
             final OnmsNode n = node();
-            final OnmsMonitoredService service = new OnmsMonitoredService();
-            service.setIpInterface(ipInterface(n));
-            return new Object[] { service, n };
+            return new Object[] { n.getIpInterfaces().iterator().next().getMonitoredServices().iterator().next(), n };
         });
         targets.add(() -> {
             final OnmsNode n = node();
             final OnmsHwEntity entity = new OnmsHwEntity();
             entity.setNode(n);
+            entity.setEntPhysicalIndex(1);
+            final OnmsHwEntity child = new OnmsHwEntity();
+            child.setNode(n);
+            child.setEntPhysicalIndex(2);
+            child.setId(51);
+            entity.addChildEntity(child);
             return new Object[] { entity, n };
         });
-        targets.add(() -> { final OnmsNode n = node(); return new Object[] { new OnmsCategory("Production"), n }; });
         return targets;
     }
 
@@ -585,15 +637,42 @@ public class RestUtilsTest {
         return distinct;
     }
 
+    /**
+     * Every piece of protected state the matrix can reach, including through the collections the
+     * indexed prefixes walk. State left out here makes a write to it indistinguishable from a
+     * refusal, which silently drops the path out of coverage.
+     */
     private static String fingerprint(final OnmsNode node, final Object bean) {
-        final BeanWrapper wrapper = PropertyAccessorFactory.forBeanPropertyAccess(bean);
-        final Object beanId = wrapper.isReadableProperty("id") ? wrapper.getPropertyValue("id") : null;
         final StringBuilder fingerprint = new StringBuilder();
         for (OnmsNode hop = node; hop != null; hop = hop.getParent()) {
             fingerprint.append(hop.getId()).append('|').append(hop.getForeignSource()).append('|')
                     .append(hop.getForeignId()).append('|').append(hop.getType()).append("//");
+            for (final OnmsIpInterface iface : hop.getIpInterfaces()) {
+                fingerprint.append(iface.getId()).append(',');
+                for (final OnmsMonitoredService service : iface.getMonitoredServices()) {
+                    fingerprint.append(service.getId()).append(',');
+                }
+            }
+            for (final OnmsSnmpInterface snmpIface : hop.getSnmpInterfaces()) {
+                fingerprint.append(snmpIface.getId()).append(',');
+            }
+            for (final OnmsCategory category : hop.getCategories()) {
+                fingerprint.append(category.getId()).append(',').append(category.getAuthorizedGroups()).append(',');
+            }
+            fingerprint.append("//");
         }
-        return fingerprint.append(beanId).toString();
+        final BeanWrapper wrapper = PropertyAccessorFactory.forBeanPropertyAccess(bean);
+        for (final String local : new String[] { "id", "authorizedGroups" }) {
+            if (wrapper.isReadableProperty(local)) {
+                fingerprint.append(wrapper.getPropertyValue(local)).append('|');
+            }
+        }
+        if (bean instanceof OnmsHwEntity) {
+            for (final OnmsHwEntity child : ((OnmsHwEntity) bean).getChildren()) {
+                fingerprint.append(child.getId()).append(',');
+            }
+        }
+        return fingerprint.toString();
     }
 
     private static OnmsNode node() {
@@ -606,13 +685,28 @@ public class RestUtilsTest {
         return node;
     }
 
-    /** An IP interface with its SNMP interface wired, so the second-level hops resolve. */
+    /**
+     * An IP interface with its SNMP interface and monitored service wired, and registered in the
+     * node's collections, so every relation the matrix walks actually resolves. A collection left
+     * empty makes the paths through it silently write nothing.
+     */
     private static OnmsIpInterface ipInterface(final OnmsNode node) {
         final OnmsIpInterface iface = new OnmsIpInterface();
         iface.setNode(node);
+        iface.setId(11);
         final OnmsSnmpInterface snmpIface = new OnmsSnmpInterface();
         snmpIface.setNode(node);
+        snmpIface.setId(21);
+        snmpIface.setIfIndex(1);
         iface.setSnmpInterface(snmpIface);
+        snmpIface.getIpInterfaces().add(iface);
+        node.getSnmpInterfaces().add(snmpIface);
+        node.getIpInterfaces().add(iface);
+        final OnmsMonitoredService service = new OnmsMonitoredService();
+        service.setIpInterface(iface);
+        service.setId(31);
+        service.setServiceType(new OnmsServiceType("ICMP"));
+        iface.getMonitoredServices().add(service);
         return iface;
     }
 
@@ -626,6 +720,10 @@ public class RestUtilsTest {
         final OnmsAssetRecord assetRecord = new OnmsAssetRecord();
         assetRecord.setNode(node);
         node.setAssetRecord(assetRecord);
+        final OnmsCategory category = new OnmsCategory("Production");
+        category.setId(41 + id);
+        node.getCategories().add(category);
+        ipInterface(node);
         return node;
     }
 

@@ -78,6 +78,12 @@ public abstract class RestUtils {
 	 * Protected properties keyed by the type that owns them. The guard resolves a request key to
 	 * the type the bound path actually lands on and consults this map, so an entry applies to
 	 * every endpoint and to every nested route that reaches the type. Call sites do not opt in.
+	 *
+	 * <p>This map is the whole of the policy: nothing else refuses a write on the strength of what
+	 * it would reach, so an ownership property missing from here is unprotected everywhere. Adding
+	 * a field of that kind to a type listed below means adding it here too, and
+	 * {@code RestUtilsTest.nodeOwnershipPropertiesAreAllListed} is meant to fail if that is
+	 * forgotten for {@code OnmsNode}.</p>
 	 */
 	private static final Map<Class<?>,Set<String>> PROTECTED_PROPERTIES_BY_TYPE =
 	        Collections.singletonMap(OnmsNode.class, PROTECTED_NODE_PROPERTIES);
