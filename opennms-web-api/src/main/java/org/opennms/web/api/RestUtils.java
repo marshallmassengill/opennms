@@ -150,8 +150,12 @@ public abstract class RestUtils {
 
 	/**
 	 * Walk the property path one segment at a time, tracking the type each hop lands on, and
-	 * report whether the write it would perform is protected. Only declared types are consulted;
-	 * no getter is invoked, so this cannot trigger a lazy load or fail on a null mid-path.
+	 * report whether the write it would perform is protected. The hop itself is never the
+	 * objection: only a segment naming a protected property of the type it sits on is, at
+	 * whatever depth it appears. A path whose owning type cannot be determined is refused,
+	 * because a write we cannot place is a write we cannot vouch for. Only declared types are
+	 * consulted; no getter is invoked, so this cannot trigger a lazy load or fail on a null
+	 * mid-path.
 	 */
 	private static boolean pathReachesProtectedProperty(final Class<?> rootType, final String path, final Set<String> additionalProtectedProperties) {
 	    final String[] segments = path.split("\\.", -1);
@@ -174,7 +178,7 @@ public abstract class RestUtils {
 	            return true;
 	        }
 	        final Class<?> hop = bracket < 0 ? descriptor.getPropertyType() : findElementType(descriptor);
-	        if (hop == null || isTraversalBlocked(hop)) {
+	        if (hop == null) {
 	            return true;
 	        }
 	        owner = hop;
@@ -192,22 +196,6 @@ public abstract class RestUtils {
 	    for (final Map.Entry<Class<?>,Set<String>> entry : PROTECTED_PROPERTIES_BY_TYPE.entrySet()) {
 	        if (mayBe(owner, entry.getKey())
 	                && (containsIgnoreCase(entry.getValue(), name) || containsIgnoreCase(entry.getValue(), normalized))) {
-	            return true;
-	        }
-	    }
-	    return false;
-	}
-
-	/**
-	 * A bound path may not walk into a type that has protected properties, whatever the request
-	 * targets. Bidirectional relationships mean a child entity can reach its node and a node can
-	 * reach its parent, so allowing the hop at all is what turns a property write into a
-	 * requisition takeover. Writing down into a node's own children stays allowed; only the hop
-	 * back into a guarded entity is refused.
-	 */
-	private static boolean isTraversalBlocked(final Class<?> hop) {
-	    for (final Class<?> guarded : PROTECTED_PROPERTIES_BY_TYPE.keySet()) {
-	        if (mayBe(hop, guarded)) {
 	            return true;
 	        }
 	    }

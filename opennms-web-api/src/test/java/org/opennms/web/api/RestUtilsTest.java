@@ -46,6 +46,7 @@ import javax.ws.rs.core.MultivaluedHashMap;
 import javax.ws.rs.core.MultivaluedMap;
 
 import org.junit.Test;
+import org.opennms.netmgt.enlinkd.model.UserDefinedLink;
 import org.opennms.netmgt.model.OnmsAssetRecord;
 import org.opennms.netmgt.model.OnmsCategory;
 import org.opennms.netmgt.model.OnmsHwEntity;
@@ -174,31 +175,88 @@ public class RestUtilsTest {
         assertTrue(isProtected(OnmsMonitoredService.class, "ipInterface.node.foreignSource"));
     }
 
-    /**
-     * A request against a child entity has no business writing the node at all, however harmless
-     * the field looks; that is the traversal this class of bug rides on.
-     */
+    /** Depth does not launder a protected leaf, however many hops it hides behind. */
     @Test
-    public void refusesAnyTraversalFromChildEntityIntoNode() {
-        assertTrue(isProtected(OnmsIpInterface.class, "node.label"));
-        assertTrue(isProtected(OnmsIpInterface.class, "node.sysContact"));
-        assertTrue(isProtected(OnmsSnmpInterface.class, "node.assetRecord.manufacturer"));
-        assertTrue(isProtected(OnmsMonitoredService.class, "ipInterface.node.label"));
+    public void protectsProtectedLeavesAtAnyDepth() {
         assertTrue(isProtected(OnmsIpInterface.class, "snmpInterface.node.foreignSource"));
+        assertTrue(isProtected(OnmsIpInterface.class, "snmp_interface.node.foreign_source"));
+        assertTrue(isProtected(OnmsSnmpInterface.class, "node.assetRecord.node.foreignSource"));
+        assertTrue(isProtected(OnmsMonitoredService.class, "ipInterface.node.parent.foreignSource"));
+        assertTrue(isProtected(OnmsNode.class, "parent.parent.foreignSource"));
+        assertTrue(isProtected(OnmsNode.class, "parent.assetRecord.node.foreign_source"));
     }
 
     /**
-     * The node relation is bidirectional in both directions: a node reaches its parent node and
-     * its own back-reference through the asset record, so the hop itself is refused rather than
-     * just the protected leaves behind it.
+     * The boundary is the protected leaf, not the hop. A node reached through a relation is still
+     * a node, so its ownership fields are refused there, while its ordinary fields bind exactly
+     * as they did before this guard existed. Both directions are asserted so that tightening or
+     * loosening the rule has to be a deliberate edit to this test.
      */
     @Test
-    public void refusesTraversalIntoAnyNodeEvenFromANodeRequest() {
+    public void guardsProtectedLeavesOnAHoppedIntoNodeButNotOrdinaryOnes() {
         assertTrue(isProtected(OnmsNode.class, "parent.foreignSource"));
         assertTrue(isProtected(OnmsNode.class, "parent.foreign_source"));
-        assertTrue(isProtected(OnmsNode.class, "parent.label"));
-        assertTrue(isProtected(OnmsNode.class, "assetRecord.node.label"));
-        assertTrue(isProtected(OnmsNode.class, "asset_record.node.label"));
+        assertTrue(isProtected(OnmsNode.class, "parent.foreignId"));
+        assertTrue(isProtected(OnmsNode.class, "parent.type"));
+        assertTrue(isProtected(OnmsNode.class, "parent.id"));
+        assertTrue(isProtected(OnmsIpInterface.class, "node.parent.foreign_source"));
+
+        assertFalse(isProtected(OnmsNode.class, "parent.label"));
+        assertFalse(isProtected(OnmsNode.class, "parent.sysContact"));
+        assertFalse(isProtected(OnmsNode.class, "parent.sys_contact"));
+        assertFalse(isProtected(OnmsNode.class, "assetRecord.node.label"));
+        assertFalse(isProtected(OnmsNode.class, "asset_record.node.label"));
+        assertFalse(isProtected(OnmsIpInterface.class, "node.label"));
+        assertFalse(isProtected(OnmsIpInterface.class, "node.sysContact"));
+        assertFalse(isProtected(OnmsSnmpInterface.class, "node.assetRecord.manufacturer"));
+        assertFalse(isProtected(OnmsMonitoredService.class, "ipInterface.node.label"));
+    }
+
+    /**
+     * Collection and map hops cannot be walked to an owning type reliably, so a nested path
+     * through one is refused outright rather than guessed at. A trailing index is just a write to
+     * the collection property itself, which is judged on that property's own name.
+     */
+    @Test
+    public void refusesNestedPathsThroughIndexedAndKeyedHops() {
+        assertTrue(isProtected(OnmsNode.class, "ipInterfaces[0].node.foreignSource"));
+        assertTrue(isProtected(OnmsNode.class, "categories[0].authorizedGroups"));
+        assertTrue(isProtected(OnmsHwEntity.class, "children[0].node.foreignSource"));
+        assertTrue(isProtected(OnmsNode.class, "nosuchcollection[0].foreignSource"));
+        assertTrue(isProtected(OnmsNode.class, "[0].foreignSource"));
+
+        assertFalse(isProtected(OnmsNode.class, "categories[0]"));
+        assertFalse(isProtected(OnmsNode.class, "ipInterfaces[2]"));
+    }
+
+    /** UserDefinedLink names its primary key dbId, which is mass-assignable like any other. */
+    @Test
+    public void protectsTheUserDefinedLinkPrimaryKey() {
+        assertTrue(isProtected(UserDefinedLink.class, "dbId"));
+        assertTrue(isProtected(UserDefinedLink.class, "db_id"));
+        assertTrue(isProtected(UserDefinedLink.class, "DbId"));
+        assertTrue(RestUtils.isProtectedProperty("dbId", NONE));
+
+        assertFalse(isProtected(UserDefinedLink.class, "nodeIdA"));
+        assertFalse(isProtected(UserDefinedLink.class, "nodeIdZ"));
+        assertFalse(isProtected(UserDefinedLink.class, "linkId"));
+        assertFalse(isProtected(UserDefinedLink.class, "componentLabelA"));
+        assertFalse(isProtected(UserDefinedLink.class, "owner"));
+    }
+
+    @Test
+    public void userDefinedLinkUpdateCannotReassignThePrimaryKey() {
+        final UserDefinedLink link = new UserDefinedLink();
+        link.setDbId(7);
+        link.setLinkId("link-1");
+        final MultivaluedMap<String,String> params = new MultivaluedHashMap<>();
+        params.putSingle("link_label", "LegitLabel");
+        params.putSingle("db_id", "999");
+        params.putSingle("dbId", "999");
+        RestUtils.setBeanProperties(link, params);
+
+        assertEquals("LegitLabel", link.getLinkLabel());
+        assertEquals(Integer.valueOf(7), link.getDbId());
     }
 
     /** Primary keys are refused wherever they turn up, including a nested owner. */
@@ -208,6 +266,11 @@ public class RestUtilsTest {
         assertTrue(isProtected(OnmsIpInterface.class, "id"));
         assertTrue(isProtected(OnmsNode.class, "assetRecord.id"));
         assertTrue(isProtected(OnmsCategory.class, "authorizedGroups"));
+        assertTrue(isProtected(OnmsIpInterface.class, "node.id"));
+        assertTrue(isProtected(OnmsIpInterface.class, "node_id"));
+        assertTrue(isProtected(OnmsMonitoredService.class, "ipInterface.id"));
+        assertTrue(isProtected(OnmsMonitoredService.class, "ip_interface.id"));
+        assertTrue(isProtected(OnmsNode.class, "parent.id"));
     }
 
     /**
@@ -281,13 +344,14 @@ public class RestUtilsTest {
         params.putSingle("node.foreign_source", "AttackerReq");
         params.putSingle("node.foreignSource", "AttackerReq");
         params.putSingle("node.foreign_id", "999");
-        params.putSingle("node.label", "Hijacked");
+        params.putSingle("node.label", "Relabelled");
         RestUtils.setBeanProperties(iface, params);
 
         assertEquals("M", iface.getIsManaged());
         assertEquals("JUnit", node.getForeignSource());
         assertEquals("TestMachine1", node.getForeignId());
-        assertEquals("TestMachine1", node.getLabel());
+        // Non-protected fields on a hopped-into node stay writable, as they were before the guard.
+        assertEquals("Relabelled", node.getLabel());
     }
 
     @Test
@@ -378,16 +442,24 @@ public class RestUtilsTest {
         final List<String> leaves = Arrays.asList("foreignSource", "foreign_source", "foreign-source",
                 "ForeignSource", "foreignId", "foreign_id", "type", "Type", "TYPE",
                 "id", "Id", "nodeId", "node_id");
-        final List<String> prefixes = Arrays.asList("", "node.", "Node.", "NODE.", "node[0].",
+        // Every prefix here has to be able to bind, and the assertion at the end enforces that.
+        // Collection hops such as ipInterfaces[0]. are deliberately absent: the relations are all
+        // Sets, which Spring cannot index, so they would sit here writing nothing and looking like
+        // coverage. Indexed and unresolvable paths are covered by their own tests.
+        final List<String> prefixes = Arrays.asList("", "node.", "Node.", "NODE.",
                 "assetRecord.node.", "asset_record.node.", "assetRecord.node.assetRecord.node.",
                 "ipInterface.node.", "ip_interface.node.", "snmpInterface.node.", "snmp_interface.node.",
-                "ipInterface.snmpInterface.node.", "snmpInterface.ipInterfaces[0].node.",
-                "monitoredServices[0].ipInterface.node.", "ipInterfaces[0].node.", "children[0].node.",
-                "node.categories[0].");
+                "ipInterface.snmpInterface.node.",
+                // the parent hop reaches a different node than the request targets
+                "parent.", "node.parent.", "parent.parent.", "parent.asset_record.node.");
 
         final Map<String,Integer> writesByLeaf = new LinkedHashMap<>();
         for (final String leaf : leaves) {
             writesByLeaf.put(leaf, 0);
+        }
+        final Map<String,Integer> writesByPrefix = new LinkedHashMap<>();
+        for (final String prefix : prefixes) {
+            writesByPrefix.put(prefix, 0);
         }
         for (final Supplier<Object[]> target : targets()) {
             final Class<?> rootType = target.get()[0].getClass();
@@ -403,6 +475,7 @@ public class RestUtilsTest {
                             continue;
                         }
                         writesByLeaf.merge(leaf, 1, Integer::sum);
+                        writesByPrefix.merge(prefix, 1, Integer::sum);
                         assertTrue("unguarded bind of '" + bound + "' on " + rootType.getSimpleName()
                                         + " wrote a protected field, but the guard allows key '" + key + "'",
                                 RestUtils.isProtectedProperty(rootType, key, NONE));
@@ -421,6 +494,17 @@ public class RestUtilsTest {
         }
         assertEquals("every leaf token must produce at least one real write, got " + writesByLeaf,
                 Collections.emptyList(), inert);
+
+        // A prefix only writes if the fixture wires up the relation it walks, so require every one
+        // of them rather than let a change to the fixture quietly retire part of the matrix.
+        final List<String> inertPrefixes = new ArrayList<>();
+        for (final Map.Entry<String,Integer> entry : writesByPrefix.entrySet()) {
+            if (entry.getValue() == 0) {
+                inertPrefixes.add(entry.getKey());
+            }
+        }
+        assertEquals("every path prefix must produce at least one real write, got " + writesByPrefix,
+                Collections.emptyList(), inertPrefixes);
     }
 
     /** Each entry supplies a freshly built bind target plus the node it can reach. */
@@ -428,12 +512,7 @@ public class RestUtilsTest {
         final List<Supplier<Object[]>> targets = new ArrayList<>();
         targets.add(() -> { final OnmsNode n = node(); return new Object[] { n, n }; });
         targets.add(() -> { final OnmsNode n = node(); return new Object[] { n.getAssetRecord(), n }; });
-        targets.add(() -> {
-            final OnmsNode n = node();
-            final OnmsIpInterface iface = new OnmsIpInterface();
-            iface.setNode(n);
-            return new Object[] { iface, n };
-        });
+        targets.add(() -> { final OnmsNode n = node(); return new Object[] { ipInterface(n), n }; });
         targets.add(() -> {
             final OnmsNode n = node();
             final OnmsSnmpInterface snmpIface = new OnmsSnmpInterface();
@@ -442,10 +521,8 @@ public class RestUtilsTest {
         });
         targets.add(() -> {
             final OnmsNode n = node();
-            final OnmsIpInterface iface = new OnmsIpInterface();
-            iface.setNode(n);
             final OnmsMonitoredService service = new OnmsMonitoredService();
-            service.setIpInterface(iface);
+            service.setIpInterface(ipInterface(n));
             return new Object[] { service, n };
         });
         targets.add(() -> {
@@ -511,16 +588,40 @@ public class RestUtilsTest {
     private static String fingerprint(final OnmsNode node, final Object bean) {
         final BeanWrapper wrapper = PropertyAccessorFactory.forBeanPropertyAccess(bean);
         final Object beanId = wrapper.isReadableProperty("id") ? wrapper.getPropertyValue("id") : null;
-        return node.getId() + "|" + node.getForeignSource() + "|" + node.getForeignId() + "|"
-                + node.getType() + "|" + beanId;
+        final StringBuilder fingerprint = new StringBuilder();
+        for (OnmsNode hop = node; hop != null; hop = hop.getParent()) {
+            fingerprint.append(hop.getId()).append('|').append(hop.getForeignSource()).append('|')
+                    .append(hop.getForeignId()).append('|').append(hop.getType()).append("//");
+        }
+        return fingerprint.append(beanId).toString();
     }
 
     private static OnmsNode node() {
+        final OnmsNode node = newNode(1, "TestMachine1", "JUnit");
+        // The parent chain reaches other, different nodes, so a write through it has to be
+        // observable separately from a write to the request's own node.
+        final OnmsNode parent = newNode(2, "ParentMachine", "ParentReq");
+        parent.setParent(newNode(3, "GrandparentMachine", "GrandparentReq"));
+        node.setParent(parent);
+        return node;
+    }
+
+    /** An IP interface with its SNMP interface wired, so the second-level hops resolve. */
+    private static OnmsIpInterface ipInterface(final OnmsNode node) {
+        final OnmsIpInterface iface = new OnmsIpInterface();
+        iface.setNode(node);
+        final OnmsSnmpInterface snmpIface = new OnmsSnmpInterface();
+        snmpIface.setNode(node);
+        iface.setSnmpInterface(snmpIface);
+        return iface;
+    }
+
+    private static OnmsNode newNode(final int id, final String label, final String foreignSource) {
         final OnmsNode node = new OnmsNode();
-        node.setId(1);
-        node.setLabel("TestMachine1");
-        node.setForeignSource("JUnit");
-        node.setForeignId("TestMachine1");
+        node.setId(id);
+        node.setLabel(label);
+        node.setForeignSource(foreignSource);
+        node.setForeignId(label);
         node.setType(NodeType.ACTIVE);
         final OnmsAssetRecord assetRecord = new OnmsAssetRecord();
         assetRecord.setNode(node);
