@@ -34,6 +34,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.opennms.core.test.xml.XmlTest.assertXpathMatches;
 
+import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
@@ -52,6 +53,7 @@ import javax.servlet.http.HttpServletResponse;
 import javax.ws.rs.core.MediaType;
 import javax.xml.bind.JAXBContext;
 import javax.xml.bind.Unmarshaller;
+import javax.xml.parsers.DocumentBuilderFactory;
 
 import org.apache.commons.io.IOUtils;
 import org.json.JSONArray;
@@ -83,6 +85,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.web.WebAppConfiguration;
 import org.springframework.transaction.annotation.Transactional;
+import org.w3c.dom.Document;
 
 /**
  * TODO
@@ -350,6 +353,65 @@ public class NodeRestServiceIT extends AbstractSpringJerseyRestTestCase {
         assertTrue(sendRequest(GET, "/nodes/1/assetRecord", 200).contains("LegitAsset"));
         final String xml = sendRequest(GET, "/nodes/1", 200);
         assertFalse("node.foreignSource must not be settable via the asset endpoint", xml.contains("AttackerReq"));
+    }
+
+    /**
+     * Every child entity holds a back-reference to its node, so each of these endpoints is
+     * another route to the node's provisioning-ownership fields. The v1 endpoints bind the raw
+     * request key, so the camelCase spelling is the one that would land here.
+     */
+    @Test
+    @JUnitTemporaryDatabase
+    public void childEndpointsCannotReachNodeProtectedFields() throws Exception {
+        createSnmpInterface();
+        final String service = "<service source=\"P\" status=\"N\">" +
+                "<notify>Y</notify><serviceType><name>ICMP</name></serviceType></service>";
+        sendPost("/nodes/1/ipinterfaces/10.10.10.10/services", service, 201,
+                "/nodes/1/ipinterfaces/10.10.10.10/services/ICMP");
+        setUser("lowpriv", new String[]{ "ROLE_REST" });
+
+        sendPut("/nodes/1/ipinterfaces/10.10.10.10",
+                "isManaged=U&node.foreignSource=AttackerReq&node.foreign_source=AttackerReq&node.type=D", 204);
+        sendPut("/nodes/1/snmpinterfaces/6",
+                "ifName=eth0&node.foreignSource=AttackerReq&node.foreignId=999", 204);
+        sendPut("/nodes/1/ipinterfaces/10.10.10.10/services/ICMP",
+                "status=A&ipInterface.node.foreignSource=AttackerReq", 204);
+
+        final String xml = sendRequest(GET, "/nodes/1", 200);
+        assertFalse("no child endpoint may write the node's foreignSource", xml.contains("AttackerReq"));
+        assertEquals("foreignSource must remain unset", "", rootAttribute(xml, "foreignSource"));
+        assertEquals("foreignId must remain unset", "", rootAttribute(xml, "foreignId"));
+        assertEquals("type must not be reassignable", "A", rootAttribute(xml, "type"));
+        assertTrue("legitimate fields still update", sendRequest(GET, "/nodes/1/snmpinterfaces/6", 200).contains("eth0"));
+    }
+
+    /** The hardware inventory endpoint reaches its node too, and binds arbitrary attributes. */
+    @Test
+    @JUnitTemporaryDatabase
+    public void hardwareInventoryEndpointCannotReachNodeProtectedFields() throws Exception {
+        createIpInterface();
+        final byte[] encoded = Files.readAllBytes(Paths.get("src/test/resources/hardware-inventory.xml"));
+        sendPost("/nodes/1/hardwareInventory", new String(encoded, StandardCharsets.UTF_8), 204, null);
+        setUser("lowpriv", new String[]{ "ROLE_REST" });
+
+        final Map<String,String> params = new HashMap<String,String>();
+        params.put("entPhysicalSerialNum", "123456789");
+        params.put("node.foreignSource", "AttackerReq");
+        params.put("entPhysicalNode.foreignSource", "AttackerReq");
+        sendRequest(PUT, "/nodes/1/hardwareInventory/9", params, 204);
+
+        final String xml = sendRequest(GET, "/nodes/1", 200);
+        assertFalse("the hardware endpoint may not write the node", xml.contains("AttackerReq"));
+        assertEquals("", rootAttribute(xml, "foreignSource"));
+        assertTrue(sendRequest(GET, "/nodes/1/hardwareInventory/9", 200).contains("123456789"));
+    }
+
+    /** foreignSource, foreignId and type are XML attributes of the node element. */
+    private static String rootAttribute(final String xml, final String name) throws Exception {
+        final DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        final Document document = factory.newDocumentBuilder()
+                .parse(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        return document.getDocumentElement().getAttribute(name);
     }
 
     @Test

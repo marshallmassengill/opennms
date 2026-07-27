@@ -28,15 +28,18 @@
 
 package org.opennms.web.rest.v2;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Collections;
 
 import javax.ws.rs.core.MediaType;
+import javax.xml.parsers.DocumentBuilderFactory;
 
 import org.json.JSONObject;
 import org.junit.Test;
@@ -48,8 +51,11 @@ import org.opennms.core.test.rest.AbstractSpringJerseyRestTestCase;
 import org.opennms.test.JUnitConfigurationEnvironment;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.web.WebAppConfiguration;
+import org.w3c.dom.Document;
 
 /**
  * TODO
@@ -272,11 +278,120 @@ public class NodeRestServiceIT extends AbstractSpringJerseyRestTestCase {
         sendPut("/nodes/1", "sys_contact=LegitContact&foreign_source=AttackerReq&foreign_id=999&Type=D"
                 + "&asset_record.node.foreign_source=NestedReq", 204);
 
-        final String xml = sendRequest(GET, "/nodes/1", 200); // still present -> Type=D was ignored
-        assertFalse("foreignSource must not be reassignable via update", xml.contains("AttackerReq"));
+        final String xml = sendRequest(GET, "/nodes/1", 200);
+        assertEquals("foreignSource must not be reassignable via update", "JUnit", rootAttribute(xml, "foreignSource"));
+        assertEquals("foreignId must not be reassignable via update", "TestMachine1", rootAttribute(xml, "foreignId"));
+        assertEquals("type must not be reassignable via update", "A", rootAttribute(xml, "type"));
         assertFalse("foreignSource must not be reachable through a nested path", xml.contains("NestedReq"));
-        assertFalse("foreignId must not be reassignable via update", xml.contains("999"));
         assertTrue("legitimate fields still update", xml.contains("LegitContact"));
+    }
+
+    /**
+     * Each of these entities holds a back-reference to its node, which makes every one of these
+     * endpoints another route to the node's provisioning-ownership fields.
+     */
+    @Test
+    @JUnitTemporaryDatabase
+    public void childEndpointsCannotReassignNodeProtectedFields() throws Exception {
+        createNodeWithChildren();
+        setUser("lowpriv", new String[]{ "ROLE_REST" });
+
+        assertUpdateNotRejected("/nodes/1/ipinterfaces/10.10.10.10",
+                "node.foreign_source=AttackerReq&node.foreign_id=999&node.Type=D");
+        assertUpdateNotRejected("/nodes/1/snmpinterfaces/6",
+                "node.foreign_source=AttackerReq&node.foreign_id=999");
+        assertUpdateNotRejected("/nodes/1/ipinterfaces/10.10.10.10/services/ICMP",
+                "ip_interface.node.foreign_source=AttackerReq&ipInterface.node.foreignSource=AttackerReq");
+        assertUpdateNotRejected("/nodes/1/categories/Production", "node.foreign_source=AttackerReq");
+
+        final String xml = sendRequest(GET, "/nodes/1", 200);
+        assertFalse("no child endpoint may write the node's foreignSource", xml.contains("AttackerReq"));
+        assertEquals("JUnit", rootAttribute(xml, "foreignSource"));
+        assertEquals("TestMachine1", rootAttribute(xml, "foreignId"));
+        assertEquals("A", rootAttribute(xml, "type"));
+    }
+
+    /** The endpoints that reject a property outright must keep rejecting its key variants. */
+    @Test
+    @JUnitTemporaryDatabase
+    public void rejectedPropertiesAreRejectedInEveryKeyVariant() throws Exception {
+        createNodeWithChildren();
+
+        sendPut("/nodes/1/ipinterfaces/10.10.10.10", "ip_address=10.10.10.11", 400);
+        sendPut("/nodes/1/ipinterfaces/10.10.10.10", "IpAddress=10.10.10.11", 400);
+        sendPut("/nodes/1/snmpinterfaces/6", "if_index=7", 400);
+        sendPut("/nodes/1/snmpinterfaces/6", "IfIndex=7", 400);
+        sendPut("/nodes/1/categories/Production", "Name=Renamed", 400);
+        sendPut("/nodes/1/categories/Production", "name=Renamed", 400);
+    }
+
+    /** Writing an asset record through the node endpoint is a supported nested update. */
+    @Test
+    @JUnitTemporaryDatabase
+    public void nestedAssetRecordUpdateStillWorks() throws Exception {
+        createNodeWithChildren();
+
+        sendPut("/nodes/1", "asset_record.manufacturer=Apple&asset_record.operating_system=MacOSX", 204);
+        final String xml = sendRequest(GET, "/nodes/1", 200);
+        assertTrue("nested asset writes must keep working", xml.contains("Apple"));
+        assertTrue("nested asset writes must keep working", xml.contains("MacOSX"));
+    }
+
+    /**
+     * The interesting statuses here are 204 and 304 depending on the endpoint; what matters is
+     * that the request was not rejected, so the guard is what stopped the write.
+     */
+    private void assertUpdateNotRejected(final String url, final String formData) throws Exception {
+        final MockHttpServletRequest request = createRequest(servletContext, PUT, url, getUser(), getUserRoles());
+        request.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+        request.setParameters(parseParamData(formData));
+        request.setContent(new byte[] {});
+        final MockHttpServletResponse response = createResponse();
+        dispatch(request, response);
+        assertTrue("PUT " + url + " was rejected with " + response.getStatus(), response.getStatus() < 400);
+    }
+
+    /** foreignSource, foreignId and type are XML attributes of the node element. */
+    private static String rootAttribute(final String xml, final String name) throws Exception {
+        final DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        final Document document = factory.newDocumentBuilder()
+                .parse(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        return document.getDocumentElement().getAttribute(name);
+    }
+
+    private void createNodeWithChildren() throws Exception {
+        final JSONObject node = new JSONObject();
+        node.put("type", "A");
+        node.put("label", "TestMachine1");
+        node.put("foreignSource", "JUnit");
+        node.put("foreignId", "TestMachine1");
+        node.put("location", "Default");
+        node.put("labelSource", "H");
+        node.put("sysName", "TestMachine1");
+        sendData(POST, MediaType.APPLICATION_JSON, "/nodes", node.toString(), 201);
+
+        final JSONObject ipInterface = new JSONObject();
+        ipInterface.put("snmpPrimary", "P");
+        ipInterface.put("ipAddress", "10.10.10.10");
+        ipInterface.put("hostName", "TestMachine");
+        sendData(POST, MediaType.APPLICATION_JSON, "/nodes/1/ipinterfaces", ipInterface.toString(), 201);
+
+        final JSONObject serviceType = new JSONObject();
+        serviceType.put("name", "ICMP");
+        final JSONObject service = new JSONObject();
+        service.put("status", "A");
+        service.put("serviceType", serviceType);
+        sendData(POST, MediaType.APPLICATION_JSON, "/nodes/1/ipinterfaces/10.10.10.10/services", service.toString(), 201);
+
+        final JSONObject snmpInterface = new JSONObject();
+        snmpInterface.put("ifIndex", 6);
+        snmpInterface.put("ifName", "en1");
+        snmpInterface.put("ifType", 6);
+        sendData(POST, MediaType.APPLICATION_JSON, "/nodes/1/snmpinterfaces", snmpInterface.toString(), 201);
+
+        final JSONObject category = new JSONObject();
+        category.put("name", "Production");
+        sendData(POST, MediaType.APPLICATION_JSON, "/nodes/1/categories", category.toString(), 201);
     }
 
 }

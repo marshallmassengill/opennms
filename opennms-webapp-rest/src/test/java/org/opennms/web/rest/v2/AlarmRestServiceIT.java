@@ -696,10 +696,25 @@ public class AlarmRestServiceIT extends AbstractSpringJerseyRestTestCase {
     public void bulkUpdateCannotForgeAlarmSeverity() throws Exception {
         setUser("lowpriv", new String[]{ "ROLE_REST" });
         // alarm1 was created MAJOR
-        executeQueryAndVerify("_s=alarm.id==" + alarm1.getId() + ";alarm.severity==CLEARED", 0);
+        executeQueryAndVerify("_s=alarm.id==" + alarm1.getId() + ";alarm.severity==MAJOR", 1);
         sendRequest(PUT, "/alarms",
                 parseParamData("_s=alarm.id==" + alarm1.getId() + "&severity=CLEARED"), 204);
         executeQueryAndVerify("_s=alarm.id==" + alarm1.getId() + ";alarm.severity==CLEARED", 0);
+        executeQueryAndVerify("_s=alarm.id==" + alarm1.getId() + ";alarm.severity==MAJOR", 1);
+    }
+
+    /**
+     * The bulk endpoint's failure handling changed, so keep a case that proves the success path
+     * still commits.
+     */
+    @Test
+    @JUnitTemporaryDatabase
+    public void bulkUpdateAppliesLegitimateChanges() throws Exception {
+        setUser("admin", new String[]{ "ROLE_ADMIN" });
+        sendRequest(PUT, "/alarms",
+                parseParamData("_s=alarm.id==" + alarm1.getId() + "&ticketId=CASE-1234"), 204);
+        final String xml = sendRequest(GET, "/alarms/" + alarm1.getId(), 200);
+        Assert.assertTrue("a legitimate bulk update must still be applied", xml.contains("CASE-1234"));
     }
 
     private void anticipateEvent(EventBuilder eventBuilder) {
