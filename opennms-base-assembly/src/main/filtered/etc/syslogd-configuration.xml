@@ -17,6 +17,43 @@
             />
 
     <!--
+        SYSLOG OVER TCP
+
+        Syslogd listens on UDP only unless "syslog-tcp-port" is set. Setting it starts a
+        second listener; the UDP one keeps running on "syslog-port" either way.
+
+            <configuration syslog-port="10514" syslog-tcp-port="10601" ... />
+
+        Optional TCP attributes:
+
+        * tcp-listen-address: interface to accept connections on. Defaults to
+          listen-address, then to all addresses.
+        * tcp-framing: how the sender marks message boundaries, since TCP does not.
+          RFC 6587 defines two ways and senders disagree on the default, so the
+          shipped value "auto" reads the framing from the first message of each
+          connection and keeps it for that connection.
+            - "octet-counting": each message prefixed by its length. rsyslog
+              TCP_Framing="octet-counted", syslog-ng frac-digits/framing options.
+            - "non-transparent": messages separated by a newline. rsyslog's default.
+          A mismatch here usually shows up as a length prefix leaking into the event
+          body, or as one message arriving as several events.
+        * tcp-max-message-size: default 65536 bytes. A sender that exceeds it has its
+          connection closed, because after an overlong message the position of the next
+          one is no longer known.
+        * tcp-max-connections: default 1024.
+        * tcp-idle-timeout: seconds before a silent connection is closed. 0 disables.
+
+        Optional TLS attributes, per RFC 5425. Certificates and keys are PEM encoded and
+        the private key must not be password protected:
+
+        * tcp-tls-enabled: default false.
+        * tcp-tls-cert-filepath, tcp-tls-private-key-filepath: what this listener
+          presents to senders. Both required when TLS is enabled.
+        * tcp-tls-trust-cert-filepath: used to verify sender certificates.
+        * tcp-tls-client-auth: "none" (default), "optional", or "require".
+    -->
+
+    <!--
         NOTE: This uses the CustomSyslogParser and forwarding-regexp for backwards compatibility.  If your
         syslog sources will always use a particular format, it's better to use one of the more specific parsers
         in the "parser" attribute, above.
