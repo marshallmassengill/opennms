@@ -10,7 +10,9 @@ export PGPORT_HOST=5436
 # OpenNMS core
 export ONMS_HTTP=8985
 export ONMS_KARAF=8106
-export ONMS_SYSLOG_UDP=10514
+# 10514 is SyslogClient.PORT in the syslog module ITs; a published container port there
+# makes those ITs fail with "Address already in use" while this environment is up.
+export ONMS_SYSLOG_UDP=10516
 export ONMS_SYSLOG_TCP=10601
 export ONMS_SYSLOG_TLS=10614
 export ONMS_BASE="http://localhost:${ONMS_HTTP}"
