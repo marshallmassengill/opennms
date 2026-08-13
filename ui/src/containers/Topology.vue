@@ -22,28 +22,26 @@ License.
 
 <template>
   <div class="topology-page" :class="store.isEditMode ? 'is-edit' : 'is-view'">
-    <PToolbar class="topology-toolbar">
-      <template #start>
-        <div class="toolbar-start">
+    <div class="topology-toolbar">
+      <div class="toolbar-start">
           <span class="topology-title">Topology (Preview)</span>
           <!-- View-source dimension (above Edit/View): Custom vs discovered.
                A compact menu button so the toolbar stays uncluttered and new
                providers slot in as submenus. Each choice navigates the route
                (/topology/:source), so every source stays bookmarkable. -->
-          <PButton
-            :label="`Source: ${currentSourceShort}`"
-            icon="pi pi-chevron-down"
-            icon-pos="right"
-            severity="secondary"
-            outlined
+          <OnmsButton
+            variant="outlined"
             aria-haspopup="true"
             class="source-button"
             @click="sourceMenuRef?.toggle($event)"
-          />
-          <PTieredMenu ref="sourceMenuRef" :model="sourceMenuModel" popup />
+          >
+            <span>Source: {{ currentSourceShort }}</span>
+            <OnmsIcon :icon="ExpandMore" />
+          </OnmsButton>
+          <OnmsTieredMenu ref="sourceMenuRef" :items="sourceMenuModel" />
           <!-- Custom-view management (hidden for read-only discovered sources). -->
           <template v-if="!isDiscovered">
-            <PSelect
+            <OnmsSelect
               v-model="currentViewId"
               :options="store.catalog"
               option-label="name"
@@ -52,26 +50,24 @@ License.
               class="view-chooser"
               aria-label="Choose a topology view"
             />
-            <PButton label="New" severity="secondary" outlined @click="onNew" />
-            <PButton label="Save" :loading="store.isSaving" :disabled="!canSave" @click="onSave" />
-            <PButton
+            <OnmsButton label="New" variant="outlined" @click="onNew" />
+            <OnmsButton label="Save" :loading="store.isSaving" :disabled="!canSave" @click="onSave" />
+            <OnmsButton
               label="Save As"
-              severity="secondary"
-              outlined
+              variant="outlined"
               :disabled="store.isSaving"
               @click="onSaveAs"
             />
-            <PButton
+            <OnmsButton
               label="Rename"
-              severity="secondary"
-              outlined
+              variant="outlined"
               :disabled="!store.currentView"
               @click="onRename"
             />
-            <PButton
+            <OnmsButton
               label="Delete"
               severity="danger"
-              outlined
+              variant="outlined"
               :disabled="!canDelete"
               @click="onDelete"
             />
@@ -80,7 +76,7 @@ License.
             <!-- Variant picker: which representation of this discovered source
                  (Combined / a single protocol / OSPF-by-area). Bookmarkable
                  via ?variant=. -->
-            <PSelect
+            <OnmsSelect
               v-if="variantOptions.length > 1"
               v-model="selectedVariant"
               :options="variantOptions"
@@ -91,12 +87,10 @@ License.
             />
             <span class="discovered-hint">{{ discoveredHint }}</span>
           </template>
-        </div>
-      </template>
-      <template #end>
-        <div class="toolbar-controls">
+      </div>
+      <div class="toolbar-controls">
           <!-- Discovered sources are read-only: no Edit mode. -->
-          <PSelectButton
+          <OnmsSelectButton
             v-if="!isDiscovered"
             v-model="mode"
             :options="modeOptions"
@@ -108,7 +102,7 @@ License.
           />
           <!-- Discovered-view search, focus + Semantic Zoom Level. -->
           <template v-if="isDiscovered">
-            <PAutoComplete
+            <OnmsAutoComplete
               v-model="searchModel"
               :suggestions="searchSuggestions"
               option-label="label"
@@ -117,80 +111,72 @@ License.
               class="topology-search"
               aria-label="Search nodes to focus"
               @complete="onSearchComplete"
-              @item-select="onSearchSelect"
+              @option-select="onSearchSelect"
             />
-            <PButton
+            <OnmsButton
               v-if="!store.focusNodeId"
               label="Focus"
-              severity="secondary"
-              outlined
+              variant="outlined"
               :disabled="!selectedNodeId"
               @click="focusOnSelection"
             />
             <span v-else class="szl-control">
-              <PButton
+              <OnmsButton
                 label="−"
-                severity="secondary"
-                outlined
+                variant="outlined"
                 :disabled="store.semanticZoomLevel <= 0"
                 aria-label="Decrease zoom level"
                 @click="stepSzl(-1)"
               />
               <span class="szl-value">{{ store.semanticZoomLevel }} hop{{ store.semanticZoomLevel === 1 ? '' : 's' }}</span>
-              <PButton
+              <OnmsButton
                 label="+"
-                severity="secondary"
-                outlined
+                variant="outlined"
                 aria-label="Increase zoom level"
                 @click="stepSzl(1)"
               />
-              <PButton label="Show all" severity="secondary" outlined @click="showAll" />
+              <OnmsButton label="Show all" variant="outlined" @click="showAll" />
             </span>
           </template>
-          <PButton
+          <OnmsButton
             label="Refresh status"
-            severity="secondary"
-            outlined
+            variant="outlined"
             @click="store.refreshStatus()"
           />
-          <PButton
+          <OnmsButton
             v-if="store.isEditMode"
             :label="store.isLinkDrawMode ? 'Link: ON' : 'Draw Link'"
-            :severity="store.isLinkDrawMode ? 'primary' : 'secondary'"
-            :outlined="!store.isLinkDrawMode"
+            :variant="store.isLinkDrawMode ? 'filled' : 'outlined'"
             @click="store.setLinkDrawMode(!store.isLinkDrawMode)"
           />
-          <PButton
+          <OnmsButton
             v-if="store.isEditMode"
             :label="store.isShapeDrawMode ? 'Box: drag to draw' : 'Draw Box'"
-            :severity="store.isShapeDrawMode ? 'primary' : 'secondary'"
-            :outlined="!store.isShapeDrawMode"
+            :variant="store.isShapeDrawMode ? 'filled' : 'outlined'"
             @click="store.setShapeDrawMode(!store.isShapeDrawMode)"
           />
-          <PButton
+          <OnmsButton
             v-if="store.isEditMode"
             :label="store.isLinkHintsEnabled ? 'Link Hints: ON' : 'Link Hints'"
-            :severity="store.isLinkHintsEnabled ? 'primary' : 'secondary'"
-            :outlined="!store.isLinkHintsEnabled"
+            :variant="store.isLinkHintsEnabled ? 'filled' : 'outlined'"
             title="Show discovered adjacencies between placed nodes as ghost links"
             @click="store.setLinkHintsEnabled(!store.isLinkHintsEnabled)"
           />
           <span class="node-size-control" title="Node size">
-            <i class="pi pi-circle-fill node-size-icon-sm" />
-            <PSlider
+            <span class="node-size-dot node-size-dot-sm" />
+            <OnmsSlider
               v-model="nodeSizeModel"
               :min="store.NODE_SIZE_MIN"
               :max="store.NODE_SIZE_MAX"
               class="node-size-slider"
               aria-label="Node size"
             />
-            <i class="pi pi-circle-fill node-size-icon-lg" />
+            <span class="node-size-dot node-size-dot-lg" />
           </span>
-          <PButton label="Fit" severity="secondary" outlined @click="canvasRef?.fit()" />
-          <PButton label="Export PNG" severity="secondary" outlined @click="onExport" />
-        </div>
-      </template>
-    </PToolbar>
+          <OnmsButton label="Fit" variant="outlined" @click="canvasRef?.fit()" />
+          <OnmsButton label="Export PNG" variant="outlined" @click="onExport" />
+      </div>
+    </div>
 
     <div class="topology-body">
       <!-- Palette is an Edit-mode tool (compose); hidden in View and for
@@ -221,10 +207,9 @@ License.
             Laying out a graph this large can take a long time in the browser.
             Use <em>Search nodes</em> above to focus on a node's neighborhood instead.
           </p>
-          <PButton
+          <OnmsButton
             :label="`Render all ${discoveredNodeCount.toLocaleString()} nodes`"
-            severity="secondary"
-            outlined
+            variant="outlined"
             @click="renderAllAnyway"
           />
         </div>
@@ -246,27 +231,38 @@ License.
     <!-- Bottom browse panel: Nodes / Alarms for the view, tied to selection. -->
     <TopologyBrowsePanel @select="onBrowseSelect" />
 
-    <PContextMenu ref="nodeMenuRef" :model="nodeMenuItems" />
-    <PConfirmDialog />
-    <PToast position="bottom-right" />
+    <OnmsContextMenu ref="nodeMenuRef" :items="nodeMenuItems" />
+    <OnmsConfirmationDialog
+      :visible="deleteDialogVisible"
+      title="Delete view"
+      :action-button-text="'Delete'"
+      cancel-button-text="Cancel"
+      @ok="confirmDelete"
+      @cancel="cancelDelete"
+    >
+      <template #content>
+        Delete view "{{ pendingDelete?.name }}"? This cannot be undone.
+      </template>
+    </OnmsConfirmationDialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import Toolbar from 'primevue/toolbar'
-import Button from 'primevue/button'
-import Select from 'primevue/select'
-import SelectButton from 'primevue/selectbutton'
-import AutoComplete from 'primevue/autocomplete'
-import Slider from 'primevue/slider'
-import Toast from 'primevue/toast'
-import ConfirmDialog from 'primevue/confirmdialog'
-import ContextMenu from 'primevue/contextmenu'
-import TieredMenu from 'primevue/tieredmenu'
-import type { MenuItem } from 'primevue/menuitem'
-import { useToast } from 'primevue/usetoast'
-import { useConfirm } from 'primevue/useconfirm'
+import {
+  OnmsAutoComplete,
+  OnmsButton,
+  OnmsConfirmationDialog,
+  OnmsContextMenu,
+  OnmsIcon,
+  OnmsSelect,
+  OnmsSelectButton,
+  OnmsSlider,
+  OnmsTieredMenu,
+  useOnmsToast
+} from '@opennms/onms-ui'
+import type { OnmsMenuItem } from '@opennms/onms-ui'
+import ExpandMore from '@/components/icons/navigation/ExpandMore.vue'
 import { useRoute, useRouter } from 'vue-router'
 import TopologyCanvas from '@/components/Topology/TopologyCanvas.vue'
 import TopologyPalette from '@/components/Topology/TopologyPalette.vue'
@@ -285,20 +281,8 @@ import { focusSubgraph } from '@/components/Topology/focus'
 import { nodeActionLinks } from '@/components/Topology/nodeActions'
 import type { CanvasNode } from '@/types/topology'
 
-const PToolbar = Toolbar
-const PButton = Button
-const PSelect = Select
-const PContextMenu = ContextMenu
-const PTieredMenu = TieredMenu
-const PSelectButton = SelectButton
-const PAutoComplete = AutoComplete
-const PSlider = Slider
-const PToast = Toast
-const PConfirmDialog = ConfirmDialog
-
 const store = useTopologyStore()
-const toast = useToast()
-const confirm = useConfirm()
+const { showToast } = useOnmsToast()
 const route = useRoute()
 const router = useRouter()
 
@@ -347,8 +331,8 @@ const selectedVariant = computed<string>({
 // (new providers slot in as further submenus). Each command navigates the
 // route. The active source is marked.
 const sourceMenuRef = ref<{ toggle: (event: Event) => void } | null>(null)
-const sourceMenuModel = computed<MenuItem[]>(() => {
-  const item = (slug: string, label: string): MenuItem => ({
+const sourceMenuModel = computed<OnmsMenuItem[]>(() => {
+  const item = (slug: string, label: string): OnmsMenuItem => ({
     label,
     class: slug === sourceSlug.value ? 'source-item-active' : undefined,
     command: () => goToSource(slug)
@@ -405,11 +389,11 @@ const renderAllAnyway = () => {
 // Resource Graphs, Events, Alarms), plus "Set as focus point" in discovered
 // views. Built per-click for the targeted node.
 const nodeMenuRef = ref<{ show: (event: Event) => void } | null>(null)
-const nodeMenuItems = ref<MenuItem[]>([])
+const nodeMenuItems = ref<OnmsMenuItem[]>([])
 
 const onNodeContextMenu = (payload: { event: MouseEvent; nodeId: number | null; nodeKey: string }) => {
   const { event, nodeId, nodeKey } = payload
-  const items: MenuItem[] = []
+  const items: OnmsMenuItem[] = []
   if (nodeId != null) {
     for (const link of nodeActionLinks(nodeId)) {
       items.push({ label: link.label, command: () => window.open(link.url, '_blank', 'noopener') })
@@ -459,11 +443,10 @@ const loadSource = async (): Promise<void> => {
       renderDiscovered()
       store.refreshStatus()
     } else {
-      toast.add({
+      showToast({
+        message: `Could not load ${option.label}.`,
         severity: 'error',
-        summary: 'Load failed',
-        detail: `Could not load ${option.label}.`,
-        life: 5000
+        timeout: 5000
       })
     }
     return
@@ -589,9 +572,9 @@ const SEARCH_LIMIT = 12
 const searchModel = ref<CanvasNode | string>('')
 const searchSuggestions = ref<CanvasNode[]>([])
 
-const onSearchComplete = (event: { query: string }) => {
+const onSearchComplete = (query: string) => {
   const nodes = store.discoveredGraph?.nodes ?? []
-  const q = event.query.trim().toLowerCase()
+  const q = query.trim().toLowerCase()
   const matches = q
     ? nodes.filter(
       n => n.label.toLowerCase().includes(q) || String(n.nodeId ?? '').includes(q)
@@ -600,9 +583,12 @@ const onSearchComplete = (event: { query: string }) => {
   searchSuggestions.value = matches.slice(0, SEARCH_LIMIT)
 }
 
-const onSearchSelect = (event: { value: CanvasNode }) => {
-  if (event.value?.id) {
-    navFocus(event.value.id, store.semanticZoomLevel)
+// The seam types the selected option as unknown (it has no view of the
+// suggestion shape); these come straight from searchSuggestions.
+const onSearchSelect = (selected: unknown) => {
+  const node = selected as CanvasNode | undefined
+  if (node?.id) {
+    navFocus(node.id, store.semanticZoomLevel)
   }
   searchModel.value = '' // clear the field; the focus chip/SZL control reflects the state
 }
@@ -690,10 +676,10 @@ const saveCurrent = async (): Promise<boolean> => {
     return false
   }
   const ok = await store.saveCurrentView(snapshot)
-  toast.add(
+  showToast(
     ok
-      ? { severity: 'success', summary: 'View saved', detail: store.currentView?.name, life: 3000 }
-      : { severity: 'error', summary: 'Save failed', detail: 'Could not save the view.', life: 5000 }
+      ? { message: `View "${store.currentView?.name}" saved`, severity: 'success', timeout: 3000 }
+      : { message: 'Could not save the view.', severity: 'error', timeout: 5000 }
   )
   return ok
 }
@@ -723,7 +709,7 @@ const loadFromRoute = async (force = false): Promise<void> => {
     await openIntoCanvas(match.id)
   } else {
     if (wanted !== 'Default') {
-      toast.add({ severity: 'warn', summary: 'View not found', detail: wanted, life: 4000 })
+      showToast({ message: `View "${wanted}" not found`, severity: 'warn', timeout: 4000 })
     }
     await loadDefault()
   }
@@ -734,7 +720,7 @@ const loadFromRoute = async (force = false): Promise<void> => {
 const openIntoCanvas = async (id: string): Promise<boolean> => {
   const view = await store.openView(id)
   if (!view) {
-    toast.add({ severity: 'error', summary: 'Open failed', detail: 'Could not load the view.', life: 5000 })
+    showToast({ message: 'Could not load the view.', severity: 'error', timeout: 5000 })
     return false
   }
   canvasRef.value?.loadView(view)
@@ -764,11 +750,10 @@ const onSave = () => saveCurrent()
 const nameInUse = (name: string): boolean => store.catalog.some(v => v.name === name)
 
 const warnNameInUse = (name: string) =>
-  toast.add({
+  showToast({
+    message: `A view named "${name}" already exists. Choose a different name.`,
     severity: 'warn',
-    summary: 'Name already in use',
-    detail: `A view named "${name}" already exists. Choose a different name.`,
-    life: 5000
+    timeout: 5000
   })
 
 const onNew = async () => {
@@ -812,15 +797,10 @@ const onSaveAs = async () => {
   }
   // Non-destructive: the open view is replaced only if the save succeeds.
   const ok = await store.saveCurrentViewAs(trimmed, snapshot)
-  toast.add(
+  showToast(
     ok
-      ? { severity: 'success', summary: 'View saved', detail: trimmed, life: 3000 }
-      : {
-        severity: 'error',
-        summary: 'Save failed',
-        detail: 'Could not save the view; the name may already be in use.',
-        life: 5000
-      }
+      ? { message: `View "${trimmed}" saved`, severity: 'success', timeout: 3000 }
+      : { message: 'Could not save the view; the name may already be in use.', severity: 'error', timeout: 5000 }
   )
   if (ok) {
     syncRouteToView()
@@ -838,10 +818,10 @@ const onRename = async () => {
   }
   if (cur.id) {
     const ok = await store.renameView(cur.id, name.trim())
-    toast.add(
+    showToast(
       ok
-        ? { severity: 'success', summary: 'View renamed', detail: name.trim(), life: 3000 }
-        : { severity: 'error', summary: 'Rename failed', detail: cur.name, life: 5000 }
+        ? { message: `View renamed to "${name.trim()}"`, severity: 'success', timeout: 3000 }
+        : { message: `Could not rename view "${cur.name}"`, severity: 'error', timeout: 5000 }
     )
   } else {
     // Unsaved view: just set the name locally (persisted on the next save).
@@ -850,31 +830,42 @@ const onRename = async () => {
   syncRouteToView()
 }
 
+// Delete confirmation is a rendered dialog rather than an imperative service
+// call, so the view being deleted is held here between opening the dialog and
+// the user answering it.
+const deleteDialogVisible = ref(false)
+const pendingDelete = ref<{ id: string, name: string } | null>(null)
+
 const onDelete = () => {
   const cur = store.currentView
   if (!cur?.id) {
     return
   }
-  const id = cur.id
-  const name = cur.name
-  confirm.require({
-    header: 'Delete view',
-    message: `Delete view "${name}"? This cannot be undone.`,
-    icon: 'pi pi-exclamation-triangle',
-    rejectProps: { label: 'Cancel', severity: 'secondary', outlined: true },
-    acceptProps: { label: 'Delete', severity: 'danger' },
-    accept: async () => {
-      const ok = await store.removeView(id)
-      toast.add(
-        ok
-          ? { severity: 'success', summary: 'View deleted', detail: name, life: 3000 }
-          : { severity: 'error', summary: 'Delete failed', detail: name, life: 5000 }
-      )
-      if (ok) {
-        await loadDefault()
-      }
-    }
-  })
+  pendingDelete.value = { id: cur.id, name: cur.name }
+  deleteDialogVisible.value = true
+}
+
+const cancelDelete = () => {
+  deleteDialogVisible.value = false
+  pendingDelete.value = null
+}
+
+const confirmDelete = async () => {
+  const target = pendingDelete.value
+  deleteDialogVisible.value = false
+  pendingDelete.value = null
+  if (!target) {
+    return
+  }
+  const ok = await store.removeView(target.id)
+  showToast(
+    ok
+      ? { message: `View "${target.name}" deleted`, severity: 'success', timeout: 3000 }
+      : { message: `Could not delete view "${target.name}"`, severity: 'error', timeout: 5000 }
+  )
+  if (ok) {
+    await loadDefault()
+  }
 }
 </script>
 
@@ -892,6 +883,17 @@ const onDelete = () => {
 
 .topology-toolbar {
   flex: 0 0 auto;
+  /* Layout the PrimeVue Toolbar used to supply: its start and end groups sit
+     at either end of a wrapping row. */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--p-content-background);
+  border: 1px solid var(--p-content-border-color);
+  border-radius: var(--p-content-border-radius);
   /* Ambient mode cue: a colored top accent reinforces the segmented
      View/Edit control so the current context is obvious at a glance. */
   border-top: 3px solid transparent;
@@ -912,12 +914,19 @@ const onDelete = () => {
 
 .toolbar-start {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
 }
 
 .source-button {
   white-space: nowrap;
+}
+
+.source-button :deep(.p-button-label) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
 }
 
 .variant-chooser {
@@ -942,26 +951,34 @@ const onDelete = () => {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  color: var(--feather-secondary-text-on-surface);
+  color: var(--onms-secondary-text-on-surface);
 }
 .node-size-slider {
   width: 6rem;
 }
-.node-size-icon-sm {
-  font-size: 0.5rem;
+.node-size-dot {
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
 }
-.node-size-icon-lg {
-  font-size: 0.85rem;
+.node-size-dot-sm {
+  width: 0.4rem;
+  height: 0.4rem;
+}
+.node-size-dot-lg {
+  width: 0.7rem;
+  height: 0.7rem;
 }
 
 .discovered-hint {
   font-size: 0.85rem;
   font-style: italic;
-  color: var(--feather-secondary-text-on-surface);
+  color: var(--onms-secondary-text-on-surface);
 }
 
 .toolbar-controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.75rem;
 }
@@ -1013,7 +1030,7 @@ const onDelete = () => {
   gap: 0.25rem;
   pointer-events: none;
   text-align: center;
-  color: var(--feather-secondary-text-on-surface);
+  color: var(--onms-secondary-text-on-surface);
 }
 
 .discovered-empty-hint {
@@ -1029,8 +1046,8 @@ const onDelete = () => {
   justify-content: center;
   gap: 0.5rem;
   text-align: center;
-  color: var(--feather-secondary-text-on-surface);
-  background: var(--feather-surface);
+  color: var(--onms-secondary-text-on-surface);
+  background: var(--onms-surface);
 }
 
 .topology-inspector-pane {

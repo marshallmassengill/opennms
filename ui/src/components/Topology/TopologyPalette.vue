@@ -32,16 +32,14 @@ License.
 <template>
   <div class="topology-palette">
     <div class="palette-header">
-      <PIconField>
-        <PInputIcon class="pi pi-search" />
-        <PInputText
-          v-model="searchText"
-          placeholder="Search nodes..."
-          class="palette-search"
-          aria-label="Search palette nodes"
-        />
-      </PIconField>
-      <PMultiSelect
+      <OnmsSearchInput
+        v-model="searchText"
+        placeholder="Search nodes..."
+        class="palette-search"
+        aria-label="Search palette nodes"
+        fluid
+      />
+      <OnmsMultiSelect
         v-model="selectedCategories"
         :options="availableCategories"
         placeholder="Category"
@@ -56,13 +54,13 @@ License.
       <div v-if="loading" class="palette-status">Loading nodes&hellip;</div>
       <div v-else-if="loadError" class="palette-status">
         <p>Couldn't load nodes.</p>
-        <PButton label="Retry" size="small" text @click="loadNodes" />
+        <OnmsButton label="Retry" size="small" variant="text" @click="loadNodes" />
       </div>
       <div v-else-if="allNodes.length === 0" class="palette-status">No nodes available.</div>
       <div v-else-if="filteredNodes.length === 0" class="palette-status">
         No nodes match your search or filters.
       </div>
-      <PVirtualScroller
+      <OnmsVirtualScroller
         v-else
         :items="filteredNodes"
         :itemSize="56"
@@ -86,7 +84,7 @@ License.
             </div>
           </div>
         </template>
-      </PVirtualScroller>
+      </OnmsVirtualScroller>
     </div>
 
     <div class="palette-footer">
@@ -97,23 +95,12 @@ License.
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import IconField from 'primevue/iconfield'
-import InputIcon from 'primevue/inputicon'
-import InputText from 'primevue/inputtext'
-import MultiSelect from 'primevue/multiselect'
-import VirtualScroller from 'primevue/virtualscroller'
-import Button from 'primevue/button'
+import { OnmsButton, OnmsMultiSelect, OnmsSearchInput, OnmsVirtualScroller } from '@opennms/onms-ui'
 import { fetchPaletteNodes } from '@/services/topologyService'
 import { PALETTE_DRAG_MIME, type PaletteDragPayload } from '@/components/Topology/dragTypes'
 import { useTopologyStore } from '@/stores/topologyStore'
 import type { Node } from '@/types'
 
-const PIconField = IconField
-const PInputIcon = InputIcon
-const PInputText = InputText
-const PMultiSelect = MultiSelect
-const PVirtualScroller = VirtualScroller
-const PButton = Button
 
 const store = useTopologyStore()
 
@@ -184,8 +171,8 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--feather-surface);
-  border: 1px solid var(--feather-border-on-surface);
+  background: var(--onms-surface);
+  border: 1px solid var(--onms-border-on-surface);
   border-radius: 4px;
   min-width: 260px;
   width: 280px;
@@ -196,7 +183,7 @@ onMounted(() => {
   flex-direction: column;
   gap: 0.5rem;
   padding: 0.5rem;
-  border-bottom: 1px solid var(--feather-border-on-surface);
+  border-bottom: 1px solid var(--onms-border-on-surface);
 }
 
 .palette-search,
@@ -218,7 +205,7 @@ onMounted(() => {
 .palette-item {
   height: 56px;
   padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--feather-border-on-surface);
+  border-bottom: 1px solid var(--onms-border-on-surface);
   cursor: grab;
   display: flex;
   flex-direction: column;
@@ -238,7 +225,7 @@ onMounted(() => {
 .palette-item-label {
   font-weight: 500;
   font-size: 0.875rem;
-  color: var(--feather-primary-text-on-surface);
+  color: var(--onms-primary-text-on-surface);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -249,7 +236,7 @@ onMounted(() => {
   align-items: center;
   gap: 0.5rem;
   font-size: 0.75rem;
-  color: var(--feather-secondary-text-on-surface);
+  color: var(--onms-secondary-text-on-surface);
   overflow: hidden;
 }
 
@@ -262,21 +249,21 @@ onMounted(() => {
   border-radius: 3px;
   padding: 0 0.375rem;
   font-size: 0.6875rem;
-  color: var(--feather-primary-text-on-surface);
+  color: var(--onms-primary-text-on-surface);
 }
 
 .palette-status {
   padding: 1rem;
   text-align: center;
-  color: var(--feather-secondary-text-on-surface);
+  color: var(--onms-secondary-text-on-surface);
   font-size: 0.875rem;
 }
 
 .palette-footer {
   padding: 0.5rem;
-  border-top: 1px solid var(--feather-border-on-surface);
+  border-top: 1px solid var(--onms-border-on-surface);
   font-size: 0.75rem;
-  color: var(--feather-secondary-text-on-surface);
+  color: var(--onms-secondary-text-on-surface);
   text-align: right;
 }
 </style>

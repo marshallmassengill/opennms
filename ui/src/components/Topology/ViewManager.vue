@@ -28,57 +28,48 @@ License.
 -->
 
 <template>
-  <PDialog
+  <OnmsDialog
     :visible="visible"
     modal
     header="Saved views"
-    :style="{ width: '42rem' }"
+    width="42rem"
     @update:visible="emit('update:visible', $event)"
   >
     <div v-if="loading" class="tv-empty">Loading views&hellip;</div>
     <div v-else-if="loadError" class="tv-empty">
       <p>Couldn't load saved views.</p>
-      <PButton label="Retry" size="small" text @click="refresh" />
+      <OnmsButton label="Retry" size="small" variant="text" @click="refresh" />
     </div>
     <div v-else-if="store.catalog.length === 0" class="tv-empty">
       No saved views yet. Compose a canvas and use <strong>Save</strong> to create one.
     </div>
-    <PDataTable v-else :value="store.catalog" dataKey="id" :rows="10" paginator>
-      <PColumn field="name" header="Name" sortable />
-      <PColumn header="" :style="{ width: '16rem' }">
+    <OnmsTable v-else :value="store.catalog" dataKey="id" :rows="10" paginator>
+      <OnmsColumn field="name" header="Name" sortable />
+      <OnmsColumn header="" :style="{ width: '16rem' }">
         <template #body="{ data }">
           <div class="tv-row-actions">
-            <PButton label="Open" size="small" text @click="onOpen(data.id)" />
-            <PButton label="Rename" size="small" text @click="onRename(data.id, data.name)" />
-            <PButton
+            <OnmsButton label="Open" size="small" variant="text" @click="onOpen(data.id)" />
+            <OnmsButton label="Rename" size="small" variant="text" @click="onRename(data.id, data.name)" />
+            <OnmsButton
               label="Delete"
               size="small"
-              text
+              variant="text"
               severity="danger"
               @click="onDelete(data.id, data.name)"
             />
           </div>
         </template>
-      </PColumn>
-    </PDataTable>
-  </PDialog>
+      </OnmsColumn>
+    </OnmsTable>
+  </OnmsDialog>
 </template>
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import Dialog from 'primevue/dialog'
-import DataTable from 'primevue/datatable'
-import Column from 'primevue/column'
-import Button from 'primevue/button'
-import { useToast } from 'primevue/usetoast'
+import { OnmsButton, OnmsColumn, OnmsDialog, OnmsTable, useOnmsToast } from '@opennms/onms-ui'
 import { useTopologyStore } from '@/stores/topologyStore'
 
-const PDialog = Dialog
-const PDataTable = DataTable
-const PColumn = Column
-const PButton = Button
-
-const toast = useToast()
+const { showToast } = useOnmsToast()
 
 const props = defineProps<{ visible: boolean }>()
 const emit = defineEmits<{
@@ -120,10 +111,10 @@ const onRename = async (id: string, currentName: string) => {
     return
   }
   const ok = await store.renameView(id, name.trim())
-  toast.add(
+  showToast(
     ok
-      ? { severity: 'success', summary: 'View renamed', detail: name.trim(), life: 3000 }
-      : { severity: 'error', summary: 'Rename failed', detail: currentName, life: 5000 }
+      ? { message: `View renamed to "${name.trim()}"`, severity: 'success', timeout: 3000 }
+      : { message: `Could not rename view "${currentName}"`, severity: 'error', timeout: 5000 }
   )
 }
 
@@ -132,10 +123,10 @@ const onDelete = async (id: string, name: string) => {
     return
   }
   const ok = await store.removeView(id)
-  toast.add(
+  showToast(
     ok
-      ? { severity: 'success', summary: 'View deleted', detail: name, life: 3000 }
-      : { severity: 'error', summary: 'Delete failed', detail: name, life: 5000 }
+      ? { message: `View "${name}" deleted`, severity: 'success', timeout: 3000 }
+      : { message: `Could not delete view "${name}"`, severity: 'error', timeout: 5000 }
   )
 }
 </script>
@@ -143,7 +134,7 @@ const onDelete = async (id: string, name: string) => {
 <style scoped>
 .tv-empty {
   padding: 1rem 0.25rem;
-  color: var(--feather-secondary-text-on-surface);
+  color: var(--onms-secondary-text-on-surface);
 }
 
 .tv-row-actions {

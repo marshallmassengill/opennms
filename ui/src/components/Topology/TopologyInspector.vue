@@ -37,7 +37,7 @@ License.
       title="Drag to resize"
       @mousedown.prevent="startResize"
     />
-  <PCard class="topology-inspector">
+  <OnmsCard class="topology-inspector">
     <template #title>
       <span class="ti-title">{{ variant === 'props' ? 'Properties' : 'Inspector' }}</span>
     </template>
@@ -56,7 +56,7 @@ License.
       <div v-else-if="kind === 'label' && label" class="ti-section">
         <div class="ti-field">
           <label class="ti-label">Text</label>
-          <PInputText v-model="labelText" class="ti-input" :disabled="!editable" />
+          <OnmsInputText v-model="labelText" class="ti-input" :disabled="!editable" />
         </div>
         <div class="ti-field">
           <label class="ti-label">Color</label>
@@ -64,7 +64,7 @@ License.
         </div>
         <div class="ti-field">
           <label class="ti-label">Font size</label>
-          <PInputNumber v-model="labelFontSize" :min="8" :max="48" show-buttons buttonLayout="horizontal" :disabled="!editable" />
+          <OnmsInputNumber v-model="labelFontSize" :min="8" :max="48" show-buttons button-layout="horizontal" :disabled="!editable" />
         </div>
       </div>
 
@@ -109,7 +109,7 @@ License.
         </p>
         <div class="ti-field">
           <label class="ti-label">Link label</label>
-          <PInputText v-model="linkLabel" class="ti-input" placeholder="(none)" :disabled="!editable" />
+          <OnmsInputText v-model="linkLabel" class="ti-input" placeholder="(none)" :disabled="!editable" />
           <p v-if="editable" class="ti-hint">Applies as you type — <strong>Save</strong> the view to keep it.</p>
         </div>
         <div v-for="item in edgeInfoPanelItems" :key="item.title + item.order" class="ti-infopanel-item">
@@ -123,22 +123,22 @@ License.
       <div v-else-if="kind === 'shape' && shape" class="ti-section">
         <div class="ti-field">
           <label class="ti-label">Title</label>
-          <PInputText v-model="shapeLabel" class="ti-input" placeholder="(none)" :disabled="!editable" />
+          <OnmsInputText v-model="shapeLabel" class="ti-input" placeholder="(none)" :disabled="!editable" />
         </div>
         <div class="ti-field">
           <label class="ti-label">Shape</label>
           <div class="ti-row">
-            <PButton
+            <OnmsButton
               label="Box"
               size="small"
-              :outlined="shapeType !== 'rect'"
+              :variant="shapeType === 'rect' ? 'filled' : 'outlined'"
               :disabled="!editable"
               @click="shapeType = 'rect'"
             />
-            <PButton
+            <OnmsButton
               label="Ellipse"
               size="small"
-              :outlined="shapeType !== 'ellipse'"
+              :variant="shapeType === 'ellipse' ? 'filled' : 'outlined'"
               :disabled="!editable"
               @click="shapeType = 'ellipse'"
             />
@@ -210,7 +210,7 @@ License.
               <img :src="assetUrl(asset.id)" :alt="asset.name" />
             </button>
           </div>
-          <PButton label="Upload icon…" size="small" text @click="iconFileInput?.click()" />
+          <OnmsButton label="Upload icon…" size="small" variant="text" @click="iconFileInput?.click()" />
           <input
             ref="iconFileInput"
             type="file"
@@ -230,10 +230,10 @@ License.
                 {{ n.neighborLabel }}
                 <span class="ti-neighbor-proto">{{ n.linkType.toUpperCase() }}</span>
               </span>
-              <PButton
+              <OnmsButton
                 label="Add"
                 size="small"
-                text
+                variant="text"
                 title="Place this neighbor and link it"
                 @click="addNeighbor(n)"
               />
@@ -267,11 +267,11 @@ License.
                 class="ti-color"
                 @input="onNodeLabelColor"
               />
-              <PButton
+              <OnmsButton
                 v-if="store.viewStyle?.nodeLabelColor"
                 label="Auto"
                 size="small"
-                text
+                variant="text"
                 title="Follow the light/dark theme"
                 @click="store.setViewStyle({ nodeLabelColor: undefined })"
               />
@@ -287,11 +287,11 @@ License.
                 class="ti-color"
                 @input="onLinkLabelColor"
               />
-              <PButton
+              <OnmsButton
                 v-if="store.viewStyle?.linkLabelColor"
                 label="Auto"
                 size="small"
-                text
+                variant="text"
                 title="Follow the light/dark theme"
                 @click="store.setViewStyle({ linkLabelColor: undefined })"
               />
@@ -319,13 +319,13 @@ License.
               />
             </div>
             <div class="ti-row">
-              <PButton
+              <OnmsButton
                 :label="store.isBackgroundAdjustMode ? 'Done adjusting' : 'Adjust position/size'"
                 size="small"
-                :outlined="!store.isBackgroundAdjustMode"
+                :variant="store.isBackgroundAdjustMode ? 'filled' : 'outlined'"
                 @click="store.setBackgroundAdjustMode(!store.isBackgroundAdjustMode)"
               />
-              <PButton label="Remove" size="small" severity="danger" text @click="removeBackground" />
+              <OnmsButton label="Remove" size="small" severity="danger" variant="text" @click="removeBackground" />
             </div>
           </template>
           <div class="ti-icon-grid">
@@ -341,7 +341,7 @@ License.
               <img :src="assetUrl(asset.id)" :alt="asset.name" />
             </button>
           </div>
-          <PButton label="Upload background…" size="small" text @click="bgFileInput?.click()" />
+          <OnmsButton label="Upload background…" size="small" variant="text" @click="bgFileInput?.click()" />
           <input
             ref="bgFileInput"
             type="file"
@@ -353,16 +353,13 @@ License.
         </div>
       </div>
     </template>
-  </PCard>
+  </OnmsCard>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import Card from 'primevue/card'
-import Button from 'primevue/button'
-import InputText from 'primevue/inputtext'
-import InputNumber from 'primevue/inputnumber'
+import { OnmsButton, OnmsCard, OnmsInputNumber, OnmsInputText } from '@opennms/onms-ui'
 import { useTopologyStore } from '@/stores/topologyStore'
 import { isLabelId, isShapeId, nodeIdFromPlacedId } from '@/components/Topology/nodeIds'
 import { severityColor } from '@/components/Topology/severity'
@@ -381,10 +378,6 @@ import DOMPurify from 'dompurify'
 import type { Node } from '@/types'
 import type { CanvasLinkBinding, DiscoveredNeighbor } from '@/types/topology'
 
-const PCard = Card
-const PButton = Button
-const PInputText = InputText
-const PInputNumber = InputNumber
 
 /** Minimal read/write surface the canvas exposes (via defineExpose). */
 interface CanvasLinkApi {
@@ -865,7 +858,7 @@ const linkLabel = computed<string>({
 }
 
 .ti-resize-handle:hover {
-  background: var(--feather-border-on-surface);
+  background: var(--onms-border-on-surface);
 }
 
 .ti-resize-right {
@@ -882,7 +875,7 @@ const linkLabel = computed<string>({
 }
 
 .ti-empty {
-  color: var(--feather-secondary-text-on-surface);
+  color: var(--onms-secondary-text-on-surface);
   font-size: 0.875rem;
 }
 
@@ -901,7 +894,7 @@ const linkLabel = computed<string>({
 .ti-label {
   font-size: 0.75rem;
   font-weight: 600;
-  color: var(--feather-secondary-text-on-surface);
+  color: var(--onms-secondary-text-on-surface);
 }
 
 .ti-input {
@@ -912,7 +905,7 @@ const linkLabel = computed<string>({
   width: 3rem;
   height: 2rem;
   padding: 0;
-  border: 1px solid var(--feather-border-on-surface);
+  border: 1px solid var(--onms-border-on-surface);
   border-radius: 4px;
   background: none;
 }
@@ -950,7 +943,7 @@ const linkLabel = computed<string>({
 }
 
 .ti-detail dt {
-  color: var(--feather-secondary-text-on-surface);
+  color: var(--onms-secondary-text-on-surface);
 }
 
 .ti-detail dd {
@@ -961,19 +954,19 @@ const linkLabel = computed<string>({
 .ti-infopanel-item {
   margin-top: 0.85rem;
   padding-top: 0.6rem;
-  border-top: 1px solid var(--feather-border-on-surface);
+  border-top: 1px solid var(--onms-border-on-surface);
 }
 
 .ti-infopanel-title {
   margin: 0 0 0.35rem;
   font-size: 0.8rem;
   font-weight: 600;
-  color: var(--feather-secondary-text-on-surface);
+  color: var(--onms-secondary-text-on-surface);
 }
 
 .ti-infopanel-html {
   font-size: 0.85rem;
-  color: var(--feather-primary-text-on-surface);
+  color: var(--onms-primary-text-on-surface);
   overflow-x: auto;
 }
 
@@ -985,7 +978,7 @@ const linkLabel = computed<string>({
 .ti-hint {
   margin: 0.35rem 0 0;
   font-size: 0.75rem;
-  color: var(--feather-secondary-text-on-surface);
+  color: var(--onms-secondary-text-on-surface);
 }
 
 .ti-icon-grid {
@@ -1002,12 +995,12 @@ const linkLabel = computed<string>({
   align-items: center;
   justify-content: center;
   padding: 0;
-  border: 1px solid var(--feather-border-on-surface);
+  border: 1px solid var(--onms-border-on-surface);
   border-radius: 4px;
-  background: var(--feather-surface);
+  background: var(--onms-surface);
   cursor: pointer;
   font-size: 0.65rem;
-  color: var(--feather-secondary-text-on-surface);
+  color: var(--onms-secondary-text-on-surface);
 }
 
 .ti-icon-option img {
@@ -1034,7 +1027,7 @@ const linkLabel = computed<string>({
 .ti-binding {
   margin: 0 0 0.5rem;
   font-size: 0.75rem;
-  color: var(--feather-secondary-text-on-surface);
+  color: var(--onms-secondary-text-on-surface);
 }
 
 .ti-neighbors {
@@ -1053,7 +1046,7 @@ const linkLabel = computed<string>({
 }
 
 .ti-neighbor-label {
-  color: var(--feather-primary-text-on-surface);
+  color: var(--onms-primary-text-on-surface);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1061,8 +1054,8 @@ const linkLabel = computed<string>({
 
 .ti-neighbor-proto {
   font-size: 0.65rem;
-  color: var(--feather-secondary-text-on-surface);
-  border: 1px solid var(--feather-border-on-surface);
+  color: var(--onms-secondary-text-on-surface);
+  border: 1px solid var(--onms-border-on-surface);
   border-radius: 3px;
   padding: 0 0.25rem;
   margin-left: 0.3rem;
@@ -1070,7 +1063,7 @@ const linkLabel = computed<string>({
 
 .ti-inline-hint {
   font-size: 0.75rem;
-  color: var(--feather-secondary-text-on-surface);
+  color: var(--onms-secondary-text-on-surface);
 }
 
 .ti-check {
@@ -1078,7 +1071,7 @@ const linkLabel = computed<string>({
   align-items: center;
   gap: 0.4rem;
   font-size: 0.85rem;
-  color: var(--feather-primary-text-on-surface);
+  color: var(--onms-primary-text-on-surface);
   margin-bottom: 0.35rem;
   cursor: pointer;
 }

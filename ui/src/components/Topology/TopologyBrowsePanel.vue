@@ -28,7 +28,7 @@
       <p v-if="loading" class="tb-empty">Loading…</p>
       <p v-else-if="nodeRows.length === 0" class="tb-empty">No nodes in this view.</p>
 
-      <PDataTable
+      <OnmsTable
         v-else-if="tab === 'nodes'"
         :value="filteredNodeRows"
         data-key="id"
@@ -38,17 +38,17 @@
         selection-mode="single"
         @row-click="onRowSelect($event.data.id)"
       >
-        <PColumn header="" :style="{ width: '2rem' }">
+        <OnmsColumn header="" :style="{ width: '2rem' }">
           <template #body="{ data }">
             <span class="tb-dot" :style="{ background: severityColor(data.severity) }" />
           </template>
-        </PColumn>
-        <PColumn field="label" header="Node" sortable />
-        <PColumn field="severity" header="Severity" sortable />
-        <PColumn field="location" header="Location" sortable />
-      </PDataTable>
+        </OnmsColumn>
+        <OnmsColumn field="label" header="Node" sortable />
+        <OnmsColumn field="severity" header="Severity" sortable />
+        <OnmsColumn field="location" header="Location" sortable />
+      </OnmsTable>
 
-      <PDataTable
+      <OnmsTable
         v-else
         :value="filteredAlarmRows"
         data-key="id"
@@ -58,21 +58,21 @@
         selection-mode="single"
         @row-click="onRowSelect(`placed-${$event.data.nodeId}`)"
       >
-        <PColumn header="" :style="{ width: '2rem' }">
+        <OnmsColumn header="" :style="{ width: '2rem' }">
           <template #body="{ data }">
             <span class="tb-dot" :style="{ background: severityColor(data.severity) }" />
           </template>
-        </PColumn>
-        <PColumn field="nodeLabel" header="Node" sortable />
-        <PColumn field="logMessage" header="Message">
+        </OnmsColumn>
+        <OnmsColumn field="nodeLabel" header="Node" sortable />
+        <OnmsColumn field="logMessage" header="Message">
           <template #body="{ data }">
             <span class="tb-msg" v-text="stripHtml(data.logMessage)" />
           </template>
-        </PColumn>
-        <PColumn field="lastEventTime" header="Last event" sortable>
+        </OnmsColumn>
+        <OnmsColumn field="lastEventTime" header="Last event" sortable>
           <template #body="{ data }">{{ formatTime(data.lastEventTime) }}</template>
-        </PColumn>
-      </PDataTable>
+        </OnmsColumn>
+      </OnmsTable>
       <p v-if="!loading && tab === 'alarms' && alarmRows.length === 0" class="tb-empty">
         No alarms for these nodes.
       </p>
@@ -82,16 +82,13 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import DataTable from 'primevue/datatable'
-import Column from 'primevue/column'
+import { OnmsColumn, OnmsTable } from '@opennms/onms-ui'
 import { useTopologyStore } from '@/stores/topologyStore'
 import { severityColor } from '@/components/Topology/severity'
 import { nodeIdFromPlacedId } from '@/components/Topology/nodeIds'
 import { getNodes } from '@/services/nodeService'
 import { getAlarms } from '@/services/alarmService'
 
-const PDataTable = DataTable
-const PColumn = Column
 
 const emit = defineEmits<{ (e: 'select', placedId: string | null): void }>()
 
@@ -214,9 +211,9 @@ watch([collapsed, placedRealIds], ([isCollapsed]) => {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--feather-border-on-surface);
+  border: 1px solid var(--onms-border-on-surface);
   border-radius: 6px;
-  background: var(--feather-surface);
+  background: var(--onms-surface);
   overflow: hidden;
   max-height: 38vh;
 }
@@ -229,7 +226,7 @@ watch([collapsed, placedRealIds], ([isCollapsed]) => {
   gap: 1rem;
   padding: 0.35rem 0.6rem;
   background: rgba(31, 95, 176, 0.10);
-  border-bottom: 1px solid var(--feather-border-on-surface);
+  border-bottom: 1px solid var(--onms-border-on-surface);
 }
 .topology-browse.collapsed .tb-header {
   border-bottom: none;
@@ -240,7 +237,7 @@ watch([collapsed, placedRealIds], ([isCollapsed]) => {
   font-weight: 600;
   font-size: 0.9rem;
   cursor: pointer;
-  color: var(--feather-primary-text-on-surface);
+  color: var(--onms-primary-text-on-surface);
 }
 .tb-caret {
   display: inline-block;
@@ -257,18 +254,18 @@ watch([collapsed, placedRealIds], ([isCollapsed]) => {
   border-radius: 4px;
   cursor: pointer;
   font-size: 0.85rem;
-  color: var(--feather-primary-text-on-surface);
+  color: var(--onms-primary-text-on-surface);
 }
 .tb-tabs button.active {
   background: rgba(31, 95, 176, 0.10);
-  border-color: var(--feather-border-on-surface);
+  border-color: var(--onms-border-on-surface);
   color: #1f5fb0;
   font-weight: 600;
 }
 .tb-filter {
   margin-left: auto;
   font-size: 0.8rem;
-  color: var(--feather-secondary-text-on-surface);
+  color: var(--onms-secondary-text-on-surface);
 }
 .tb-body {
   flex: 1 1 auto;
@@ -278,7 +275,7 @@ watch([collapsed, placedRealIds], ([isCollapsed]) => {
 }
 .tb-empty {
   padding: 0.75rem;
-  color: var(--feather-secondary-text-on-surface);
+  color: var(--onms-secondary-text-on-surface);
   font-size: 0.85rem;
 }
 .tb-dot {

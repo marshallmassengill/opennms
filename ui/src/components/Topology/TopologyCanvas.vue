@@ -2562,8 +2562,8 @@ defineExpose({
   min-height: 500px;
   display: flex;
   flex-direction: column;
-  background: var(--feather-background);
-  border: 1px solid var(--feather-border-on-surface);
+  background: var(--onms-background);
+  border: 1px solid var(--onms-border-on-surface);
   transition: box-shadow 100ms ease-in;
 }
 
@@ -2576,9 +2576,9 @@ defineExpose({
   bottom: 0.5rem;
   right: 0.5rem;
   z-index: 1;
-  background: var(--feather-surface);
-  color: var(--feather-primary-text-on-surface);
-  border: 1px solid var(--feather-border-on-surface);
+  background: var(--onms-surface);
+  color: var(--onms-primary-text-on-surface);
+  border: 1px solid var(--onms-border-on-surface);
   padding: 0.25rem 0.5rem;
   border-radius: 4px;
   font-size: 0.75rem;
@@ -2783,26 +2783,26 @@ defineExpose({
   user-select: none;
   padding: 2px 6px;
   border-radius: 3px;
-  background: var(--feather-surface);
+  background: var(--onms-surface);
   font-size: 12px;
   font-weight: 500;
-  color: var(--feather-primary-text-on-surface);
+  color: var(--onms-primary-text-on-surface);
   white-space: nowrap;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
   border: 1px solid transparent;
 }
 
 .topology-label:hover {
-  border-color: var(--feather-border-on-surface);
+  border-color: var(--onms-border-on-surface);
 }
 
 .topology-label.is-selected {
   border-color: #1f5fb0;
-  background: var(--feather-surface);
+  background: var(--onms-surface);
 }
 
 .topology-label.is-editing {
-  background: var(--feather-surface);
+  background: var(--onms-surface);
   border-color: #1f5fb0;
   padding: 0;
   cursor: text;
