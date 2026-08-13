@@ -68,8 +68,11 @@ public abstract class SinkDispatchingSyslogReceiver implements SyslogReceiver {
         final SyslogSinkModule syslogSinkModule = new SyslogSinkModule(m_config, m_distPollerDao);
         m_dispatcher = m_messageDispatcherFactory.createAsyncDispatcher(syslogSinkModule);
 
+        // Null-tolerant rather than trusting the interface contract: a mock or an older
+        // SyslogdConfig implementation returns null here, and an NPE on this line would
+        // take the whole receiver down, UDP included.
         final SyslogTcpConfig tcpConfig = m_config.getTcpConfig();
-        if (tcpConfig.isEnabled()) {
+        if (tcpConfig != null && tcpConfig.isEnabled()) {
             m_tcpListener = new SyslogTcpListener(tcpConfig, m_dispatcher);
             m_tcpListener.start();
         }
