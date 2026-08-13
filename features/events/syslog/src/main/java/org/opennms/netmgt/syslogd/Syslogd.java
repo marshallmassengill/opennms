@@ -22,7 +22,9 @@
 package org.opennms.netmgt.syslogd;
 
 import java.io.IOException;
-import java.lang.reflect.UndeclaredThrowableException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 import org.opennms.netmgt.daemon.AbstractServiceDaemon;
 import org.opennms.netmgt.daemon.DaemonTools;
@@ -32,7 +34,6 @@ import org.opennms.netmgt.events.api.annotations.EventListener;
 import org.opennms.netmgt.events.api.model.IEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * <p>
@@ -59,8 +60,14 @@ public class Syslogd extends AbstractServiceDaemon {
      */
     public static final String LOG4J_CATEGORY = "syslogd";
 
-    @Autowired
-    private SyslogReceiver m_udpEventReceiver;
+    /**
+     * One per transport. A receiver whose transport is not configured is still held
+     * here and simply does nothing when started, which keeps the wiring free of
+     * conditional bean construction.
+     */
+    private List<SyslogReceiver> m_receivers = new ArrayList<>();
+
+    private final List<Thread> m_threads = new ArrayList<>();
 
     /**
      * <p>Constructor for Syslogd.</p>
@@ -69,12 +76,29 @@ public class Syslogd extends AbstractServiceDaemon {
         super(LOG4J_CATEGORY);
     }
 
-    public SyslogReceiver getSyslogReceiver() {
-        return m_udpEventReceiver;
+    public List<SyslogReceiver> getSyslogReceivers() {
+        return Collections.unmodifiableList(m_receivers);
     }
 
-    public void setSyslogReceiver(SyslogReceiver receiver) {
-        m_udpEventReceiver = receiver;
+    public void setSyslogReceivers(final List<SyslogReceiver> receivers) {
+        m_receivers = receivers == null ? new ArrayList<>() : new ArrayList<>(receivers);
+    }
+
+    /**
+     * Convenience for the single-transport case.
+     */
+    public SyslogReceiver getSyslogReceiver() {
+        return m_receivers.isEmpty() ? null : m_receivers.get(0);
+    }
+
+    /**
+     * Convenience for the single-transport case, replacing whatever was set before.
+     */
+    public void setSyslogReceiver(final SyslogReceiver receiver) {
+        m_receivers = new ArrayList<>();
+        if (receiver != null) {
+            m_receivers.add(receiver);
+        }
     }
 
     /**
@@ -91,13 +115,16 @@ public class Syslogd extends AbstractServiceDaemon {
     @Override
     protected void onStart() {
         LOG.debug("Starting SyslogHandler");
-        Thread rThread = new Thread(m_udpEventReceiver, m_udpEventReceiver.getName());
 
-        try {
-            rThread.start();
-        } catch (RuntimeException e) {
-            rThread.interrupt();
-            throw e;
+        for (final SyslogReceiver receiver : m_receivers) {
+            final Thread rThread = new Thread(receiver, receiver.getName());
+            m_threads.add(rThread);
+            try {
+                rThread.start();
+            } catch (RuntimeException e) {
+                rThread.interrupt();
+                throw e;
+            }
         }
     }
 
@@ -106,26 +133,31 @@ public class Syslogd extends AbstractServiceDaemon {
      */
     @Override
     protected void onStop() {
-        if (m_udpEventReceiver != null) {
-            LOG.debug("stop: Stopping the Syslogd UDP receiver");
+        for (final SyslogReceiver receiver : m_receivers) {
+            LOG.debug("stop: Stopping the Syslogd receiver {}", receiver.getName());
             try {
-                m_udpEventReceiver.stop();
+                receiver.stop();
             } catch (InterruptedException e) {
-                LOG.info("stop: Exception when stopping the Syslog UDP receiver: " + e.getMessage());
+                Thread.currentThread().interrupt();
+                LOG.info("stop: Interrupted while stopping the Syslog receiver {}: {}", receiver.getName(), e.getMessage());
             } catch (Throwable e) {
-                LOG.error("stop: Failed to stop the Syslog UDP receiver", e);
-                throw new UndeclaredThrowableException(e);
+                // Carry on so that one receiver failing to stop does not leave the
+                // others running with nothing to shut them down.
+                LOG.error("stop: Failed to stop the Syslog receiver {}", receiver.getName(), e);
             }
-            LOG.debug("stop: Stopped the Syslogd UDP receiver");
+            LOG.debug("stop: Stopped the Syslogd receiver {}", receiver.getName());
         }
+        m_threads.clear();
     }
 
     private void handleConfigurationChanged() {
         stop();
-        try {
-            m_udpEventReceiver.reload();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+        for (final SyslogReceiver receiver : m_receivers) {
+            try {
+                receiver.reload();
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
         }
         start();
     }

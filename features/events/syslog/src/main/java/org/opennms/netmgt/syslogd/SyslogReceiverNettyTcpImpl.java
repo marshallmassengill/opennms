@@ -297,6 +297,9 @@ public class SyslogReceiverNettyTcpImpl extends SinkDispatchingSyslogReceiver {
     }
 
     private String describeAddress() {
+        if (!m_tcpConfig.isEnabled()) {
+            return "disabled";
+        }
         final String address = m_tcpConfig.getListenAddress() == null ? "0.0.0.0" : m_tcpConfig.getListenAddress();
         return address + ":" + m_tcpConfig.getPort();
     }
