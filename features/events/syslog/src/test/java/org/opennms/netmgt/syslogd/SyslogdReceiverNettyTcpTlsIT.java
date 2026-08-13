@@ -83,6 +83,8 @@ public class SyslogdReceiverNettyTcpTlsIT {
     private SyslogReceiverJavaNetImpl m_receiver;
     private EventLoopGroup m_clientGroup;
 
+    private Thread m_receiverThread;
+
     private final LinkedBlockingQueue<String> m_received = new LinkedBlockingQueue<>();
 
     @BeforeClass
@@ -112,6 +114,10 @@ public class SyslogdReceiverNettyTcpTlsIT {
         if (m_receiver != null) {
             m_receiver.stop();
             m_receiver = null;
+            if (m_receiverThread != null) {
+                m_receiverThread.join(10000);
+                m_receiverThread = null;
+            }
         }
         if (m_clientGroup != null) {
             m_clientGroup.shutdownGracefully(0, 5, TimeUnit.SECONDS).awaitUninterruptibly(10, TimeUnit.SECONDS);
@@ -225,7 +231,7 @@ public class SyslogdReceiverNettyTcpTlsIT {
 
         // Falling back to plaintext here would accept syslog on a port the operator
         // believes is encrypted, so the listener must simply not come up.
-        assertFalse(m_receiver.getTcpListener().isStarted());
+        assertFalse(m_receiver.getTcpListener() != null && m_receiver.getTcpListener().isStarted());
         try (ServerSocket rebind = new ServerSocket(port)) {
             assertNotNull("the TLS port should have been left free", rebind);
         }
@@ -275,12 +281,20 @@ public class SyslogdReceiverNettyTcpTlsIT {
 
     private int startReceiver(final SyslogTcpConfig config) throws Exception {
         buildReceiver(config);
-        assertTrue("listener did not bind on port " + config.getPort(), m_receiver.getTcpListener().isStarted());
+        startReceiverThread();
         return config.getPort();
     }
 
+    /**
+     * Starts the receiver without waiting for a TCP bind, for the cases where the listener
+     * is supposed to refuse to come up.
+     */
     private void startReceiverExpectingFailure(final SyslogTcpConfig config) throws Exception {
         buildReceiver(config);
+        m_receiverThread = new Thread(m_receiver, "test-syslog-receiver");
+        m_receiverThread.setDaemon(true);
+        m_receiverThread.start();
+        Thread.sleep(2000);
     }
 
     private void buildReceiver(final SyslogTcpConfig config) {
@@ -304,7 +318,6 @@ public class SyslogdReceiverNettyTcpTlsIT {
         m_receiver = new SyslogReceiverJavaNetImpl(syslogConfig);
         m_receiver.setDistPollerDao(distPollerDao);
         m_receiver.setMessageDispatcherFactory(dispatcherFactory);
-        m_receiver.run();
     }
 
     private class CollectingConsumer implements MessageConsumer<SyslogConnection, SyslogMessageLogDTO> {
@@ -334,5 +347,25 @@ public class SyslogdReceiverNettyTcpTlsIT {
         try (ServerSocket socket = new ServerSocket(0)) {
             return socket.getLocalPort();
         }
+    }
+
+    /**
+     * The receiver's run() blocks in its UDP receive loop and never returns, exactly as it
+     * does under Syslogd, so it gets its own thread here. The TCP socket is bound from that
+     * thread, hence the wait.
+     */
+    private void startReceiverThread() throws Exception {
+        m_receiverThread = new Thread(m_receiver, "test-syslog-receiver");
+        m_receiverThread.setDaemon(true);
+        m_receiverThread.start();
+
+        for (int i = 0; i < 100; i++) {
+            final SyslogTcpListener listener = m_receiver.getTcpListener();
+            if (listener != null && listener.isStarted()) {
+                return;
+            }
+            Thread.sleep(100);
+        }
+        throw new AssertionError("the TCP listener never bound");
     }
 }
