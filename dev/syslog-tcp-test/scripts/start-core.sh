@@ -23,6 +23,11 @@ docker exec syslog-tcp-core /opt/opennms/bin/runjava -s
 echo "==> installing schema"
 docker exec syslog-tcp-core /opt/opennms/bin/install -dis
 
+# bin/install runs as root here and leaves data/tmp root-owned, which stops ActiveMQ
+# from creating its kahadb directory and hangs the boot at Eventd.
+echo "==> fixing ownership under data/ and logs/"
+docker exec -u root syslog-tcp-core chown -R opennms:opennms /opt/opennms/data /opt/opennms/logs
+
 echo "==> starting opennms"
 docker exec -d syslog-tcp-core /opt/opennms/bin/opennms -f start
 
