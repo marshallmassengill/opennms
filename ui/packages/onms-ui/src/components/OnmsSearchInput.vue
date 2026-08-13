@@ -5,6 +5,7 @@
       :modelValue="modelValue"
       :placeholder="placeholder"
       :aria-label="ariaLabel"
+      :fluid="fluid"
       :data-test="dataTest"
       @update:modelValue="emit('update:modelValue', $event)"
     />
@@ -24,19 +25,23 @@ import OnmsInputText from './OnmsInputText.vue'
 // Seam composite (NMS-20081): the OpenNMS search field — text input with a
 // trailing search icon. Replaces every hand-rolled IconField/InputIcon/
 // search-icon arrangement. Input-targeting attrs are declared props because
-// fallthrough lands on the container div, not the <input>.
+// fallthrough lands on the container div, not the <input> — `fluid` included:
+// a width class on this component sizes the container, and without `fluid` the
+// input inside keeps its intrinsic width.
 withDefaults(defineProps<{
   modelValue?: string
   placeholder?: string
   inputId?: string
   ariaLabel?: string
   dataTest?: string
+  fluid?: boolean
 }>(), {
   modelValue: undefined,
   placeholder: undefined,
   inputId: undefined,
   ariaLabel: undefined,
-  dataTest: undefined
+  dataTest: undefined,
+  fluid: undefined
 })
 
 const emit = defineEmits<{

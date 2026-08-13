@@ -38,6 +38,7 @@ const EXPECTED_RUNTIME_EXPORTS = [
   'OnmsChip',
   'OnmsColumn',
   'OnmsConfirmationDialog',
+  'OnmsContextMenu',
   'OnmsDatePicker',
   'OnmsDialog',
   'OnmsDrawer',
@@ -55,6 +56,8 @@ const EXPECTED_RUNTIME_EXPORTS = [
   'OnmsRadioButton',
   'OnmsSearchInput',
   'OnmsSelect',
+  'OnmsSelectButton',
+  'OnmsSlider',
   'OnmsSpinner',
   'OnmsTab',
   'OnmsTabList',
@@ -64,9 +67,11 @@ const EXPECTED_RUNTIME_EXPORTS = [
   'OnmsTabs',
   'OnmsTag',
   'OnmsTextarea',
+  'OnmsTieredMenu',
   'OnmsToastHost',
   'OnmsToggleSwitch',
   'OnmsTooltip',
+  'OnmsVirtualScroller',
   'releaseActiveToast',
   'useOnmsToast'
 ]

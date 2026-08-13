@@ -31,4 +31,11 @@ describe('OnmsSearchInput contract', () => {
     await wrapper.find('input').setValue('snmp')
     expect(wrapper.emitted('update:modelValue')).toEqual([['snmp']])
   })
+
+  // A width class on this component sizes the IconField container; the input
+  // inside only follows it when fluid is set.
+  it('widens the input, not just the container, when fluid is set', () => {
+    expect(mountIt().find('input').classes()).not.toContain('p-inputtext-fluid')
+    expect(mountIt({ fluid: true }).find('input').classes()).toContain('p-inputtext-fluid')
+  })
 })

@@ -116,10 +116,62 @@ OnmsTable (+ the `OnmsTablePageEvent`, `OnmsTableSortEvent`,
 - **`expandedRows`** accepts either an array of row instances or an object
   keyed by `dataKey`, matching PrimeVue's own `DataTableExpandedRows` shape
   for tables that expand by key rather than by row identity.
-- Not exposed (never used anywhere in the app today): selection mode,
+- **`selectionMode`** and the **`row-click`** emit (+ `OnmsTableRowClickEvent`)
+  were added in tranche 4 for the topology browse panel, which is a
+  click-a-row-to-select list. `selection` itself is still not exposed: that
+  panel drives highlighting from its own store rather than from the table.
+- Not exposed (never used anywhere in the app today): the `selection` binding,
   filters, `loading`, removable sort, paginator templates, CSV export. Extend
   the seam (a new prop/emit on `OnmsTable`/`OnmsColumn`) before reaching for
   `unsafePt` if a real need for one of these appears.
+
+## Components (tranche 4)
+
+OnmsSelectButton, OnmsSlider, OnmsContextMenu, OnmsTieredMenu and
+OnmsVirtualScroller, added for the topology map. The same tranche widened six
+existing wrappers to what topology needs: `size` on OnmsButton,
+`selectionMode` + `row-click` on OnmsTable, `showToggleAll` +
+`maxSelectedLabels` on OnmsMultiSelect, `showButtons` + `buttonLayout` on
+OnmsInputNumber, `completeOnFocus` on OnmsAutoComplete, and `fluid` on
+OnmsSearchInput. Each keeps PrimeVue's own default when unset.
+
+- **`OnmsSearchInput`'s `fluid`** matters more than it looks: a width class on
+  the component sizes the IconField container, and the input inside keeps its
+  intrinsic width unless `fluid` is set. A search field that should fill its
+  column needs both.
+
+- **`OnmsSelectButton`** defaults `allowEmpty` to `false` (PrimeVue's own
+  default is `true`) — a segmented control that can deselect its last option
+  leaves the screen with no mode chosen. Its `change` emits the selected value
+  directly rather than PrimeVue's `{ originalEvent, value }`, matching the
+  `OnmsListbox` precedent. The dark-mode correction for the checked option's
+  label sits in the shared preset (`ui/src/theme/opennms-preset.ts`,
+  `components.togglebutton`) alongside the other per-component token fixes,
+  not in the wrapper.
+- **`OnmsSlider`** is single-value only; PrimeVue's two-handle `range` mode
+  isn't exposed, since it would widen `modelValue` to `number | number[]` for
+  every consumer. `ariaLabel` is a declared prop rather than a fall-through
+  DOM attr: the element carrying `role="slider"` is the handle, not the root,
+  so a fall-through `aria-label` would land on the wrong element.
+- **`OnmsContextMenu`** vs **`OnmsMenu`**: a popup `OnmsMenu` positions against
+  the trigger *element*, while `OnmsContextMenu` positions at the pointer
+  coordinates on the event it is handed — what a right-click on a canvas or a
+  table row needs. Open it from a `@contextmenu` handler via the exposed
+  `show(event)`.
+- **`OnmsTieredMenu`** vs **`OnmsMenu`**: `OnmsMenu` renders a nested `items`
+  array as a flat section under a heading, while `OnmsTieredMenu` renders it as
+  a hover-opened submenu, so it is the wrapper for menus deeper than one level.
+  Popup by default, matching `OnmsMenu`; open via the exposed `toggle(event)`.
+  Both reuse the existing `OnmsMenuItem` type, whose `items` field already
+  nests.
+- **`OnmsVirtualScroller`** covers long uniform-height lists that aren't tables
+  (`OnmsTable`'s `virtualScrollItemSize` remains the table case). Its `#item`
+  slot is narrowed rather than forwarded: PrimeVue passes an `options` object
+  of internal render bookkeeping, of which only `index` means anything to a
+  consumer, so the slot exposes `{ item, index }`. Its contract test drives the
+  slot directly — PrimeVue sizes the render window by measuring the mounted
+  element, and happy-dom reports every box as zero-sized, so nothing renders
+  under vitest regardless of item count.
 
 ## OnmsTooltip
 
@@ -195,9 +247,10 @@ over time, not grow:
 - `primevue/tieredmenu` in `ui/src/components/Menu/SideMenu.vue` — the side
   navigation drives `TieredMenu` internals directly (dirty-flag tracking, DOM
   queries against `.p-tieredmenu-*` classes) that don't fit a thin prop/slot
-  wrapper. The import carries an inline `eslint-disable-next-line
-  no-restricted-imports` with a comment pointing back to NMS-20081; revisit
-  when the side menu is redesigned.
+  wrapper, so it stays on the direct import even though `OnmsTieredMenu` now
+  exists for the ordinary case. The import carries an inline
+  `eslint-disable-next-line no-restricted-imports` with a comment pointing back
+  to NMS-20081; revisit when the side menu is redesigned.
 
 ## Planned next
 
