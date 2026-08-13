@@ -73,6 +73,8 @@ const DEFAULTS: Required<LayoutOptions> = {
  */
 const FORCEATLAS2_THRESHOLD = 300
 
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5))
+
 const layoutWithForceAtlas2 = (
   nodes: CanvasNode[],
   links: CanvasLink[],
@@ -84,8 +86,10 @@ const layoutWithForceAtlas2 = (
       return
     }
     // Deterministic phyllotaxis seeding (same spiral d3-force uses), so a
-    // given graph lays out the same way on every load.
-    const angle = i * 2.3999632297286533
+    // given graph lays out the same way on every load. Computed rather than
+    // written out: the golden angle's decimal expansion is longer than a
+    // double can hold.
+    const angle = i * GOLDEN_ANGLE
     const radius = opts.collideRadius * Math.sqrt(i)
     g.addNode(n.id, { x: radius * Math.cos(angle), y: radius * Math.sin(angle) })
   })

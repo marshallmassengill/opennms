@@ -71,7 +71,7 @@
         },
         {
           "id": "kscReports",
-          "name": "Metrics Dashboard (KSC Reports)",
+          "name": "Graph Collections",
           "url": "KSC/index.jsp",
           "locationMatch": "ksc",
           "roles": null
@@ -87,17 +87,10 @@
       "roles": null,
       "items": [
         {
-          "id": "nodeList",
-          "name": "Node List",
+          "id": "nodes",
+          "name": "Nodes",
           "url": "ui/index.html#/nodes",
           "locationMatch": "configurationManagement",
-          "roles": null
-        },
-        {
-          "id": "legacyNodes",
-          "name": "Nodes (Legacy)",
-          "url": "element/nodeList.htm",
-          "locationMatch": "nodelist",
           "roles": null
         },
         {
@@ -216,14 +209,21 @@
         {
           "id": "resourceGraphs",
           "name": "Resource Graphs",
+          "url": "graph/index.jsp",
+          "locationMatch": "performance",
+          "roles": null
+        },
+        {
+          "id": "resourceGraphsPreview",
+          "name": "Resource Graphs (Preview)",
           "url": "ui/index.html#/resource-graphs",
           "locationMatch": "performance",
           "roles": null
         },
         {
-          "id": "resourceGraphsOld",
-          "name": "Resource Graphs (Legacy)",
-          "url": "graph/index.jsp",
+          "id": "adhocGraphs",
+          "name": "Custom Performance Graphs (Preview)",
+          "url": "ui/index.html#/adhoc-graphs",
           "locationMatch": "performance",
           "roles": null
         }
@@ -585,7 +585,7 @@
       "items": [
         {
           "id": "restOpenApiDocumentation",
-          "name": "REST Open API Documentation",
+          "name": "OpenAPI Documentation",
           "url": "ui/index.html#/open-api",
           "locationMatch": "",
           "roles": null
@@ -593,7 +593,7 @@
         {
           "id": "restApiReferenceDocumentation",
           "name": "REST API Reference Documentation",
-          "url": "https://docs.opennms.com/meridian/2024/development/rest/rest-api.html",
+          "url": "https://docs.opennms.com/horizon/latest/development/rest/rest-api.html",
           "isExternalLink": true,
           "linkTarget": "_blank",
           "locationMatch": "",
@@ -613,7 +613,7 @@
     {
       "id": "helpDocumentationMenu",
       "name": "Help",
-      "url": "https://docs.opennms.com/meridian/2024",
+      "url": "https://docs.opennms.com/horizon/latest",
       "isExternalLink": true,
       "locationMatch": null,
       "icon": "action/Help",
@@ -630,13 +630,6 @@
           "id": "helpAbout",
           "name": "About",
           "url": "about/index.jsp",
-          "locationMatch": null,
-          "roles": null
-        },
-        {
-          "id": "apiDocumentation",
-          "name": "API Documentation",
-          "url": "ui/index.html#/open-api",
           "locationMatch": null,
           "roles": null
         },

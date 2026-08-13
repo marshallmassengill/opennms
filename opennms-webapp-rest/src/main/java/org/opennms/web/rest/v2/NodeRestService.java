@@ -272,7 +272,7 @@ public class NodeRestService extends AbstractDaoRestService<OnmsNode,SearchBean,
         // There are no extra String properties on node.snmpInterfaces
 
         // Topology (CDP/LLDP) search: virtual property backed by a SQL subquery across topology tables.
-        // Mirrors DefaultNodeListService.addTopoSearch. skipProperty=true: no Hibernate alias is joined,
+        // Mirrors the legacy node-list topology search. skipProperty=true: no Hibernate alias is joined,
         // so the default property restriction must not be added.
         final String topologySql = "{alias}.nodeId in (" +
             "select nodeId from cdplink where cdpinterfacename ilike ? " +
@@ -286,6 +286,151 @@ public class NodeRestService extends AbstractDaoRestService<OnmsNode,SearchBean,
         map.put("topology", topologyBehavior);
 
         // TODO: Figure out if it makes sense to search/orderBy on 2nd-level and greater JOINed properties
+
+        // iplike: PostgreSQL iplike() pattern filter over all IP interfaces of the node.
+        // Uses a SQL subquery because IpLikeCriteriaBehavior.b.iplike() only works against the
+        // root alias; the ipinterface table is a child association and cannot be aliased there.
+        // FIQL delivers '*' wildcards as '%' by the time the lambda fires — reverse with replaceAll().
+        CriteriaBehavior<?> iplikeBehavior = new CriteriaBehavior<>((String)null, String::new, (b, v, c, w) -> {
+            if (v == null) {
+                return;
+            }
+            final String pattern = ((String)v).replaceAll("%", "*");
+            switch (c) {
+            case EQUALS:
+                b.sql("{alias}.nodeid in (select nodeid from ipinterface where iplike(ipaddr, ?))", pattern, Type.STRING);
+                break;
+            case NOT_EQUALS:
+                b.sql("{alias}.nodeid not in (select nodeid from ipinterface where iplike(ipaddr, ?))", pattern, Type.STRING);
+                break;
+            default:
+                throw new IllegalArgumentException("Illegal condition type for iplike expression: " + c);
+            }
+        });
+        iplikeBehavior.setSkipPropertyByDefault(true);
+        map.put("iplike", iplikeBehavior);
+
+        // maclike: case-insensitive partial match on SNMP interface physical (MAC) address.
+        // Mirrors the legacy node-list MAC-like search — colons and dashes are stripped,
+        // then an ANYWHERE ilike is applied. Uses a SQL subquery because snmpinterface is a child
+        // association and cannot be aliased against the root criteria here.
+        CriteriaBehavior<?> maclikeBehavior = new CriteriaBehavior<>((String)null, String::new, (b, v, c, w) -> {
+            if (v == null) {
+                return;
+            }
+            final String pattern = "%" + ((String)v).replaceAll("[:-]", "") + "%";
+            switch (c) {
+            case EQUALS:
+                b.sql("{alias}.nodeid in (select nodeid from snmpinterface where snmpphysaddr ilike ?)", pattern, Type.STRING);
+                break;
+            case NOT_EQUALS:
+                b.sql("{alias}.nodeid not in (select nodeid from snmpinterface where snmpphysaddr ilike ?)", pattern, Type.STRING);
+                break;
+            default:
+                throw new IllegalArgumentException("Illegal condition type for maclike expression: " + c);
+            }
+        });
+        maclikeBehavior.setSkipPropertyByDefault(true);
+        map.put("maclike", maclikeBehavior);
+
+        // nodesWithDownAggregateStatus: nodes whose aggregate status is "down", i.e. that have at
+        // least one active (status='A') monitored service currently in outage (ifRegainedService is null).
+        // Mirrors the post-query AggregateStatus.getDownNodes() filter the legacy node list applies.
+        // Uses a SQL subquery because the outage/ifservice tables are not aliased on the node criteria.
+        final String downStatusSubquery = "(select ip.nodeid from outages o " +
+                "join ifservices s on o.ifserviceid = s.id " +
+                "join ipinterface ip on s.ipinterfaceid = ip.id " +
+                "where o.ifregainedservice is null and s.status = 'A')";
+        CriteriaBehavior<?> downStatusBehavior = new CriteriaBehavior<>((String)null, String::new, (b, v, c, w) -> {
+            if (v == null) {
+                return;
+            }
+            final boolean wantDown = Boolean.parseBoolean((String)v);
+            // (==true) and (!=false) both mean "down nodes only"; (==false)/(!=true) mean "exclude down nodes".
+            boolean downOnly;
+            switch (c) {
+            case EQUALS:
+                downOnly = wantDown;
+                break;
+            case NOT_EQUALS:
+                downOnly = !wantDown;
+                break;
+            default:
+                throw new IllegalArgumentException("Illegal condition type for nodesWithDownAggregateStatus expression: " + c);
+            }
+            b.sql("{alias}.nodeid " + (downOnly ? "in " : "not in ") + downStatusSubquery);
+        });
+        downStatusBehavior.setSkipPropertyByDefault(true);
+        map.put("nodesWithDownAggregateStatus", downStatusBehavior);
+
+        // nodesWithOutages: nodes that have at least one current (unresolved, unsuppressed,
+        // non-perspective) outage. Mirrors the legacy node-list "nodes with outages" filter,
+        // with its operator-precedence bug fixed: the suppresstime disjunction is parenthesized
+        // so it no longer overrides "ifregainedservice is null".
+        final String currentOutagesSubquery = "(select ip.nodeid from outages o " +
+                "join ifservices s on o.ifserviceid = s.id " +
+                "join ipinterface ip on s.ipinterfaceid = ip.id " +
+                "where o.perspective is null " +
+                "and o.ifregainedservice is null " +
+                "and (o.suppresstime is null or o.suppresstime < now()))";
+        CriteriaBehavior<?> outagesBehavior = new CriteriaBehavior<>((String)null, String::new, (b, v, c, w) -> {
+            if (v == null) {
+                return;
+            }
+            final boolean wantOutages = Boolean.parseBoolean((String)v);
+            boolean hasOutages;
+            switch (c) {
+            case EQUALS:
+                hasOutages = wantOutages;
+                break;
+            case NOT_EQUALS:
+                hasOutages = !wantOutages;
+                break;
+            default:
+                throw new IllegalArgumentException("Illegal condition type for nodesWithOutages expression: " + c);
+            }
+            b.sql("{alias}.nodeid " + (hasOutages ? "in " : "not in ") + currentOutagesSubquery);
+        });
+        outagesBehavior.setSkipPropertyByDefault(true);
+        map.put("nodesWithOutages", outagesBehavior);
+
+        // nodesWithAssets: nodes whose asset record has at least one non-empty field.
+        // Mirrors the legacy AssetModel.searchNodesWithAssets() query ("All nodes with asset info").
+        final String[] assetColumns = {
+            "manufacturer", "vendor", "modelNumber", "serialNumber", "description", "circuitId",
+            "assetNumber", "operatingSystem", "rack", "slot", "port", "region", "division", "department",
+            "address1", "address2", "city", "state", "zip", "building", "floor", "room", "vendorPhone",
+            "vendorFax", "dateInstalled", "lease", "leaseExpires", "supportPhone", "maintContract",
+            "vendorAssetNumber", "maintContractExpires", "displayCategory", "notifyCategory",
+            "pollerCategory", "thresholdCategory", "comment", "username", "password", "enable",
+            "connection", "autoenable", "cpu", "ram", "storagectrl", "hdd1", "hdd2", "hdd3", "hdd4",
+            "hdd5", "hdd6", "numpowersupplies", "inputpower", "additionalhardware", "admin",
+            "snmpcommunity", "rackunitheight"
+        };
+        final String nonEmptyAssets = java.util.Arrays.stream(assetColumns)
+                .map(col -> "coalesce(" + col + ",'') != ''")
+                .collect(java.util.stream.Collectors.joining(" or "));
+        final String assetsSubquery = "(select nodeid from assets where " + nonEmptyAssets + ")";
+        CriteriaBehavior<?> withAssetsBehavior = new CriteriaBehavior<>((String)null, String::new, (b, v, c, w) -> {
+            if (v == null) {
+                return;
+            }
+            final boolean wantAssets = Boolean.parseBoolean((String)v);
+            boolean hasAssets;
+            switch (c) {
+            case EQUALS:
+                hasAssets = wantAssets;
+                break;
+            case NOT_EQUALS:
+                hasAssets = !wantAssets;
+                break;
+            default:
+                throw new IllegalArgumentException("Illegal condition type for nodesWithAssets expression: " + c);
+            }
+            b.sql("{alias}.nodeid " + (hasAssets ? "in " : "not in ") + assetsSubquery);
+        });
+        withAssetsBehavior.setSkipPropertyByDefault(true);
+        map.put("nodesWithAssets", withAssetsBehavior);
 
         return map;
     }

@@ -21,7 +21,11 @@
 ///
 
 import { isConvertibleToInteger } from '@/lib/utils'
+import { MainMenu } from '@/types/mainMenu'
+import { LocationQuery } from 'vue-router'
+import { normalizeMacSearch } from './useInterfaceListing'
 import {
+  AssetFilter,
   Category,
   ExtendedSearchValue,
   MatchType,
@@ -36,15 +40,22 @@ import {
   SetOperator
 } from '@/types'
 import {
+  ALLOWED_ASSET_COLUMNS,
+  getAssetColumnFiqlProperty,
+  parseAssetFilters,
   parseCategories,
+  parseDownAggregateStatus,
   parseFlows,
   parseForeignSource,
+  isIplikePattern,
   parseIplike,
   parseMaclike,
   parseMib2Params,
   parseMonitoredServices,
   parseMonitoringLocation,
   parseNodeLabel,
+  parseNodesWithAssets,
+  parseNodesWithOutages,
   parseSnmpParams,
   parseSnmpParmParams,
   parseSysParams
@@ -98,7 +109,12 @@ export const useNodeQuery = () => {
       selectedFlows: [] as string[],
       selectedMonitoringLocations: [] as MonitoringLocation[],
       ipAddress: '',
+      macAddress: '',
       topology: '',
+      nodesWithDownAggregateStatus: false,
+      nodesWithAssets: false,
+      nodesWithOutages: false,
+      assetFilters: [] as AssetFilter[],
       extendedSearch: getDefaultNodeQueryExtendedSearchParams()
     } as NodeQueryFilter
   }
@@ -153,7 +169,7 @@ export const useNodeQuery = () => {
   }
 
   const addIpAddressToQueryFilter = (filter: NodeQueryFilter, ipAddress: string) => {
-    const ip = parseIplike(ipAddress)
+    const ip = parseIplike({ ipAddress })
 
     if (ip) {
       return {
@@ -169,24 +185,20 @@ export const useNodeQuery = () => {
    * Build new QueryParameters based on existing QueryParameters (which contain e.g. limit, offset and similar),
    * combined with the given NodeQueryFilter.
    */
-  const buildUpdatedNodeStructureQueryParameters = (queryParameters: QueryParameters, filter: NodeQueryFilter) => {
-    const searchQuery = buildNodeStructureQuery(filter)
+  const buildUpdatedNodeListQueryParameters = (queryParameters: QueryParameters, filter: NodeQueryFilter) => {
+    const searchQuery = buildNodeListQuery(filter)
     const searchQueryParam: QueryParameters = { _s: searchQuery }
     const updatedParams = { ...queryParameters, ...searchQueryParam }
-
-    // if there is no search query, remove the '_s' property entirely so it doesn't
-    // get put into the API request query string
-    if (!searchQuery) {
-      delete updatedParams._s
-    }
 
     return updatedParams as QueryParameters
   }
 
   /**
-   * Query string search parameters tracked/accepted by the Node Structure page.
+   * Query string search parameters tracked/accepted by the Node List page.
    */
   const trackedNodeQueryStringProperties = new Set([
+    'assetColumn',
+    'assetValue',
     'categories',
     'category1',
     'category2',
@@ -194,6 +206,9 @@ export const useNodeQuery = () => {
     'foreignsource',
     'ipAddress',
     'iplike',
+    'nodesWithAssets',
+    'nodesWithDownAggregateStatus',
+    'nodesWithOutages',
     'listInterfaces',
     'maclike',
     'mib2Parm',
@@ -291,13 +306,31 @@ export const useNodeQuery = () => {
       filter.extendedSearch.foreignSourceParams = fsParams
     }
 
-    // physAddr (MAC address) — set independently of snmpParm/snmpParams blocks
+    // maclike (MAC address) — dedicated top-level filter, emitted as a maclike== FIQL query
     const macAddr = parseMaclike(queryObject)
     if (macAddr) {
-      if (!filter.extendedSearch.snmpParams) {
-        filter.extendedSearch.snmpParams = getDefaultNodeQuerySnmpParams()
-      }
-      filter.extendedSearch.snmpParams.physAddr = macAddr
+      filter.macAddress = macAddr
+    }
+
+    // nodesWithDownAggregateStatus — limit to nodes with a down aggregate status
+    if (parseDownAggregateStatus(queryObject)) {
+      filter.nodesWithDownAggregateStatus = true
+    }
+
+    // nodesWithAssets — limit to nodes that have asset info (legacy "All nodes with asset info")
+    if (parseNodesWithAssets(queryObject)) {
+      filter.nodesWithAssets = true
+    }
+
+    // nodesWithOutages — limit to nodes that have one or more current outages
+    if (parseNodesWithOutages(queryObject)) {
+      filter.nodesWithOutages = true
+    }
+
+    // asset-field filters (e.g. from site-status-view drill-down links)
+    const assetFilters = parseAssetFilters(queryObject)
+    if (assetFilters.length > 0) {
+      filter.assetFilters = assetFilters
     }
 
     const serviceNames = parseMonitoredServices(queryObject, serviceTypes)
@@ -309,11 +342,13 @@ export const useNodeQuery = () => {
       filter.topology = queryObject.topology
     }
 
-    // listInterfaces: intentionally not handled — the Vue node list page has no interface-listing mode,
-    // and already displays the primary interface in the node table.
+    // listInterfaces: not handled here — it's a display flag, not a filter, so it's applied directly
+    // in Nodes.vue (nodeListStore.setShowInterfaces) rather than folded into the NodeQueryFilter.
     // service=<id>: numeric service ID is not resolved here; PR 3 pages will send monitoredService=<name>.
-    // NOTE nodeId: not handled here. Once Vue Node Details (/node/:id) has parity with element/node.jsp,
-    //   update quicksearch-box.jsp to link to the Vue route instead of element/node.jsp?node={id}.
+    // NOTE nodeId: not handled here. Legacy `?nodeId=<n>` bookmarks are redirected to the node
+    //   detail page (element/node.jsp?node={id}) before the query filter is ever built — see
+    //   handleNodeIdRedirect() in Nodes.vue, which combines parseNodeIdQueryParam() and
+    //   buildNodeDetailUrl() (both below) with deferral until mainMenu has loaded.
 
     return filter
   }
@@ -321,7 +356,7 @@ export const useNodeQuery = () => {
   return {
     addIpAddressToQueryFilter,
     buildNodeQueryFilterFromQueryString,
-    buildUpdatedNodeStructureQueryParameters,
+    buildUpdatedNodeListQueryParameters,
     getDefaultNodeQueryFilter,
     getDefaultNodeQueryExtendedSearchParams,
     getDefaultNodeQueryForeignSourceParams,
@@ -335,9 +370,11 @@ export const useNodeQuery = () => {
 /**
  * Build a FIQL query for the Node Rest service from a NodeQueryFilter.
  */
-const buildNodeStructureQuery = (filter: NodeQueryFilter) => {
+const buildNodeListQuery = (filter: NodeQueryFilter) => {
   const searchTerm = sanitizeSearchTerm(filter.searchTerm)
-  const ipAddress = sanitizeSearchTerm(filter.ipAddress)
+  // don't sanitize IP address — allow users to enter commas and other FIQL characters, since buildIpAddressQuery will handle them appropriately
+  // (commas are valid in iplike patterns, and users may naturally enter comma-separated lists of IPs or CIDRs)
+  const ipAddress = filter.ipAddress
 
   const searchQuery = buildSearchQuery(searchTerm)
   const ipAddressQuery = buildIpAddressQuery(ipAddress)
@@ -348,40 +385,76 @@ const buildNodeStructureQuery = (filter: NodeQueryFilter) => {
   const snmpQuery = buildSnmpQuery(filter.extendedSearch.snmpParams)
   const sysQuery = buildSysQuery(filter.extendedSearch.sysParams)
   const serviceQuery = buildServiceQuery(filter.selectedServices ?? [])
+  const maclikeQuery = buildMaclikeQuery(filter.macAddress)
+  const downStatusQuery = buildDownStatusQuery(filter.nodesWithDownAggregateStatus)
+  const withAssetsQuery = buildWithAssetsQuery(filter.nodesWithAssets)
+  const withOutagesQuery = buildWithOutagesQuery(filter.nodesWithOutages)
+  const assetQuery = buildAssetQuery(filter.assetFilters)
   const topologyQuery = buildTopologyQuery(filter.topology)
 
-  // TODO: May need more search term sanitizing and/or restrict characters in the FeatherInput above
+  // TODO: May need more search term sanitizing and/or restrict characters in the input control above
   const querySeparator = getFiqlSetOperator(SetOperator.Intersection)
-  const query = [searchQuery, ipAddressQuery, foreignSourceQuery, snmpQuery, sysQuery, categoryQuery, flowsQuery, locationQuery, serviceQuery, topologyQuery].filter(s => s.length > 0).join(querySeparator)
+  const query = [searchQuery, ipAddressQuery, foreignSourceQuery, snmpQuery, sysQuery, categoryQuery, flowsQuery, locationQuery, serviceQuery, maclikeQuery, downStatusQuery, withAssetsQuery, withOutagesQuery, assetQuery, topologyQuery].filter(s => s.length > 0).join(querySeparator)
 
   // additional fields to search on for main searchTerm
   // these will be added as SetOperator.Union (i.e. 'or')
   // for now, just ipAddress - but only if user does not specify ipAddress in extended search
+  let finalQuery = query
   if (!ipAddress && isIP(searchTerm)) {
     const ipQuery = buildIpAddressQuery(searchTerm)
     const separator = getFiqlSetOperator(SetOperator.Union)
 
-    return `${query}${separator}${ipQuery}`
+    finalQuery = `${query}${separator}${ipQuery}`
   }
 
-  return query
+  // Always exclude deleted nodes, mirroring the legacy node list's node.type != 'D' filter.
+  // `!=` (not `==A`) so nodes with an unknown/null type still show up (server maps != to or(ne, isNull)).
+  // The parenthesized group is mandatory: FIQL ';' (AND) binds tighter than ',' (OR), so without
+  // grouping an OR branch (e.g. the searchTerm-as-IP union above) would escape the type guard.
+  return finalQuery ? `(${finalQuery});node.type!=D` : 'node.type!=D'
 }
 
 const buildSearchQuery = (searchTerm: string) => {
   if (searchTerm?.length > 0) {
     const startStar = searchTerm.startsWith('*') ? '' : '*'
     const endStar = searchTerm.endsWith('*') ? '' : '*'
-    return `label==${startStar}${searchTerm}${endStar}`
+    // '*' is the FIQL multi-character wildcard and must stay raw; every other character is
+    // FIQL/URL-transport-unsafe in the general case (label text may legitimately contain
+    // # % & ( ) — see e.g. "Core (bldg 3)", "R&D-sw1"). Split on '*', double-encode each segment
+    // (see encodeFiqlValue for why double), then rejoin with '*'. Splitting on '*' also preserves
+    // any leading/trailing/consecutive stars already in the term as empty segments, which
+    // round-trip through encodeFiqlValue ('') unchanged.
+    const encoded = searchTerm.split('*').map(encodeFiqlValue).join('*')
+    return `label==${startStar}${encoded}${endStar}`
   }
 
   return ''
 }
 
 const buildIpAddressQuery = (ipAddress?: string) => {
-  if (ipAddress) {
-    return `ipInterface.ipAddress==${ipAddress}`
+  if (!ipAddress) {
+    return ''
   }
 
+  // Normalize spaces around commas (users naturally type "1, 2, 3" but iplike has no spaces)
+  const normalized = ipAddress.replace(/\s*,\s*/g, ',')
+
+  if (isIplikePattern(normalized)) {
+    // Commas in iplike patterns must survive HTTP URL-decoding intact so that FIQL's parser
+    // does not treat them as OR operators.  queryParametersHandler emits the URL verbatim
+    // (no encoding), so the servlet container performs exactly one URL-decode on the query
+    // string.  Double-encoding (%252C) means the server receives %2C after that decode;
+    // CXF's FIQL parser sees %2C as a literal (not a comma), and search.decode.values=true
+    // then decodes %2C → , before the value reaches our CriteriaBehavior lambda.
+    const encoded = normalized.replace(/,/g, '%252C')
+    return `iplike==${encoded}`
+  }
+
+  if (isIP(normalized)) {
+    return `ipInterface.ipAddress==${normalized}`
+  }
+
+  // if it's not a valid IP or iplike pattern, don't include it in the query at all
   return ''
 }
 
@@ -397,12 +470,12 @@ const buildCategoryQuery = (selectedCategories: Category[], categoryMode: SetOpe
       if (items.length === 1) {
         return items[0]
       }
-      return `(${items.join(',')})`
+      return `(${items.join(getFiqlSetOperator(SetOperator.Union))})`
     }
     const group1 = buildGroup(selectedCategories)
     const group2 = buildGroup(selectedCategories2)
     if (group1 && group2) {
-      return `${group1};${group2}`
+      return `${group1}${getFiqlSetOperator(SetOperator.Intersection)}${group2}`
     }
     return group1 || group2
   }
@@ -435,7 +508,7 @@ const buildFlowsQuery = (selectedFlows: string[]) => {
   if (flowItems.length === 1) {
     return `${flowItems[0]}`
   } else if (flowItems.length > 1) {
-    return `(${flowItems.join(',')})`
+    return `(${flowItems.join(getFiqlSetOperator(SetOperator.Union))})`
   }
 
   return ''
@@ -447,7 +520,7 @@ const buildLocationsQuery = (selectedLocations: MonitoringLocation[]) => {
   if (locationItems.length === 1) {
     return `${locationItems[0]}`
   } else if (locationItems.length > 1) {
-    return `(${locationItems.join(',')})`
+    return `(${locationItems.join(getFiqlSetOperator(SetOperator.Union))})`
   }
 
   return ''
@@ -513,7 +586,7 @@ const buildServiceQuery = (selectedServices: string[]) => {
     return items[0]
   }
 
-  return `(${items.join(',')})`
+  return `(${items.join(getFiqlSetOperator(SetOperator.Union))})`
 }
 
 const buildSnmpQuery = (snmpParams?: NodeQuerySnmpParams) => {
@@ -546,7 +619,7 @@ const buildSnmpQuery = (snmpParams?: NodeQuerySnmpParams) => {
     }
 
     if (arr.length > 0) {
-      return arr.join(';')
+      return arr.join(getFiqlSetOperator(SetOperator.Intersection))
     }
   }
 
@@ -567,11 +640,77 @@ const buildSysQuery = (sysParams?: NodeQuerySysParams) => {
     })
 
     if (arr.length > 0) {
-      return arr.join(';')
+      return arr.join(getFiqlSetOperator(SetOperator.Intersection))
     }
   }
 
   return ''
+}
+
+const buildMaclikeQuery = (macAddress?: string) => {
+  if (!macAddress) {
+    return ''
+  }
+
+  // Strip separators/whitespace and lowercase to match the format stored in snmpinterface.snmpphysaddr.
+  // The backend maclike behavior does a case-insensitive ANYWHERE match, so a partial MAC is fine.
+  // normalizeMacSearch strips every non-hex character, not just legacy's '[:-]' -- see its doc
+  // comment in useInterfaceListing.ts for why that's a deliberate improvement, not parity. Shared
+  // with useInterfaceListing.ts's client-side maclike match and NodesTable.vue's buildSnmpNarrowing
+  // so all three normalize a MAC-like value identically.
+  const stripped = normalizeMacSearch(macAddress)
+
+  if (stripped.length === 0) {
+    return ''
+  }
+
+  return `maclike==${stripped}`
+}
+
+const buildDownStatusQuery = (nodesWithDownAggregateStatus?: boolean) => {
+  return nodesWithDownAggregateStatus ? 'nodesWithDownAggregateStatus==true' : ''
+}
+
+const buildWithAssetsQuery = (nodesWithAssets?: boolean) => {
+  return nodesWithAssets ? 'nodesWithAssets==true' : ''
+}
+
+const buildWithOutagesQuery = (nodesWithOutages?: boolean) => {
+  return nodesWithOutages ? 'nodesWithOutages==true' : ''
+}
+
+/**
+ * Encode a FIQL value so it survives intact to the backend CriteriaBehavior as an exact literal.
+ *
+ * Asset values are free text and may contain FIQL-structural characters (',' ';' '(' ')') or
+ * URL-structural characters ('&' '#' '%' space). We can neither sanitize them away (the match must
+ * be exact) nor pass them raw (they corrupt the FIQL expression or the URL).
+ *
+ * The value is URL-decoded twice on the way in — once by the servlet container, once by CXF
+ * (search.decode.values=true on the v2 endpoints) — so we double-encode it here. This generalizes
+ * the comma double-encoding in buildIpAddressQuery to every reserved character. A strict encoder is
+ * used because encodeURIComponent leaves ! ' ( ) * unescaped, and ( ) * are meaningful to FIQL.
+ *
+ * After two decodes the backend receives the exact original string (and '*' is matched literally,
+ * preserving exact-match rather than being treated as a wildcard).
+ */
+const encodeFiqlValue = (value: string): string => {
+  const strictEncode = (s: string): string =>
+    encodeURIComponent(s).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase())
+  return strictEncode(strictEncode(value))
+}
+
+const buildAssetQuery = (assetFilters?: AssetFilter[]) => {
+  if (!assetFilters || assetFilters.length === 0) {
+    return ''
+  }
+
+  // Exact match against each asset record column (mirrors the legacy site-status-view asset filter).
+  // Multiple filters are intersected (a node must match every one).
+  return assetFilters
+    .filter(f => f.column && f.value && ALLOWED_ASSET_COLUMNS.has(f.column))
+    .map(f => `assetRecord.${getAssetColumnFiqlProperty(f.column)}==${encodeFiqlValue(f.value)}`)
+    .join(getFiqlSetOperator(SetOperator.Intersection))
 }
 
 const buildTopologyQuery = (topology?: string) => {
@@ -594,4 +733,32 @@ export const sanitizeSearchTerm = (s?: string) => {
 
 export const getFiqlSetOperator = (op: SetOperator) => {
   return op === SetOperator.Union ? ',' : ';'
+}
+
+/**
+ * Parses the legacy `?nodeId=<n>` bookmark query param.
+ * Returns the id as a positive integer, or null if the param is absent, non-numeric,
+ * not an integer, zero, or negative (in which case the caller should ignore it).
+ */
+export const parseNodeIdQueryParam = (query: LocationQuery): number | null => {
+  const raw = query.nodeId
+  if (raw === undefined || Array.isArray(raw)) {
+    return null
+  }
+  if (!isConvertibleToInteger(raw)) {
+    return null
+  }
+  const id = Number(raw)
+  return Number.isInteger(id) && id > 0 ? id : null
+}
+
+/**
+ * Builds the node detail page URL, mirroring computeNodeLink() in NodesTable.vue.
+ * Returns null until menuStore.mainMenu (source of baseHref/baseNodeUrl) has loaded.
+ */
+export const buildNodeDetailUrl = (mainMenu: MainMenu | null | undefined, id: number): string | null => {
+  if (!mainMenu?.baseHref || !mainMenu?.baseNodeUrl) {
+    return null
+  }
+  return `${mainMenu.baseHref}${mainMenu.baseNodeUrl}${id}`
 }

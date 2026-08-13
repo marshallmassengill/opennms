@@ -118,7 +118,7 @@ export const resolveLinkBindings = (
   const seen = new Set<string>()
   return neighbors
     .filter(n => n.neighborNodeId === targetNodeId)
-    .filter(n => {
+    .filter((n) => {
       if (seen.has(n.linkType)) {
         return false
       }

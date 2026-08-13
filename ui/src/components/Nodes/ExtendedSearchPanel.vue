@@ -1,83 +1,77 @@
 <template>
   <div class="extended-search-container">
-    <div class="feather-row add-row">
-      <div class="feather-col-5">
-        <FeatherSelect
-          label="Search Type"
-          :options="searchOptions"
-          :textProp="'title'"
-          v-model="currentSelection"
-        />
+    <div class="onms-row add-row">
+      <div class="onms-col-5">
+        <FormField label="Search Type">
+          <OnmsSelect
+            v-model="currentSelection"
+            :options="searchOptions"
+            optionLabel="title"
+            placeholder="Select a type"
+            data-test="search-type-select"
+          />
+        </FormField>
       </div>
-      <div class="feather-col-5">
-        <FeatherInput
-          v-model="searchTerm"
-          label="Search Term"
-        />
+      <div class="onms-col-5">
+        <FormField label="Search Term">
+          <OnmsInputText
+            v-model="searchTerm"
+            data-test="search-term-input"
+          />
+        </FormField>
       </div>
-      <div class="feather-col-2 add-btn-col">
-        <FeatherButton
-          secondary
-          icon="Add"
+      <div class="onms-col-2 add-btn-col">
+        <OnmsButton
+          variant="outlined"
           data-test="add-search-term-button"
           class="add-search-term-button"
           @click="onAddSearchTerm"
         >
-          <FeatherIcon :icon="Add" />
+          <OnmsIcon :icon="Add" />
           Add
-        </FeatherButton>
+        </OnmsButton>
       </div>
     </div>
 
-    <PDataTable
+    <OnmsTable
       v-if="gridItems.length > 0"
       :value="gridItems"
       dataKey="key"
       class="extended-search-table"
     >
-      <PColumn field="label" header="Search Type" style="width: 40%" />
-      <PColumn field="value" header="Search Term">
+      <OnmsColumn field="label" header="Search Type" style="width: 40%" />
+      <OnmsColumn field="value" header="Search Term">
         <template #body="{ data }">
-          <PInputText
+          <OnmsInputText
             v-model="data.value"
             class="extended-search-input"
           />
         </template>
-      </PColumn>
-      <PColumn header="" style="width: 3.5rem">
+      </OnmsColumn>
+      <OnmsColumn header="" style="width: 3.5rem">
         <template #body="{ data }">
-          <FeatherButton
-            icon="Delete"
+          <OnmsIconButton
+            :icon="DeleteIcon"
+            title="Remove search term"
             data-test="delete-search-term-button"
             @click="removeGridItem(data.key)"
-          >
-            <FeatherIcon :icon="DeleteIcon" />
-          </FeatherButton>
+          />
         </template>
-      </PColumn>
-    </PDataTable>
+      </OnmsColumn>
+    </OnmsTable>
   </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 
-import DataTableComponent from 'primevue/datatable'
-import ColumnComponent from 'primevue/column'
-import InputTextComponent from 'primevue/inputtext'
-import { FeatherButton } from '@featherds/button'
-import { FeatherIcon } from '@featherds/icon'
-import Add from '@featherds/icon/action/Add'
-import DeleteIcon from '@featherds/icon/action/Delete'
-import { FeatherInput } from '@featherds/input'
-import { FeatherSelect, ISelectItemType } from '@featherds/select'
-import { useNodeStructureStore } from '@/stores/nodeStructureStore'
+import { OnmsButton, OnmsColumn, OnmsIcon, OnmsIconButton, OnmsInputText, OnmsSelect, OnmsTable } from '@opennms/onms-ui'
+import Add from '@/components/icons/action/Add.vue'
+import DeleteIcon from '@/components/icons/action/Delete.vue'
+import FormField from '@/components/Common/FormField.vue'
+import { useNodeListStore } from '@/stores/nodeListStore'
 import { useNodeQuery } from '@/components/Nodes/hooks/useNodeQuery'
 import { NodeQueryExtendedSearchParams } from '@/types'
-
-const PDataTable = DataTableComponent
-const PColumn = ColumnComponent
-const PInputText = InputTextComponent
 
 const {
   getExtendedSearchValues,
@@ -92,7 +86,9 @@ interface GridItem {
   value: string
 }
 
-const searchOptions: ISelectItemType[] = [
+interface SearchOption { title: string; value: string }
+
+const searchOptions: SearchOption[] = [
   { title: 'Foreign Source', value: 'foreignSource' },
   { title: 'Foreign ID', value: 'foreignId' },
   { title: 'Foreign Source:Foreign ID', value: 'foreignSourceId' },
@@ -112,9 +108,9 @@ const foreignSourceKeys = ['foreignSource', 'foreignId', 'foreignSourceId']
 const snmpKeys = ['snmpIfAlias', 'snmpIfDescription', 'snmpIfIndex', 'snmpIfName', 'snmpIfType']
 const sysKeys = ['sysContact', 'sysDescription', 'sysLocation', 'sysName', 'sysObjectId']
 
-const nodeStructureStore = useNodeStructureStore()
+const nodeListStore = useNodeListStore()
 const searchTerm = ref('')
-const currentSelection = ref<ISelectItemType | undefined>(undefined)
+const currentSelection = ref<SearchOption | undefined>(undefined)
 const gridItems = ref<GridItem[]>([])
 
 const onAddSearchTerm = () => {
@@ -160,17 +156,17 @@ const applyToStore = () => {
       Object.assign(ext.sysParams, { [item.key]: item.value })
     }
   }
-  nodeStructureStore.setExtendedSearchParams(ext)
+  nodeListStore.setExtendedSearchParams(ext)
 }
 
 const resetFromStore = () => {
-  const values = getExtendedSearchValues(nodeStructureStore.queryFilter.extendedSearch)
+  const values = getExtendedSearchValues(nodeListStore.queryFilter.extendedSearch)
   gridItems.value = values.map(v => ({ key: v.key, label: v.name, value: v.value }))
   searchTerm.value = ''
   currentSelection.value = undefined
 }
 
-defineExpose({ applyToStore, resetFromStore })
+defineExpose({ applyToStore, resetFromStore, currentSelection, searchTerm, gridItems })
 
 onMounted(() => {
   resetFromStore()
@@ -178,20 +174,21 @@ onMounted(() => {
 </script>
 
 <style lang="scss" scoped>
-@use '@featherds/styles/mixins/typography';
-@use '@featherds/styles/themes/variables';
+@use '@/styles/onms-typography' as *;
+@use '@/styles/onms-tokens' as variables;
 
 .extended-search-container {
   .add-search-term-button {
     border-radius: 0;
-    border: 1px solid var(--feather-primary);
+    border: 1px solid var(--onms-primary);
     width: auto;
     padding: 0.5em 1em;
   }
 
   .add-btn-col {
     display: flex;
-    padding-bottom: 0.25rem;
+    align-items: flex-end;
+    padding-bottom: 0.5rem;
   }
 
   .extended-search-table {
@@ -204,37 +201,10 @@ onMounted(() => {
     :deep(.p-datatable-tbody > tr > td) {
       padding: 0.25rem 0.5rem;
       vertical-align: middle;
-      border-color: var(--feather-border-on-surface);
-      color: var(--feather-primary-text-on-surface);
     }
 
     :deep(.p-datatable-thead > tr > th) {
       padding: 0.4rem 0.5rem;
-      background-color: var(--feather-background);
-      border-bottom: 1px solid var(--feather-border-on-surface);
-      color: var(--feather-secondary-text-on-surface);
-      text-transform: uppercase;
-    }
-
-    :deep(.p-datatable-tbody > tr) {
-      background-color: var(--feather-elevation-background-8);
-      color: var(--feather-primary-text-on-surface);
-    }
-
-    :deep(.p-select) {
-      background-color: var(--feather-surface);
-      border-color: var(--feather-border-on-surface);
-      color: var(--feather-primary-text-on-surface);
-    }
-
-    :deep(.p-inputtext) {
-      background-color: var(--feather-elevation-background-8);
-      border-color: var(--feather-border-on-surface);
-      color: var(--feather-primary-text-on-surface);
-    }
-
-    :deep(.p-select-label) {
-      color: var(--feather-primary-text-on-surface);
     }
   }
 }

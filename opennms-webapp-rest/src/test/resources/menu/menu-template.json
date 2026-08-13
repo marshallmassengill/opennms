@@ -40,17 +40,10 @@
       "roles": null,
       "items": [
         {
-          "id": "nodeList",
-          "name": "Node List",
+          "id": "nodes",
+          "name": "Nodes",
           "url": "ui/index.html#/nodes",
           "locationMatch": "configurationManagement",
-          "roles": null
-        },
-        {
-          "id": "legacyNodes",
-          "name": "Nodes (Legacy)",
-          "url": "element/nodeList.htm",
-          "locationMatch": "nodelist",
           "roles": null
         },
         {
@@ -214,7 +207,7 @@
         },
         {
           "id": "kscReports",
-          "name": "KSC Reports",
+          "name": "Graph Collections",
           "url": "KSC/index.jsp",
           "locationMatch": "ksc",
           "roles": null

@@ -1,46 +1,59 @@
 <template>
-  <div class="feather-row">
-    <div class="feather-col-12 wrapper">
-      <ShimFeatherMegaMenu ref="mega" name="Management" close-text="Close" class="graph-controls">
-        <template v-slot:button>
-          {{ selectedTime }} &nbsp;
-          <FeatherIcon :icon="ArrowDropDown" />
-        </template>
+  <div class="onms-row">
+    <div class="onms-col-12 wrapper">
+      <OnmsButton
+        variant="text"
+        class="graph-controls"
+        aria-haspopup="true"
+        @click="toggleMenu"
+      >
+        {{ selectedTime }} &nbsp;
+        <OnmsIcon :icon="ArrowDropDown" />
+      </OnmsButton>
 
-        <div class="feather-row">
-          <div class="feather-col-5">
-            <FeatherList>
-              <FeatherListItem
-                v-for="option in options"
-                :key="option.label"
-                @click="selectOption($event, option)"
-              >{{ option.label }}</FeatherListItem>
-            </FeatherList>
-          </div>
+      <OnmsPopover
+        ref="menu"
+        class="graph-controls-panel"
+      >
+        <div class="menu-content">
+          <ul class="onms-list options-col">
+            <li
+              class="list-item"
+              v-for="option in TIME_RANGE_OPTIONS"
+              :key="option.label"
+              @click="selectOption(option)"
+            >{{ option.label }}</li>
+          </ul>
 
-          <div class="feather-col-5">
-            <FeatherDateInput v-model="startDateRef" label="Start Date" class="date-input" />
-            <FeatherSelect
-              :options="times"
-              v-model="startTimeRef"
-              label="Start Time"
-              text-prop="label"
-            />
-            <FeatherDateInput v-model="endDateRef" label="End Date" class="date-input" />
-            <FeatherSelect
-              :options="times"
-              v-model="endTimeRef"
-              label="End Time"
-              text-prop="label"
-            />
-            <FeatherButton
+          <div class="custom-col">
+            <FormField label="Start Date" class="date-input">
+              <OnmsDatePicker v-model="startDateRef" />
+            </FormField>
+            <FormField label="Start Time">
+              <OnmsSelect
+                :options="HOUR_OPTIONS"
+                v-model="startTimeRef"
+                optionLabel="label"
+              />
+            </FormField>
+            <FormField label="End Date" class="date-input">
+              <OnmsDatePicker v-model="endDateRef" />
+            </FormField>
+            <FormField label="End Time">
+              <OnmsSelect
+                :options="HOUR_OPTIONS"
+                v-model="endTimeRef"
+                optionLabel="label"
+              />
+            </FormField>
+            <OnmsButton
               :disabled="disableCustomTimeBtn"
-              text
+              variant="text"
               @click="applyCustomTime"
-            >Apply custom time</FeatherButton>
+            >Apply custom time</OnmsButton>
           </div>
         </div>
-      </ShimFeatherMegaMenu>
+      </OnmsPopover>
     </div>
   </div>
 </template>
@@ -48,90 +61,58 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
-import { FeatherList, FeatherListItem } from '@featherds/list'
-import { ShimFeatherMegaMenu } from '../Common/ShimFeatherMegaMenu'
-// add this back when exports are fixed
-//import { FeatherMegaMenu } from '@featherds/megamenu'
-import { add, sub, getUnixTime, differenceInHours } from 'date-fns'
-import { FeatherDateInput } from '@featherds/date-input'
-import { FeatherButton } from '@featherds/button'
-import { FeatherSelect } from '@featherds/select'
-import { FeatherIcon } from '@featherds/icon'
-import ArrowDropDown from '@featherds/icon/navigation/ArrowDropDown'
-
-interface TimeOption {
-  label: string
-  time: Record<string, unknown>
-}
+import { OnmsButton, OnmsDatePicker, OnmsIcon, OnmsPopover, OnmsSelect } from '@opennms/onms-ui'
+import FormField from '@/components/Common/FormField.vue'
+import { add, sub, getUnixTime, differenceInHours, fromUnixTime } from 'date-fns'
+import ArrowDropDown from '@/components/icons/navigation/ArrowDropDown.vue'
+import {
+  HOUR_OPTIONS,
+  relativeRangeOf,
+  resolveRelativeRange,
+  TIME_RANGE_OPTIONS,
+  TimeOption
+} from './utils/timeRangeOptions'
 
 const emit = defineEmits(['updateTime'])
 
-const mega = ref()
+const menu = ref()
 const startDateRef = ref()
-const startTimeRef = ref<TimeOption>({ label: '1 PM', time: { hours: '1' }})
+const startTimeRef = ref<TimeOption>({ label: '1 PM', time: { hours: 13 }})
 const endDateRef = ref()
-const endTimeRef = ref<TimeOption>({ label: '1 PM', time: { hours: '1' }})
+const endTimeRef = ref<TimeOption>({ label: '1 PM', time: { hours: 13 }})
 
-const selectedTime = ref('Last Day')
-const options = [
-  { label: 'Last hour', time: { minutes: '60' }},
-  { label: 'Last 2 hours', time: { hours: '2' }},
-  { label: 'Last 4 hours', time: { hours: '4' }},
-  { label: 'Last 8 hours', time: { hours: '5' }},
-  { label: 'Last 12 hours', time: { hours: '12' }},
-  { label: 'Last day', time: { hours: '24' }},
-  { label: 'Last two days', time: { hours: '48' }},
-  { label: 'Last week', time: { days: '7' }},
-  { label: 'Last month', time: { months: '1' }},
-  { label: 'Last three months', time: { months: '3' }},
-  { label: 'Last six months', time: { months: '6' }},
-  { label: 'Last year', time: { years: '1' }}
-]
-
-const times = [
-  { label: '12 AM', time: { hours: '0' }},
-  { label: '1 AM', time: { hours: '1' }},
-  { label: '2 AM', time: { hours: '2' }},
-  { label: '3 AM', time: { hours: '3' }},
-  { label: '4 AM', time: { hours: '4' }},
-  { label: '5 AM', time: { hours: '5' }},
-  { label: '6 AM', time: { hours: '6' }},
-  { label: '7 AM', time: { hours: '7' }},
-  { label: '8 AM', time: { hours: '8' }},
-  { label: '9 AM', time: { hours: '9' }},
-  { label: '10 AM', time: { hours: '10' }},
-  { label: '11 AM', time: { hours: '11' }},
-  { label: '12 PM', time: { hours: '12' }},
-  { label: '1 PM', time: { hours: '13' }},
-  { label: '2 PM', time: { hours: '14' }},
-  { label: '3 PM', time: { hours: '15' }},
-  { label: '4 PM', time: { hours: '16' }},
-  { label: '5 PM', time: { hours: '17' }},
-  { label: '6 PM', time: { hours: '18' }},
-  { label: '7 PM', time: { hours: '19' }},
-  { label: '8 PM', time: { hours: '20' }},
-  { label: '9 PM', time: { hours: '21' }},
-  { label: '10 PM', time: { hours: '22' }},
-  { label: '11 PM', time: { hours: '23' }}
-]
+const selectedTime = ref('Last day')
 
 const disableCustomTimeBtn = computed(() => Boolean(!startDateRef.value || !startTimeRef.value || !endDateRef.value || !endTimeRef.value))
 
-const selectOption = (event: Event, option: TimeOption) => {
-  event.stopImmediatePropagation() // prevent @featherds issue
+const toggleMenu = (event: Event) => menu.value.toggle(event)
+
+/**
+ * A preset range is relative: it is emitted as a unit/amount alongside the resolved
+ * window so the consumer can re-resolve it later. Only "Apply custom time" below
+ * produces a genuinely absolute window, matching the legacy graph pages.
+ */
+const selectOption = (option: TimeOption) => {
   selectedTime.value = option.label
+
+  const range = relativeRangeOf(option)
+
+  if (range) {
+    emit('updateTime', resolveRelativeRange(range))
+    menu.value.hide()
+    return
+  }
+
+  // Fallback for an option that is not a single unit/amount; treated as absolute.
   const now = new Date()
-  const startTime = getUnixTime(sub(now, option.time))
-  const endTime = getUnixTime(now)
-  const format = Object.keys(option.time)[0]
 
   emit('updateTime', {
-    startTime,
-    endTime,
-    format
+    startTime: getUnixTime(sub(now, option.time)),
+    endTime: getUnixTime(now),
+    format: Object.keys(option.time)[0]
   })
 
-  mega.value.closeMenu()
+  menu.value.hide()
 }
 
 const applyCustomTime = () => {
@@ -139,7 +120,11 @@ const applyCustomTime = () => {
   const startTime = getUnixTime(add(startDateRef.value, startTimeRef.value.time))
   const endTime = getUnixTime(add(endDateRef.value, endTimeRef.value.time))
 
-  const difference = differenceInHours(startTime, endTime)
+  // end - start, as Dates. This previously passed unix SECONDS in the wrong order,
+  // so the difference was always negative and every custom range was labeled as
+  // minutes.
+  const difference = differenceInHours(fromUnixTime(endTime), fromUnixTime(startTime))
+
   if (difference < 1) {
     format = 'minutes'
   }
@@ -150,6 +135,8 @@ const applyCustomTime = () => {
     format = 'years'
   }
 
+  // No `range`: an explicit start and end is absolute by definition, and must not
+  // slide when the graph is refreshed or the link is reopened.
   emit('updateTime', {
     startTime,
     endTime,
@@ -157,35 +144,54 @@ const applyCustomTime = () => {
   })
 
   selectedTime.value = 'Custom Time'
-  mega.value.closeMenu()
+  menu.value.hide()
 }
 </script>
 
 <style lang="scss" scoped>
-@import "@featherds/styles/mixins/typography";
+@import '@/styles/onms-typography';
 .wrapper {
   height: 70px;
   .graph-controls {
     padding: 8px;
     max-height: 35px;
   }
-
-  .date-input {
-    @include body-small;
-  }
 }
 </style>
 
 <style lang="scss">
-.graph-controls {
-  .menu {
-    max-width: 550px;
-    position: relative;
+@import '@/styles/onms-typography';
+
+.graph-controls-panel {
+  .menu-content {
+    display: flex;
+    gap: 2rem;
     min-width: 40em;
+    max-width: 550px;
   }
-  .menu-name {
-    display: none !important;
+
+  .options-col {
+    flex: 0 0 40%;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+
+    .list-item {
+      padding: 0.5rem 0.75rem;
+      cursor: pointer;
+
+      &:hover {
+        background: var(--p-highlight-background);
+      }
+    }
+  }
+
+  .custom-col {
+    flex: 1;
+
+    .date-input {
+      @include onms-body-small;
+    }
   }
 }
 </style>
-../Common/ProxyFeatherMegaMenu
