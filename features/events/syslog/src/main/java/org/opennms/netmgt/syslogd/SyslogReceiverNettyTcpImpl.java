@@ -47,6 +47,7 @@ import io.netty.channel.group.DefaultChannelGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.ssl.SslContext;
 import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
@@ -78,6 +79,8 @@ public class SyslogReceiverNettyTcpImpl extends SinkDispatchingSyslogReceiver {
 
     private ChannelFuture m_socketFuture;
 
+    private SslContext m_sslContext;
+
     public SyslogReceiverNettyTcpImpl(final SyslogdConfig config) {
         super(config);
         m_config = config;
@@ -98,6 +101,20 @@ public class SyslogReceiverNettyTcpImpl extends SinkDispatchingSyslogReceiver {
         if (!m_tcpConfig.isEnabled()) {
             LOG.debug("Syslog TCP ingestion is not configured, nothing to start");
             return;
+        }
+
+        // Built before the socket is bound so that a bad certificate path stops the
+        // listener rather than leaving it accepting plaintext on a port that operators
+        // believe is encrypted.
+        if (m_tcpConfig.isTlsEnabled()) {
+            try {
+                m_sslContext = SyslogTcpSslContextFactory.create(m_tcpConfig);
+                LOG.info("TLS enabled for the syslog TCP listener on {}, client authentication is {}",
+                        describeAddress(), m_tcpConfig.getTlsClientAuth());
+            } catch (Exception e) {
+                LOG.error("Not starting the syslog TCP listener on {}: {}", describeAddress(), e.getMessage(), e);
+                return;
+            }
         }
 
         // Creates the sink dispatcher, which every accepted connection then feeds.
@@ -142,6 +159,11 @@ public class SyslogReceiverNettyTcpImpl extends SinkDispatchingSyslogReceiver {
 
     private void initSyslogPipeline(final SocketChannel ch) {
         final InetSocketAddress source = ch.remoteAddress();
+
+        // First in the pipeline, so everything after it sees decrypted bytes.
+        if (m_sslContext != null) {
+            ch.pipeline().addLast(m_sslContext.newHandler(ch.alloc()));
+        }
 
         if (m_tcpConfig.getIdleTimeoutSeconds() > 0) {
             ch.pipeline().addLast(new IdleStateHandler(m_tcpConfig.getIdleTimeoutSeconds(), 0, 0));
@@ -244,6 +266,10 @@ public class SyslogReceiverNettyTcpImpl extends SinkDispatchingSyslogReceiver {
         m_workerGroup = null;
         shutdownGracefully(m_bossGroup, "boss");
         m_bossGroup = null;
+
+        // Cleared so that a reload which switches TLS off does not keep serving TLS from
+        // the context the previous run built.
+        m_sslContext = null;
 
         super.stop();
     }
