@@ -56,20 +56,8 @@ cat > core/etc/opennms-datasources.xml <<EOF
 </datasource-configuration>
 EOF
 
-# Syslogd is disabled by default, so switch it on before anything can be received.
-python3 - core/etc/service-configuration.xml <<'PY'
-import re, sys
-path = sys.argv[1]
-with open(path) as fh:
-    xml = fh.read()
-xml = re.sub(
-    r'<service enabled="false">(\s*<name>OpenNMS:Name=Syslogd</name>)',
-    r'<service enabled="true">\1',
-    xml)
-with open(path, 'w') as fh:
-    fh.write(xml)
-print("syslogd enabled in service-configuration.xml")
-PY
+# Syslogd is enabled through CORE_SERVICE_SYSLOGD_ENABLED in docker-compose.yml, which is
+# what service-configuration.xml gates the entry on.
 
 # A Syslogd instance has one TCP listener, so plaintext and TLS cannot be reachable at the
 # same time. Both configurations are written here and set-mode.sh swaps between them with a
@@ -99,7 +87,7 @@ cat > core/etc/syslogd-configuration.xml.plain <<EOF
 EOF
 
 sed -e "s|syslog-tcp-port=\"${ONMS_SYSLOG_TCP}\"|syslog-tcp-port=\"${ONMS_SYSLOG_TLS}\"|" \
-    -e "s|tcp-framing=\"auto\"|tcp-framing=\"auto\"\n            tcp-tls-enabled=\"true\"\n            tcp-tls-cert-filepath=\"/opt/opennms/etc/syslog-certs/server.crt\"\n            tcp-tls-private-key-filepath=\"/opt/opennms/etc/syslog-certs/server.key\"\n            tcp-tls-trust-cert-filepath=\"/opt/opennms/etc/syslog-certs/ca.crt\"\n            tcp-tls-client-auth=\"optional\"|" \
+    -e "s|tcp-framing=\"auto\"|tcp-framing=\"auto\"\n            tcp-tls-enabled=\"true\"\n            tcp-tls-cert-filepath=\"/opt/opennms/syslog-certs/server.crt\"\n            tcp-tls-private-key-filepath=\"/opt/opennms/syslog-certs/server.key\"\n            tcp-tls-trust-cert-filepath=\"/opt/opennms/syslog-certs/ca.crt\"\n            tcp-tls-client-auth=\"optional\"|" \
     core/etc/syslogd-configuration.xml.plain > core/etc/syslogd-configuration.xml.tls
 
 cp core/etc/syslogd-configuration.xml.plain core/etc/syslogd-configuration.xml
@@ -143,17 +131,14 @@ syslog.tcp.framing = auto
 syslog.tcp.max.message.size = 65536
 syslog.tcp.max.connections = 256
 syslog.tcp.tls.enabled = true
-syslog.tcp.tls.cert.filepath = /opt/minion/etc/syslog-certs/server.crt
-syslog.tcp.tls.private.key.filepath = /opt/minion/etc/syslog-certs/server.key
-syslog.tcp.tls.trust.cert.filepath = /opt/minion/etc/syslog-certs/ca.crt
+syslog.tcp.tls.cert.filepath = /opt/minion/syslog-certs/server.crt
+syslog.tcp.tls.private.key.filepath = /opt/minion/syslog-certs/server.key
+syslog.tcp.tls.trust.cert.filepath = /opt/minion/syslog-certs/ca.crt
 syslog.tcp.tls.client.auth = optional
 EOF
 
 cp minion/etc/org.opennms.netmgt.syslog.cfg.plain minion/etc/org.opennms.netmgt.syslog.cfg
 
-cat > minion/etc/featuresBoot.d/syslog-tcp.boot <<'EOF'
-opennms-syslogd-listener-netty-tcp
-EOF
 
 echo
 echo "staged. next:"

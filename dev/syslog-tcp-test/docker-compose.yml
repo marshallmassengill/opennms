@@ -26,16 +26,26 @@ services:
       - syslog-tcp
 
   syslog-tcp-core:
-    image: eclipse-temurin:21-jdk
+    image: syslog-tcp-test-base:21
+    build: .
     container_name: syslog-tcp-core
     hostname: syslog-tcp-core
+    # bin/install and bin/opennms resolve their helpers relative to this.
+    environment:
+      OPENNMS_HOME: /opt/opennms
+      # service-configuration.xml gates Syslogd on this; it defaults to false.
+      CORE_SERVICE_SYSLOGD_ENABLED: "true"
+
     command: ["sleep", "infinity"]
     depends_on:
       syslog-tcp-postgres:
         condition: service_healthy
     volumes:
       - ./core:/opt/opennms
-      - ./certs:/opt/opennms/etc/syslog-certs:ro
+      - ./certs:/opt/opennms/syslog-certs:ro
+      # The dir assembly does not ship the jrrd2 bindings the default RRD strategy needs.
+      - /usr/lib/jni:/usr/lib/jni:ro
+      - /usr/share/java:/usr/share/java:ro
     ports:
       - "8985:8980"
       - "8106:8101"
@@ -47,15 +57,22 @@ services:
       - syslog-tcp
 
   syslog-tcp-minion:
-    image: eclipse-temurin:21-jdk
+    image: syslog-tcp-test-base:21
+    build: .
+    # The minion's karaf script does not drop privileges, so run as the host user that
+    # owns the bind mount instead.
+    user: "1000:1000"
     container_name: syslog-tcp-minion
     hostname: syslog-tcp-minion
+    environment:
+      MINION_HOME: /opt/minion
+      KARAF_HOME: /opt/minion
     command: ["sleep", "infinity"]
     depends_on:
       - syslog-tcp-core
     volumes:
       - ./minion:/opt/minion
-      - ./certs:/opt/minion/etc/syslog-certs:ro
+      - ./certs:/opt/minion/syslog-certs:ro
     ports:
       - "8206:8201"
       - "11514:11514/udp"

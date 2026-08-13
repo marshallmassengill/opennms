@@ -25,7 +25,7 @@ cd opennms-assemblies/minion && mvn install -DskipTests
 cd dev/syslog-tcp-test
 ./gen-certs.sh
 ./stage.sh ../../opennms-full-assembly/target/opennms-36.0.4-SNAPSHOT \
-           ../../opennms-assemblies/minion/target/opennms-minion-36.0.4-SNAPSHOT-minion.tar.gz
+           ../../opennms-assemblies/minion/target/org.opennms.assemblies.minion-36.0.4-SNAPSHOT-minion.tar.gz
 docker compose up -d
 ./scripts/start-core.sh
 ./scripts/start-minion.sh
@@ -35,7 +35,7 @@ docker compose up -d
 
 ## Why two passes
 
-A Syslogd instance runs one TCP listener, so plaintext and TLS cannot be reachable at the same time. `run-matrix.sh` therefore runs the plaintext cells, switches both sides with `set-mode.sh`, and runs the TLS cells. The switch goes through `reloadDaemonConfig` rather than a restart, so each pass also exercises the reload path.
+A Syslogd instance runs one TCP listener, sharing the sink dispatcher with the UDP one, so plaintext and TLS cannot be reachable at the same time. `run-matrix.sh` therefore runs the plaintext cells, switches both sides with `set-mode.sh`, and runs the TLS cells. The switch goes through `reloadDaemonConfig` rather than a restart, so each pass also exercises the reload path.
 
 ## What the assertions actually catch
 
