@@ -47,8 +47,8 @@ import org.opennms.smoketest.utils.TestContainerUtils;
  * Sends syslog to a Minion over TCP in both RFC 6587 framings and checks the events reach
  * the core.
  *
- * The Minion needs the TCP listener feature installed, which the default profile does not
- * carry, so this builds its own stack rather than sharing the one SyslogIT uses.
+ * The default Minion profile leaves the TCP port unset, so this builds its own stack with
+ * the .cfg that switches it on rather than sharing the one SyslogIT uses.
  */
 @Category(org.opennms.smoketest.junit.MinionTests.class)
 public class SyslogTcpIT {
@@ -59,7 +59,6 @@ public class SyslogTcpIT {
     @ClassRule
     public static final OpenNMSStack stack = OpenNMSStack.withModel(StackModel.newBuilder()
             .withMinions(MinionProfile.newBuilder()
-                    .withFile("syslog-tcp/syslog-tcp.boot", "etc/featuresBoot.d/syslog-tcp.boot")
                     .withFile("syslog-tcp/org.opennms.netmgt.syslog.cfg", "etc/org.opennms.netmgt.syslog.cfg")
                     .build())
             .build());

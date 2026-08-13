@@ -21,13 +21,13 @@
  */
 package org.opennms.netmgt.syslogd;
 
-import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.ArrayDeque;
+import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.TimeUnit;
 
-import org.opennms.netmgt.config.SyslogdConfig;
+import org.opennms.core.ipc.sink.api.AsyncDispatcher;
 import org.opennms.netmgt.config.syslogd.SyslogTcpConfig;
 import org.opennms.netmgt.syslogd.api.SyslogConnection;
 import org.slf4j.Logger;
@@ -54,22 +54,25 @@ import io.netty.handler.timeout.IdleStateHandler;
 import io.netty.util.concurrent.GlobalEventExecutor;
 
 /**
- * Accepts syslog messages over TCP and dispatches them to the Sink API.
+ * Accepts syslog messages over TCP and feeds them to a dispatcher owned by someone else.
  *
- * Runs alongside the UDP receiver rather than replacing it, and is only started when a
- * TCP port has been configured. Netty is used directly rather than through Camel
- * because the Camel netty component has no codec for RFC 6587 octet-counted framing,
- * so a custom decoder is needed either way.
+ * Deliberately not a {@link SyslogReceiver}. A receiver creates its own sink dispatcher,
+ * and the Sink API names its metrics after the module id, so a second dispatcher for the
+ * same module throws and takes its listener down. One receiver owning both sockets keeps
+ * a single dispatcher and avoids that entirely.
+ *
+ * Netty is used directly rather than through Camel because the Camel netty component has
+ * no codec for RFC 6587 octet-counted framing, so a custom decoder is needed either way.
  */
-public class SyslogReceiverNettyTcpImpl extends SinkDispatchingSyslogReceiver {
+public class SyslogTcpListener {
 
-    private static final Logger LOG = LoggerFactory.getLogger(SyslogReceiverNettyTcpImpl.class);
+    private static final Logger LOG = LoggerFactory.getLogger(SyslogTcpListener.class);
 
     private static final int SHUTDOWN_TIMEOUT_SECONDS = 15;
 
-    private final SyslogdConfig m_config;
+    private final SyslogTcpConfig m_config;
 
-    private SyslogTcpConfig m_tcpConfig;
+    private final AsyncDispatcher<SyslogConnection> m_dispatcher;
 
     private final ChannelGroup m_channels = new DefaultChannelGroup(GlobalEventExecutor.INSTANCE);
 
@@ -81,24 +84,29 @@ public class SyslogReceiverNettyTcpImpl extends SinkDispatchingSyslogReceiver {
 
     private SslContext m_sslContext;
 
-    public SyslogReceiverNettyTcpImpl(final SyslogdConfig config) {
-        super(config);
-        m_config = config;
-        m_tcpConfig = config.getTcpConfig();
-    }
-
-    @Override
-    public String getName() {
-        return getClass().getSimpleName() + " [" + describeAddress() + "]";
+    public SyslogTcpListener(final SyslogTcpConfig config, final AsyncDispatcher<SyslogConnection> dispatcher) {
+        m_config = Objects.requireNonNull(config);
+        m_dispatcher = Objects.requireNonNull(dispatcher);
     }
 
     public boolean isStarted() {
         return m_socketFuture != null && m_socketFuture.channel().isActive();
     }
 
-    @Override
-    public void run() {
-        if (!m_tcpConfig.isEnabled()) {
+    public String describeAddress() {
+        if (!m_config.isEnabled()) {
+            return "disabled";
+        }
+        final String address = m_config.getListenAddress() == null ? "0.0.0.0" : m_config.getListenAddress();
+        return address + ":" + m_config.getPort();
+    }
+
+    /**
+     * Binds the socket. Failures are logged rather than thrown, so that a misconfigured
+     * TCP listener cannot stop the UDP one that shares this receiver from starting.
+     */
+    public void start() {
+        if (!m_config.isEnabled()) {
             LOG.debug("Syslog TCP ingestion is not configured, nothing to start");
             return;
         }
@@ -106,24 +114,21 @@ public class SyslogReceiverNettyTcpImpl extends SinkDispatchingSyslogReceiver {
         // Built before the socket is bound so that a bad certificate path stops the
         // listener rather than leaving it accepting plaintext on a port that operators
         // believe is encrypted.
-        if (m_tcpConfig.isTlsEnabled()) {
+        if (m_config.isTlsEnabled()) {
             try {
-                m_sslContext = SyslogTcpSslContextFactory.create(m_tcpConfig);
+                m_sslContext = SyslogTcpSslContextFactory.create(m_config);
                 LOG.info("TLS enabled for the syslog TCP listener on {}, client authentication is {}",
-                        describeAddress(), m_tcpConfig.getTlsClientAuth());
-            } catch (Exception e) {
+                        describeAddress(), m_config.getTlsClientAuth());
+            } catch (Throwable e) {
                 LOG.error("Not starting the syslog TCP listener on {}: {}", describeAddress(), e.getMessage(), e);
                 return;
             }
         }
 
-        // Creates the sink dispatcher, which every accepted connection then feeds.
-        super.run();
-
-        m_bossGroup = new NioEventLoopGroup();
-        m_workerGroup = new NioEventLoopGroup();
-
         try {
+            m_bossGroup = new NioEventLoopGroup();
+            m_workerGroup = new NioEventLoopGroup();
+
             m_socketFuture = new ServerBootstrap()
                     .group(m_bossGroup, m_workerGroup)
                     .channel(NioServerSocketChannel.class)
@@ -133,11 +138,11 @@ public class SyslogReceiverNettyTcpImpl extends SinkDispatchingSyslogReceiver {
                     .childHandler(new ChannelInitializer<SocketChannel>() {
                         @Override
                         protected void initChannel(final SocketChannel ch) {
-                            if (m_channels.size() >= m_tcpConfig.getMaxConnections()) {
+                            if (m_channels.size() >= m_config.getMaxConnections()) {
                                 // Logged at debug because a client that retries in a loop
                                 // would otherwise fill the log faster than it sends syslog.
                                 LOG.debug("Refusing syslog TCP connection from {}: already at the {} connection limit",
-                                        ch.remoteAddress(), m_tcpConfig.getMaxConnections());
+                                        ch.remoteAddress(), m_config.getMaxConnections());
                                 ch.close();
                                 return;
                             }
@@ -152,7 +157,9 @@ public class SyslogReceiverNettyTcpImpl extends SinkDispatchingSyslogReceiver {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             LOG.warn("Interrupted while binding the syslog TCP listener on {}", describeAddress(), e);
-        } catch (Exception e) {
+        } catch (Throwable e) {
+            // Throwable rather than Exception, because an Error here would otherwise
+            // vanish and leave nothing in the log to say why nothing is listening.
             LOG.error("Failed to bind the syslog TCP listener on {}", describeAddress(), e);
         }
     }
@@ -165,8 +172,8 @@ public class SyslogReceiverNettyTcpImpl extends SinkDispatchingSyslogReceiver {
             ch.pipeline().addLast(m_sslContext.newHandler(ch.alloc()));
         }
 
-        if (m_tcpConfig.getIdleTimeoutSeconds() > 0) {
-            ch.pipeline().addLast(new IdleStateHandler(m_tcpConfig.getIdleTimeoutSeconds(), 0, 0));
+        if (m_config.getIdleTimeoutSeconds() > 0) {
+            ch.pipeline().addLast(new IdleStateHandler(m_config.getIdleTimeoutSeconds(), 0, 0));
             ch.pipeline().addLast(new ChannelInboundHandlerAdapter() {
                 @Override
                 public void userEventTriggered(final ChannelHandlerContext ctx, final Object evt) {
@@ -180,19 +187,19 @@ public class SyslogReceiverNettyTcpImpl extends SinkDispatchingSyslogReceiver {
             });
         }
 
-        ch.pipeline().addLast(new SyslogTcpFrameDecoder(source, m_tcpConfig.resolveFraming(),
-                m_tcpConfig.getMaxMessageSize()));
+        ch.pipeline().addLast(new SyslogTcpFrameDecoder(source, m_config.resolveFraming(),
+                m_config.getMaxMessageSize()));
         ch.pipeline().addLast(new SyslogDispatchHandler());
         ch.pipeline().addLast(new SyslogTcpExceptionHandler(source));
     }
 
     /**
-     * Hands decoded messages to the sink dispatcher, one at a time and in the order they
+     * Hands decoded messages to the dispatcher, one at a time and in the order they
      * arrived on the connection.
      *
-     * Dispatching concurrently would reorder messages that arrived in a single read,
-     * and a sender that chose TCP over UDP is entitled to assume its messages keep the
-     * order it sent them in: a link-down followed by a link-up must not arrive reversed.
+     * Dispatching concurrently would reorder messages that arrived in a single read, and a
+     * sender that chose TCP over UDP is entitled to assume its messages keep the order it
+     * sent them in: a link-down followed by a link-up must not arrive reversed.
      *
      * Serialising also carries the backpressure. The sink's async policy blocks when its
      * queue is full, and blocking here would block a Netty worker thread and stall every
@@ -245,8 +252,15 @@ public class SyslogReceiverNettyTcpImpl extends SinkDispatchingSyslogReceiver {
         }
     }
 
-    @Override
-    public void stop() throws InterruptedException {
+    /**
+     * Closes the socket and every connection. The dispatcher belongs to the caller and is
+     * left alone, but nothing is in flight to it once this returns.
+     */
+    public void stop() {
+        if (m_socketFuture == null && m_bossGroup == null && m_workerGroup == null) {
+            return;
+        }
+
         LOG.debug("Stopping the syslog TCP listener on {}", describeAddress());
 
         m_channels.close().awaitUninterruptibly();
@@ -260,18 +274,12 @@ public class SyslogReceiverNettyTcpImpl extends SinkDispatchingSyslogReceiver {
             m_socketFuture = null;
         }
 
-        // Shut the worker group down before the dispatcher so that no in-flight message
-        // is handed to a dispatcher that has already been closed.
         shutdownGracefully(m_workerGroup, "worker");
         m_workerGroup = null;
         shutdownGracefully(m_bossGroup, "boss");
         m_bossGroup = null;
 
-        // Cleared so that a reload which switches TLS off does not keep serving TLS from
-        // the context the previous run built.
         m_sslContext = null;
-
-        super.stop();
     }
 
     private void shutdownGracefully(final EventLoopGroup group, final String description) {
@@ -284,23 +292,9 @@ public class SyslogReceiverNettyTcpImpl extends SinkDispatchingSyslogReceiver {
         }
     }
 
-    @Override
-    public void reload() throws IOException {
-        m_config.reload();
-        m_tcpConfig = m_config.getTcpConfig();
-    }
-
     private InetSocketAddress bindAddress() {
-        return m_tcpConfig.getListenAddress() == null
-                ? new InetSocketAddress(m_tcpConfig.getPort())
-                : new InetSocketAddress(m_tcpConfig.getListenAddress(), m_tcpConfig.getPort());
-    }
-
-    private String describeAddress() {
-        if (!m_tcpConfig.isEnabled()) {
-            return "disabled";
-        }
-        final String address = m_tcpConfig.getListenAddress() == null ? "0.0.0.0" : m_tcpConfig.getListenAddress();
-        return address + ":" + m_tcpConfig.getPort();
+        return m_config.getListenAddress() == null
+                ? new InetSocketAddress(m_config.getPort())
+                : new InetSocketAddress(m_config.getListenAddress(), m_config.getPort());
     }
 }

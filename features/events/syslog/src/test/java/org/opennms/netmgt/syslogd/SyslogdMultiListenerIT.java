@@ -41,6 +41,9 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import com.codahale.metrics.MetricRegistry;
 
 import org.junit.After;
 import org.junit.Before;
@@ -68,6 +71,7 @@ public class SyslogdMultiListenerIT {
     private static final long RECEIVE_TIMEOUT_SECONDS = 15;
 
     private Syslogd m_syslogd;
+    private SharedRegistryDispatcherFactory m_dispatcherFactory;
     private int m_udpPort;
     private int m_tcpPort;
 
@@ -96,20 +100,17 @@ public class SyslogdMultiListenerIT {
         when(distPollerDao.whoami().getId()).thenReturn("00000000-0000-0000-0000-000000000000");
         when(distPollerDao.whoami().getLocation()).thenReturn("Default");
 
-        final MockMessageDispatcherFactory<SyslogConnection, SyslogMessageLogDTO> dispatcherFactory =
-                new MockMessageDispatcherFactory<>();
-        dispatcherFactory.setConsumer(new CollectingConsumer());
+        m_dispatcherFactory = new SharedRegistryDispatcherFactory();
+        m_dispatcherFactory.setConsumer(new CollectingConsumer());
 
-        final SyslogReceiverJavaNetImpl udpReceiver = new SyslogReceiverJavaNetImpl(config);
-        udpReceiver.setDistPollerDao(distPollerDao);
-        udpReceiver.setMessageDispatcherFactory(dispatcherFactory);
-
-        final SyslogReceiverNettyTcpImpl tcpReceiver = new SyslogReceiverNettyTcpImpl(config);
-        tcpReceiver.setDistPollerDao(distPollerDao);
-        tcpReceiver.setMessageDispatcherFactory(dispatcherFactory);
+        // One receiver, both sockets, one dispatcher. Two receivers would each create a
+        // dispatcher for the same sink module and the loser of that race would die.
+        final SyslogReceiverJavaNetImpl receiver = new SyslogReceiverJavaNetImpl(config);
+        receiver.setDistPollerDao(distPollerDao);
+        receiver.setMessageDispatcherFactory(m_dispatcherFactory);
 
         m_syslogd = new Syslogd();
-        m_syslogd.setSyslogReceivers(Arrays.asList(udpReceiver, tcpReceiver));
+        m_syslogd.setSyslogReceiver(receiver);
         m_syslogd.init();
         m_syslogd.start();
 
@@ -137,16 +138,19 @@ public class SyslogdMultiListenerIT {
     }
 
     @Test(timeout = 60 * 1000)
-    public void theSingleReceiverConvenienceStillWorks() {
-        // Six existing tests wire one receiver through setSyslogReceiver, so that path
-        // has to keep working alongside the list.
-        final Syslogd daemon = new Syslogd();
-        final SyslogReceiver only = m_syslogd.getSyslogReceivers().get(0);
+    public void bothSocketsShareOneDispatcher() throws Exception {
+        // The Sink API names its metrics after the module id, so a second dispatcher for
+        // the same module throws and takes its listener down. That is a real regression
+        // this project shipped once: whichever listener lost the race stopped working,
+        // sometimes the UDP one. SharedRegistryDispatcherFactory reproduces the shared
+        // MetricRegistry that the production factory has and the plain mock does not.
+        sendUdp(UDP_MESSAGE);
+        sendTcp(TCP_MESSAGE);
+        nextMessage();
+        nextMessage();
 
-        daemon.setSyslogReceiver(only);
-
-        assertEquals(1, daemon.getSyslogReceivers().size());
-        assertEquals(only, daemon.getSyslogReceiver());
+        assertEquals("both sockets must share a single dispatcher",
+                1, m_dispatcherFactory.getDispatchersCreated());
     }
 
     @Test(timeout = 60 * 1000)
@@ -194,6 +198,35 @@ public class SyslogdMultiListenerIT {
         try (Socket socket = new Socket("127.0.0.1", m_tcpPort)) {
             socket.getOutputStream().write((message + "\n").getBytes(StandardCharsets.UTF_8));
             socket.getOutputStream().flush();
+        }
+    }
+
+    /**
+     * A dispatcher factory that shares one MetricRegistry across every dispatcher it
+     * creates, which is what the production factory does. The plain mock returns a fresh
+     * registry per call and therefore cannot reproduce a duplicate metric registration.
+     */
+    private static class SharedRegistryDispatcherFactory
+            extends MockMessageDispatcherFactory<SyslogConnection, SyslogMessageLogDTO> {
+
+        private final MetricRegistry metrics = new MetricRegistry();
+        private final AtomicInteger dispatchersCreated = new AtomicInteger();
+
+        @Override
+        public MetricRegistry getMetrics() {
+            return metrics;
+        }
+
+        @Override
+        public <S extends org.opennms.core.ipc.sink.api.Message, T extends org.opennms.core.ipc.sink.api.Message>
+                org.opennms.core.ipc.sink.api.AsyncDispatcher<S> createAsyncDispatcher(
+                        final org.opennms.core.ipc.sink.api.SinkModule<S, T> module) {
+            dispatchersCreated.incrementAndGet();
+            return super.createAsyncDispatcher(module);
+        }
+
+        int getDispatchersCreated() {
+            return dispatchersCreated.get();
         }
     }
 

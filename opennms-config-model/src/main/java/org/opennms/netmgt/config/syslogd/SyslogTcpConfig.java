@@ -78,9 +78,13 @@ public class SyslogTcpConfig {
         return port;
     }
 
+    /**
+     * Zero and null both mean disabled. The Minion .cfg always carries the key, so it
+     * needs a value that switches TCP off; anything else out of range is a mistake.
+     */
     public void setPort(final Integer port) {
-        if (port != null && (port < 1 || port > 65535)) {
-            throw new IllegalArgumentException("syslog TCP port must be between 1 and 65535, got " + port);
+        if (port != null && port != 0 && (port < 1 || port > 65535)) {
+            throw new IllegalArgumentException("syslog TCP port must be between 1 and 65535, or 0 to disable, got " + port);
         }
         this.port = port;
     }

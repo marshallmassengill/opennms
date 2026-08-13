@@ -97,7 +97,7 @@ It does not fall back to accepting plaintext on that port.
 NOTE: RFC 5425 specifies octet counting for the TLS transport.
 Leaving `tcp-framing` at `auto` still works, and the framing that was detected is logged when the first message on a connection arrives.
 
-Syslogd runs one TCP listener, so `tcp-tls-enabled` applies to it as a whole rather than to a second port.
+Syslogd runs one TCP listener, so `tcp-tls-enabled` applies to it as a whole rather than opening a second port.
 Senders that cannot use TLS would need to reach a different Syslogd, on a Minion for example, or keep using UDP.
 
 === Sender configuration
@@ -120,8 +120,8 @@ Check which framing your version emits before assuming it matches, since this ha
 
 === Minion
 
-On a Minion, TCP is a separate feature rather than an attribute.
-Install `opennms-syslogd-listener-netty-tcp` and set the `syslog.tcp.*` keys in `$\{MINION_HOME}/etc/org.opennms.netmgt.syslog.cfg`.
+A Minion uses the same syslog listener feature either way.
+Set the `syslog.tcp.*` keys in `$\{MINION_HOME}/etc/org.opennms.netmgt.syslog.cfg`, where `syslog.tcp.listen.port` defaults to `0`, meaning TCP is off.
 The keys mirror the attributes above.
 Messages still reach {page-component-title} through the same sink the UDP listener uses, so nothing downstream changes.
 

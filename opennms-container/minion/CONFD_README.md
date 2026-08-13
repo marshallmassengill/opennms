@@ -120,8 +120,8 @@ netmgt:
 ```
 Config specified will be written to `etc/org.opennms.netmgt.syslog.cfg`.
 
-Syslog over TCP is a separate listener, installed with the
-`opennms-syslogd-listener-netty-tcp` feature and configured through the same file:
+Syslog over TCP is served by the same listener feature and configured through the same
+file. `syslog.tcp.listen.port` defaults to `0`, which leaves TCP off:
 
 ```yaml
 ---

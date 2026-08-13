@@ -80,7 +80,7 @@ public class SyslogdReceiverNettyTcpTlsIT {
     private static SelfSignedCertificate s_serverCertificate;
     private static SelfSignedCertificate s_clientCertificate;
 
-    private SyslogReceiverNettyTcpImpl m_receiver;
+    private SyslogReceiverJavaNetImpl m_receiver;
     private EventLoopGroup m_clientGroup;
 
     private final LinkedBlockingQueue<String> m_received = new LinkedBlockingQueue<>();
@@ -225,7 +225,7 @@ public class SyslogdReceiverNettyTcpTlsIT {
 
         // Falling back to plaintext here would accept syslog on a port the operator
         // believes is encrypted, so the listener must simply not come up.
-        assertFalse(m_receiver.isStarted());
+        assertFalse(m_receiver.getTcpListener().isStarted());
         try (ServerSocket rebind = new ServerSocket(port)) {
             assertNotNull("the TLS port should have been left free", rebind);
         }
@@ -275,7 +275,7 @@ public class SyslogdReceiverNettyTcpTlsIT {
 
     private int startReceiver(final SyslogTcpConfig config) throws Exception {
         buildReceiver(config);
-        assertTrue("listener did not bind on port " + config.getPort(), m_receiver.isStarted());
+        assertTrue("listener did not bind on port " + config.getPort(), m_receiver.getTcpListener().isStarted());
         return config.getPort();
     }
 
@@ -301,7 +301,7 @@ public class SyslogdReceiverNettyTcpTlsIT {
                 new MockMessageDispatcherFactory<>();
         dispatcherFactory.setConsumer(new CollectingConsumer());
 
-        m_receiver = new SyslogReceiverNettyTcpImpl(syslogConfig);
+        m_receiver = new SyslogReceiverJavaNetImpl(syslogConfig);
         m_receiver.setDistPollerDao(distPollerDao);
         m_receiver.setMessageDispatcherFactory(dispatcherFactory);
         m_receiver.run();

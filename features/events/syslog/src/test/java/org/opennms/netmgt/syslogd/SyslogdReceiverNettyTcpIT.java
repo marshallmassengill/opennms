@@ -67,7 +67,7 @@ public class SyslogdReceiverNettyTcpIT {
 
     private static final long RECEIVE_TIMEOUT_SECONDS = 15;
 
-    private SyslogReceiverNettyTcpImpl m_receiver;
+    private SyslogReceiverJavaNetImpl m_receiver;
 
     private final LinkedBlockingQueue<String> m_received = new LinkedBlockingQueue<>();
 
@@ -268,12 +268,12 @@ public class SyslogdReceiverNettyTcpIT {
                 new MockMessageDispatcherFactory<>();
         dispatcherFactory.setConsumer(new CollectingConsumer());
 
-        m_receiver = new SyslogReceiverNettyTcpImpl(config);
+        m_receiver = new SyslogReceiverJavaNetImpl(config);
         m_receiver.setDistPollerDao(distPollerDao);
         m_receiver.setMessageDispatcherFactory(dispatcherFactory);
         m_receiver.run();
 
-        assertTrue("listener did not bind on port " + port, m_receiver.isStarted());
+        assertTrue("listener did not bind on port " + port, m_receiver.getTcpListener().isStarted());
         return port;
     }
 

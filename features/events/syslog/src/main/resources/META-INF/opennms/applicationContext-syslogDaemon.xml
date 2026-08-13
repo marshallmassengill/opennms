@@ -42,22 +42,8 @@
     <constructor-arg  ref="syslogdConfigFactory" />
   </bean>
 
-  <!--
-    Started unconditionally. It does nothing unless syslog-tcp-port is configured, which
-    keeps this wiring free of a conditional bean and means a reload can switch TCP on
-    without the context being rebuilt.
-  -->
-  <bean id="syslogReceiverNettyTcp" class="org.opennms.netmgt.syslogd.SyslogReceiverNettyTcpImpl" destroy-method="stop">
-    <constructor-arg  ref="syslogdConfigFactory" />
-  </bean>
-
   <bean id="daemon" class="org.opennms.netmgt.syslogd.Syslogd">
-    <property name="syslogReceivers">
-      <list>
-        <ref bean="syslogReceiverCamelNetty" />
-        <ref bean="syslogReceiverNettyTcp" />
-      </list>
-    </property>
+    <property name="syslogReceiver" ref="syslogReceiverCamelNetty" />
   </bean>
   
   <bean id="daemonListener" class="org.opennms.netmgt.events.api.AnnotationBasedEventListenerAdapter">
