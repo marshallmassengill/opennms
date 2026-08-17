@@ -11,11 +11,11 @@
         <span class="tb-caret">{{ collapsed ? '▸' : '▾' }}</span> Browse
       </button>
       <div v-if="!collapsed" class="tb-tabs">
-        <button type="button" :class="{ active: tab === 'nodes' }" @click="tab = 'nodes'">
-          Nodes ({{ nodeRows.length }})
-        </button>
         <button type="button" :class="{ active: tab === 'alarms' }" @click="tab = 'alarms'">
           Alarms ({{ alarmRows.length }})
+        </button>
+        <button type="button" :class="{ active: tab === 'nodes' }" @click="tab = 'nodes'">
+          Nodes ({{ nodeRows.length }})
         </button>
       </div>
       <span v-if="!collapsed && selectedNodeId !== null" class="tb-filter">
@@ -95,7 +95,9 @@ const emit = defineEmits<{ (e: 'select', placedId: string | null): void }>()
 const store = useTopologyStore()
 
 const collapsed = ref(true)
-const tab = ref<'nodes' | 'alarms'>('nodes')
+// Alarms first, and active by default: it is the tab an operator opens the
+// panel for, and leaving Nodes selected would highlight the second tab.
+const tab = ref<'nodes' | 'alarms'>('alarms')
 const loading = ref(false)
 
 interface NodeRow {
