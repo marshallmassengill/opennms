@@ -67,7 +67,9 @@ const curated = buildSources([])
 
 describe('buildSources', () => {
   it('falls back to the curated groups when nothing is known yet', () => {
-    expect(curated.map(s => s.slug)).toEqual([CUSTOM_SOURCE_SLUG, 'layer2', 'layer3', 'links', 'pathoutage'])
+    expect(curated.map(s => s.slug)).toEqual([
+      CUSTOM_SOURCE_SLUG, 'layer2', 'layer3', 'user-defined', 'all-protocols', 'pathoutage'
+    ])
   })
 
   it('keeps curated groups first and derives the rest, sorted by label', () => {
@@ -75,7 +77,8 @@ describe('buildSources', () => {
       CUSTOM_SOURCE_SLUG,
       'layer2',
       'layer3',
-      'links',
+      'user-defined',
+      'all-protocols',
       'pathoutage',
       // Derived from the API, alphabetical by displayed label. No `enlinkd`
       // entry: the curated groups now claim all eleven of its namespaces.
@@ -95,18 +98,29 @@ describe('buildSources', () => {
   it('assigns each source a menu heading', () => {
     const sources = buildSources(LIVE_CONTAINERS)
     const byGroup = (g: string) => sources.filter(s => s.group === g).map(s => s.slug)
-    expect(byGroup('discovered')).toEqual(['layer2', 'layer3', 'links', 'vmware'])
+    expect(byGroup('discovered')).toEqual([
+      'layer2', 'layer3', 'user-defined', 'all-protocols', 'vmware'
+    ])
     expect(byGroup('derived')).toEqual(['pathoutage', 'application'])
     // The custom source sits above the headings, not under one.
     expect(sourceForSlug(sources, CUSTOM_SOURCE_SLUG)?.group).toBeUndefined()
   })
 
-  it('groups the enlinkd leftovers into one Link Discovery entry', () => {
-    const links = sourceForSlug(buildSources(LIVE_CONTAINERS), 'links')
-    expect(links?.label).toBe('Link Discovery')
-    expect(links?.variants).toEqual([
-      { key: 'all', label: 'All protocols', namespace: 'nodes' },
-      { key: 'user-defined', label: 'User-defined', namespace: 'nodes:UserDefined' }
+  // Two peers of Layer 2 / Layer 3 rather than one entry with variants, so each
+  // is one click and neither needs the variant picker.
+  it('offers the remaining enlinkd namespaces as their own entries', () => {
+    const sources = buildSources(LIVE_CONTAINERS)
+    const userDefined = sourceForSlug(sources, 'user-defined')
+    // Named for enlinkd to separate it from links drawn on a custom view.
+    expect(userDefined?.label).toBe('User-defined (Enlinkd)')
+    expect(userDefined?.variants).toEqual([
+      { key: 'default', label: 'User-defined (Enlinkd)', namespace: 'nodes:UserDefined' }
+    ])
+
+    const all = sourceForSlug(sources, 'all-protocols')
+    expect(all?.label).toBe('All protocols')
+    expect(all?.variants).toEqual([
+      { key: 'default', label: 'All protocols', namespace: 'nodes' }
     ])
   })
 

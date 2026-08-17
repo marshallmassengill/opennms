@@ -124,19 +124,31 @@ const CURATED_SOURCES: TopologySourceOption[] = [
     ]
   },
   {
-    // The node parent / critical-path hierarchy (nodeParentID). A rooted
-    // forest, so it lays out as top-down tiers rather than force-directed.
-    slug: 'links',
-    label: 'Link Discovery',
+    // Links an operator drew by hand. Strictly this is neither discovered nor
+    // derived, but `nodes:UserDefined` is an enlinkd namespace sharing the link
+    // table with the discovered ones, so it sits with them rather than getting a
+    // heading of its own. The label says Enlinkd to separate these from the
+    // links drawn on a custom view, which are a different thing entirely.
+    slug: 'user-defined',
+    label: 'User-defined (Enlinkd)',
     kind: 'discovered',
     group: 'discovered',
     container: 'enlinkd',
-    variants: [
-      { key: 'all', label: 'All protocols', namespace: 'nodes' },
-      { key: 'user-defined', label: 'User-defined', namespace: 'nodes:UserDefined' }
-    ]
+    variants: [{ key: 'default', label: 'User-defined (Enlinkd)', namespace: 'nodes:UserDefined' }]
   },
   {
+    // Every link enlinkd knows regardless of protocol: the unfiltered peer of
+    // the Layer 2 and Layer 3 entries above.
+    slug: 'all-protocols',
+    label: 'All protocols',
+    kind: 'discovered',
+    group: 'discovered',
+    container: 'enlinkd',
+    variants: [{ key: 'default', label: 'All protocols', namespace: 'nodes' }]
+  },
+  {
+    // The node parent / critical-path hierarchy (nodeParentID). A rooted
+    // forest, so it lays out as top-down tiers rather than force-directed.
     slug: 'pathoutage',
     label: 'Path Outage',
     kind: 'discovered',
@@ -148,9 +160,10 @@ const CURATED_SOURCES: TopologySourceOption[] = [
 ]
 
 /**
- * Layout for containers that are not curated. Force-directed suits mesh-like
- * graphs and is the default; these two are rooted hierarchies (a business
- * service rolls up its children, an application its dependencies).
+ * Presentation for a container that is not curated. Anything absent here takes
+ * the defaults: force-directed layout, the server's own label, and the
+ * `derived` heading, on the grounds that a topology nobody has classified is
+ * more likely computed from configuration than probed from the network.
  */
 interface ContainerOverride {
   label?: string
