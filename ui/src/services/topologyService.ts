@@ -411,6 +411,46 @@ const loadDiscoveredGraph = async (
 }
 
 /**
+ * A graph container as listed by `GET /api/v2/graphs`: an id, a display label,
+ * and the graphs (namespaces) it holds. This is what makes the topology source
+ * menu self-registering rather than hardcoded: providers bridged in from the
+ * legacy topology map (Application, BSM, VMware) and operator-defined GraphML
+ * topologies all show up here without a UI change.
+ */
+export interface GraphContainerMeta {
+  id: string
+  label?: string
+  description?: string
+  graphs: Array<{ namespace: string, label?: string, description?: string }>
+}
+
+/**
+ * Every container the Graph REST API serves. Returns [] rather than throwing so
+ * a failure degrades to the curated source list instead of an empty menu.
+ */
+const listGraphContainers = async (): Promise<GraphContainerMeta[]> => {
+  try {
+    const resp = await v2.get<GraphContainerMeta[]>(graphsEndpoint)
+    if (!Array.isArray(resp.data)) {
+      return []
+    }
+    // A container with no graphs cannot be displayed, so drop it here rather
+    // than leaving every consumer to guard.
+    return resp.data
+      .filter(c => c?.id && Array.isArray(c.graphs) && c.graphs.length > 0)
+      .map(c => ({
+        id: c.id,
+        label: c.label,
+        description: c.description,
+        graphs: c.graphs.filter(g => g?.namespace)
+      }))
+      .filter(c => c.graphs.length > 0)
+  } catch {
+    return []
+  }
+}
+
+/**
  * One operator-configured info-panel item for a node: a titled HTML fragment
  * rendered server-side from an etc/infopanel Jinjava template. The HTML must be
  * sanitized before rendering (see the Inspector).
@@ -572,6 +612,7 @@ export {
   getNodeNeighbors,
   parseEnlinkdNeighbors,
   loadDiscoveredGraph,
+  listGraphContainers,
   mapDiscoveredGraph,
   getEdgeInfoPanel,
   getNodeInfoPanel,

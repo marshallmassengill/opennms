@@ -41,8 +41,11 @@ import {
   getNodeSeverities,
   getNodeIconIds,
   getNodeNeighbors,
-  loadDiscoveredGraph
+  loadDiscoveredGraph,
+  listGraphContainers
 } from '@/services/topologyService'
+import type { GraphContainerMeta } from '@/services/topologyService'
+import { buildSources, type TopologySourceOption } from '@/components/Topology/sources'
 import type { DeviceIconId } from '@/components/Topology/deviceIcons'
 
 /**
@@ -222,6 +225,18 @@ export const useTopologyStore = defineStore('topologyStore', () => {
    * (the canvas auto-lays-out and renders it read-only). Separate from
    * currentView, which is custom-only.
    */
+  /**
+   * Containers the Graph REST API reports, and the source menu derived from
+   * them. Empty until loadGraphContainers() runs, which buildSources() treats
+   * as "fall back to the curated groups" rather than an empty menu.
+   */
+  const graphContainers = ref<GraphContainerMeta[]>([])
+  const topologySources = computed<TopologySourceOption[]>(() => buildSources(graphContainers.value))
+
+  const loadGraphContainers = async (): Promise<void> => {
+    graphContainers.value = await listGraphContainers()
+  }
+
   const discoveredGraph = ref<DiscoveredGraph | null>(null)
   const isDiscoveredLoading = ref<boolean>(false)
   const discoveredError = ref<boolean>(false)
@@ -613,6 +628,9 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     isEditMode,
     isLinkDrawMode,
     isSaving,
+    graphContainers,
+    topologySources,
+    loadGraphContainers,
     discoveredGraph,
     isDiscoveredLoading,
     discoveredError,

@@ -29,6 +29,7 @@ import {
   getNodeNeighbors,
   parseEnlinkdNeighbors,
   loadDiscoveredGraph,
+  listGraphContainers,
   mapDiscoveredGraph,
   getNodeInfoPanel,
   getNodeIconIds,
@@ -499,6 +500,42 @@ describe('topologyService discovered graph (Graph REST API)', () => {
       expect(await deleteAsset('a1')).toBe(true)
       vi.mocked(v2.delete).mockRejectedValue(new Error('404'))
       expect(await deleteAsset('gone')).toBe(false)
+    })
+  })
+
+  describe('listGraphContainers', () => {
+    it('returns the containers the API reports', async () => {
+      vi.mocked(v2.get).mockResolvedValue({
+        data: [
+          { id: 'bsm', label: 'Business Service Graph', graphs: [{ namespace: 'bsm', label: 'Business Service Graph' }] }
+        ]
+      })
+      expect(await listGraphContainers()).toEqual([
+        { id: 'bsm', label: 'Business Service Graph', description: undefined, graphs: [{ namespace: 'bsm', label: 'Business Service Graph' }] }
+      ])
+      expect(vi.mocked(v2.get)).toHaveBeenCalledWith('graphs')
+    })
+
+    // A container with no usable graph cannot be displayed, so it is dropped
+    // here rather than leaving every consumer to guard.
+    it('drops containers with no id and containers with no graphs', async () => {
+      vi.mocked(v2.get).mockResolvedValue({
+        data: [
+          { id: 'empty', label: 'Empty', graphs: [] },
+          { label: 'No id', graphs: [{ namespace: 'x' }] },
+          { id: 'blanks', label: 'Blank namespaces', graphs: [{ label: 'no namespace' }] },
+          { id: 'ok', label: 'Fine', graphs: [{ namespace: 'ok' }] }
+        ]
+      })
+      expect((await listGraphContainers()).map(c => c.id)).toEqual(['ok'])
+    })
+
+    // Degrades to the curated source list instead of an empty menu.
+    it('returns [] on a failure or a non-array body', async () => {
+      vi.mocked(v2.get).mockRejectedValue(new Error('503'))
+      expect(await listGraphContainers()).toEqual([])
+      vi.mocked(v2.get).mockResolvedValue({ data: { containers: [] }})
+      expect(await listGraphContainers()).toEqual([])
     })
   })
 })

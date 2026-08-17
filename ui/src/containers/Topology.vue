@@ -271,7 +271,6 @@ import TopologyBrowsePanel from '@/components/Topology/TopologyBrowsePanel.vue'
 import { useTopologyStore } from '@/stores/topologyStore'
 import {
   CUSTOM_SOURCE_SLUG,
-  TOPOLOGY_SOURCES,
   isDiscoveredSlug,
   sourceForSlug,
   variantForKey,
@@ -291,9 +290,9 @@ const canvasRef = ref<InstanceType<typeof TopologyCanvas> | null>(null)
 // View-source dimension (the route's :source param). 'custom' is the
 // hand-composed catalog; the rest are discovered (read-only) topologies.
 const sourceSlug = computed<string>(() => (route.params.source as string) || CUSTOM_SOURCE_SLUG)
-const isDiscovered = computed<boolean>(() => isDiscoveredSlug(sourceSlug.value))
+const isDiscovered = computed<boolean>(() => isDiscoveredSlug(store.topologySources, sourceSlug.value))
 
-const currentSource = computed(() => sourceForSlug(sourceSlug.value))
+const currentSource = computed(() => sourceForSlug(store.topologySources, sourceSlug.value))
 
 // Navigate to a source via the route so every source stays bookmarkable.
 // Dropping the query resets the variant to the group's default.
@@ -337,9 +336,9 @@ const sourceMenuModel = computed<OnmsMenuItem[]>(() => {
     class: slug === sourceSlug.value ? 'source-item-active' : undefined,
     command: () => goToSource(slug)
   })
-  const discovered = TOPOLOGY_SOURCES.filter(s => s.kind === 'discovered').map(s =>
-    item(s.slug, s.label.replace(/^Discovered · /, ''))
-  )
+  const discovered = store.topologySources
+    .filter(s => s.kind === 'discovered')
+    .map(s => item(s.slug, s.label.replace(/^Discovered · /, '')))
   return [item(CUSTOM_SOURCE_SLUG, 'Custom'), { label: 'Discovered', items: discovered }]
 })
 
@@ -425,7 +424,7 @@ const mode = computed<boolean>({
 // Load whatever the route's :source points at -- the custom catalog or a
 // discovered topology. Re-runs whenever the source changes.
 const loadSource = async (): Promise<void> => {
-  const option = sourceForSlug(sourceSlug.value)
+  const option = sourceForSlug(store.topologySources, sourceSlug.value)
   if (!option) {
     // Unknown source -> fall back to custom.
     router.replace({ name: 'Topology', params: { source: CUSTOM_SOURCE_SLUG }})
@@ -459,7 +458,10 @@ const loadSource = async (): Promise<void> => {
   await loadFromRoute(true)
 }
 
-onMounted(loadSource)
+onMounted(async () => {
+  await store.loadGraphContainers()
+  await loadSource()
+})
 
 // React to source or variant changes (selector, deep link, back/forward).
 // One watcher over both so a group switch (which changes the slug and clears
