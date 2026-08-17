@@ -7,56 +7,105 @@ import { describe, expect, it } from 'vitest'
 const mountIt = (props: Record<string, unknown> = {}) =>
   mount(OnmsColorPicker, { props, global: { plugins: [PrimeVue] }, attachTo: document.body })
 
+// The panel is an OnmsPopover, so it renders to <body> once opened.
+const openPanel = async (wrapper: ReturnType<typeof mountIt>) => {
+  await wrapper.find('.onms-color-picker__trigger').trigger('click')
+  await nextTick()
+}
+
+const swatches = () => Array.from(document.querySelectorAll<HTMLElement>('.onms-color-picker__swatch'))
+
+// The panel content is teleported to <body>, so it is reached through the
+// document rather than through the wrapper.
+const clickCustomToggle = async () => {
+  const toggle = document.querySelector<HTMLElement>('.onms-color-picker__custom-toggle')
+  expect(toggle, 'no custom toggle rendered').toBeTruthy()
+  toggle!.click()
+  await nextTick()
+}
+
 describe('OnmsColorPicker contract', () => {
-  it('maps props onto PrimeVue ColorPicker and bakes the hex format', () => {
-    const inner = mountIt({ modelValue: '#aabbcc' }).findComponent({ name: 'ColorPicker' })
-    expect(inner.props('modelValue')).toBe('#aabbcc')
-    expect(inner.props('format')).toBe('hex')
-    expect(inner.props('appendTo')).toBe('body')
-    expect(inner.props('disabled')).toBe(false)
-  })
-
-  it('maps disabled through', () => {
-    expect(mountIt({ modelValue: '#aabbcc', disabled: true })
-      .findComponent({ name: 'ColorPicker' }).props('disabled')).toBe(true)
-  })
-
-  // PrimeVue accepts hex with or without the '#' but always emits it without.
-  // A bare `aabbcc` is not a valid CSS color, so the seam re-adds the '#'.
-  it('re-adds the leading # that PrimeVue drops on the way out', () => {
+  it('shows the current color on the trigger without opening a panel', () => {
     const wrapper = mountIt({ modelValue: '#aabbcc' })
-    wrapper.findComponent({ name: 'ColorPicker' }).vm.$emit('update:modelValue', '112233')
-    expect(wrapper.emitted('update:modelValue')).toEqual([['#112233']])
+    expect(wrapper.find('.onms-color-picker__trigger').attributes('style')).toContain('#aabbcc')
+    expect(document.querySelector('.onms-color-picker__grid')).toBeNull()
+    wrapper.unmount()
   })
 
-  it('normalizes case and tolerates a value that already has the #', () => {
-    const wrapper = mountIt({ modelValue: '#aabbcc' })
-    const inner = wrapper.findComponent({ name: 'ColorPicker' })
-    inner.vm.$emit('update:modelValue', 'AABBCC')
-    inner.vm.$emit('update:modelValue', '#DDEEFF')
-    expect(wrapper.emitted('update:modelValue')).toEqual([['#aabbcc'], ['#ddeeff']])
+  it('opens a swatch grid in the page, not a native dialog', async () => {
+    const wrapper = mountIt({ modelValue: '#64748b' })
+    await openPanel(wrapper)
+
+    expect(document.querySelector('.onms-color-picker__grid')).not.toBeNull()
+    expect(swatches().length).toBeGreaterThan(20)
+    wrapper.unmount()
   })
 
-  it('passes a non-hex value through rather than swallowing it', () => {
-    const wrapper = mountIt({ modelValue: '#aabbcc' })
-    wrapper.findComponent({ name: 'ColorPicker' }).vm.$emit('update:modelValue', 'rgb(1,2,3)')
-    expect(wrapper.emitted('update:modelValue')).toEqual([['rgb(1,2,3)']])
-  })
+  it('emits the swatch that was clicked', async () => {
+    const wrapper = mountIt({ modelValue: '#64748b', swatches: ['#111111', '#222222'] })
+    await openPanel(wrapper)
 
-  // The reason this wrapper exists: the overlay is in-page, so PrimeVue can
-  // dismiss it on an outside click or Escape, which a native <input type=color>
-  // OS dialog cannot be. Only the in-page render is asserted here: PrimeVue
-  // binds its outside-click listener from the overlay's transition enter hook,
-  // after DOM geometry calls that happy-dom cannot satisfy, so the dismissal
-  // itself is not reachable under vitest.
-  it('opens its overlay in the page rather than as a native dialog', async () => {
-    const wrapper = mountIt({ modelValue: '#aabbcc' })
-    expect(document.querySelector('.p-colorpicker-panel')).toBeNull()
-
-    await wrapper.find('.p-colorpicker-preview').trigger('click')
+    swatches()[1].click()
     await nextTick()
 
-    expect(document.querySelector('.p-colorpicker-panel')).not.toBeNull()
+    expect(wrapper.emitted('update:modelValue')).toEqual([['#222222']])
+    wrapper.unmount()
+  })
+
+  it('marks the swatch matching the current value, case-insensitively', async () => {
+    const wrapper = mountIt({ modelValue: '#AABBCC', swatches: ['#111111', '#aabbcc'] })
+    await openPanel(wrapper)
+
+    expect(swatches()[0].getAttribute('aria-pressed')).toBe('false')
+    expect(swatches()[1].getAttribute('aria-pressed')).toBe('true')
+    wrapper.unmount()
+  })
+
+  it('reports a value that is not in the palette as custom', async () => {
+    const onPalette = mountIt({ modelValue: '#111111', swatches: ['#111111'] })
+    await openPanel(onPalette)
+    expect(document.querySelector('.onms-color-picker__value')?.textContent).not.toContain('custom')
+    onPalette.unmount()
+
+    const offPalette = mountIt({ modelValue: '#9aa7b8', swatches: ['#111111'] })
+    await openPanel(offPalette)
+    const value = document.querySelector('.onms-color-picker__value')?.textContent
+    expect(value).toContain('#9aa7b8')
+    expect(value).toContain('custom')
+    offPalette.unmount()
+  })
+
+  it('keeps the spectrum behind a toggle and emits from it', async () => {
+    const wrapper = mountIt({ modelValue: '#111111' })
+    await openPanel(wrapper)
+    expect(wrapper.findComponent({ name: 'ColorPicker' }).exists()).toBe(false)
+
+    await clickCustomToggle()
+    const spectrum = wrapper.findComponent({ name: 'ColorPicker' })
+    expect(spectrum.exists()).toBe(true)
+    expect(spectrum.props('inline')).toBe(true)
+    expect(spectrum.props('format')).toBe('hex')
+
+    // PrimeVue accepts hex with or without the '#' but always emits it without,
+    // and a bare `aabbcc` is not a valid CSS color.
+    spectrum.vm.$emit('update:modelValue', '112233')
+    expect(wrapper.emitted('update:modelValue')).toEqual([['#112233']])
+    wrapper.unmount()
+  })
+
+  it('passes a non-hex spectrum value through rather than swallowing it', async () => {
+    const wrapper = mountIt({ modelValue: '#111111' })
+    await openPanel(wrapper)
+    await clickCustomToggle()
+
+    wrapper.findComponent({ name: 'ColorPicker' }).vm.$emit('update:modelValue', 'rgb(1,2,3)')
+    expect(wrapper.emitted('update:modelValue')).toEqual([['rgb(1,2,3)']])
+    wrapper.unmount()
+  })
+
+  it('disables the trigger so the panel cannot be opened', () => {
+    const wrapper = mountIt({ modelValue: '#111111', disabled: true })
+    expect(wrapper.find('.onms-color-picker__trigger').attributes('disabled')).toBeDefined()
     wrapper.unmount()
   })
 })

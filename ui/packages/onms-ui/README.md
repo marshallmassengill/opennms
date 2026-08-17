@@ -22,7 +22,8 @@ replaced without rewriting consumers.
    Every use should link a follow-up to promote the need into a real prop.
    Composite components that assemble more than one PrimeVue primitive
    internally (`OnmsSearchInput`, `OnmsConfirmationDialog`, `OnmsMessageDialog`,
-   `OnmsToastHost`) do **not** accept `unsafePt` — there is no single
+   `OnmsToastHost`, `OnmsColorPicker`) do **not** accept
+   `unsafePt` — there is no single
    underlying `pt` root to target, so the escape hatch is omitted rather than
    wired to one arbitrarily-chosen internal.
 4. **No PrimeVue types or values in any public signature.** Exported types are
@@ -165,18 +166,27 @@ OnmsSearchInput. Each keeps PrimeVue's own default when unset.
   Popup by default, matching `OnmsMenu`; open via the exposed `toggle(event)`.
   Both reuse the existing `OnmsMenuItem` type, whose `items` field already
   nests.
-- **`OnmsColorPicker`** replaced hand-rolled `<input type="color">` fields.
-  That is a behavioral choice, not a styling one: a native color input opens an
+- **`OnmsColorPicker`** is a composite, not a thin wrapper: a swatch grid in an
+  `OnmsPopover`, with PrimeVue's spectrum picker (`inline`) behind a "Custom"
+  toggle. It replaced hand-rolled `<input type="color">` fields, which is a
+  behavioral choice rather than a styling one. A native color input opens an
   OS-level dialog the page can neither dismiss nor observe, so it outlives the
-  thing it was opened for. This wrapper's overlay is in the page, and PrimeVue
-  closes it on an outside click or Escape.
+  thing it was opened for; this panel closes on an outside click or Escape.
+  PrimeVue's own picker could not replace it alone, being spectrum-only with no
+  swatch or preset surface in 4.5.5.
 
-  It bakes `format` to `'hex'` (every OpenNMS color is a CSS hex string; the
-  rgb/hsb formats would change `modelValue`'s type) and normalizes the value in
-  both directions. PrimeVue is asymmetric there: it accepts hex with or without
-  the leading `#` but always emits it *without*, and a bare `aabbcc` is not a
-  valid CSS color, so it fails silently wherever the value is used as one. The
-  seam's value is always `#rrggbb`, lowercased. A value that is not six hex
+  `swatches` defaults to a 30-color set (neutrals, mid tones, pale tones) that
+  includes the shape and label defaults the topology map ships, so a stock view
+  reads as on-palette. A value outside the palette is still shown and labelled
+  "custom" rather than appearing unselected, since saved views predate the
+  palette and may hold anything.
+
+  `format` is baked to `'hex'` (every OpenNMS color is a CSS hex string; the
+  rgb/hsb formats would change `modelValue`'s type) and the value is normalized
+  in both directions. PrimeVue is asymmetric there: it accepts hex with or
+  without the leading `#` but always emits it *without*, and a bare `aabbcc` is
+  not a valid CSS color, so it fails silently wherever the value is used as one.
+  The seam's value is always `#rrggbb`, lowercased. A value that is not six hex
   digits is passed through untouched rather than swallowed, so an upstream
   format change surfaces instead of going missing.
 

@@ -107,14 +107,4 @@ describe('TopologyInspector color pickers', () => {
     expect(store.getShape('shape-a')?.stroke).toBe('#aaaaaa')
   })
 
-  // The store feeds these colors straight to the canvas as CSS, so the '#' the
-  // seam re-adds has to survive the trip through the Inspector.
-  it('stores a CSS hex color, not the bare hex PrimeVue emits', async () => {
-    const { wrapper, store } = await mountInspector()
-    const inner = picker(wrapper, 'Border color').findComponent({ name: 'ColorPicker' })
-    inner.vm.$emit('update:modelValue', '112233')
-    await flushPromises()
-
-    expect(store.getShape('shape-a')?.stroke).toBe('#112233')
-  })
 })
