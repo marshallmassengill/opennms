@@ -25,8 +25,12 @@ import java.net.InetSocketAddress;
 import java.util.ArrayDeque;
 import java.util.Objects;
 import java.util.Queue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
+import org.opennms.core.concurrent.LogPreservingThreadFactory;
 import org.opennms.core.ipc.sink.api.AsyncDispatcher;
 import org.opennms.netmgt.config.syslogd.SyslogTcpConfig;
 import org.opennms.netmgt.syslogd.api.SyslogConnection;
@@ -84,6 +88,14 @@ public class SyslogTcpListener {
 
     private SslContext m_sslContext;
 
+    /**
+     * Runs the calls into the sink dispatcher, which are allowed to block here and are not
+     * allowed to block on an event loop. Sized off the CPU count because each thread spends
+     * its time waiting on the sink rather than computing, and one connection only ever has a
+     * single dispatch outstanding.
+     */
+    private ExecutorService m_dispatchPool;
+
     public SyslogTcpListener(final SyslogTcpConfig config, final AsyncDispatcher<SyslogConnection> dispatcher) {
         m_config = Objects.requireNonNull(config);
         m_dispatcher = Objects.requireNonNull(dispatcher);
@@ -128,6 +140,9 @@ public class SyslogTcpListener {
         try {
             m_bossGroup = new NioEventLoopGroup();
             m_workerGroup = new NioEventLoopGroup();
+            m_dispatchPool = Executors.newFixedThreadPool(
+                    Math.max(2, Runtime.getRuntime().availableProcessors()),
+                    new LogPreservingThreadFactory("syslog-tcp-dispatch", Integer.MAX_VALUE));
 
             m_socketFuture = new ServerBootstrap()
                     .group(m_bossGroup, m_workerGroup)
@@ -208,12 +223,17 @@ public class SyslogTcpListener {
      * sender that chose TCP over UDP is entitled to assume its messages keep the order it
      * sent them in: a link-down followed by a link-up must not arrive reversed.
      *
-     * Serialising also carries the backpressure. The sink's async policy blocks when its
-     * queue is full, and blocking here would block a Netty worker thread and stall every
-     * other connection it serves, so reads are switched off while a dispatch is
-     * outstanding and TCP flow control pushes back on the sender instead.
+     * The dispatch itself runs on {@link #m_dispatchPool} rather than on the event loop.
+     * AsyncDispatcher.send() blocks when the sink queue is full and the module asks for
+     * blockWhenFull, which SyslogSinkModule does, so calling it from the event loop stalls
+     * that whole worker and every other connection on it. Waiting on the returned future
+     * was never the danger; the call is.
      *
-     * One instance per channel, and every field is confined to that channel's event loop.
+     * Reads are switched off while a dispatch is outstanding, so a slow sink turns into TCP
+     * backpressure on the sender rather than unbounded buffering here.
+     *
+     * One instance per channel. pending and dispatchInFlight are only touched on that
+     * channel's event loop.
      */
     private class SyslogDispatchHandler extends SimpleChannelInboundHandler<SyslogConnection> {
 
@@ -240,22 +260,37 @@ public class SyslogTcpListener {
             }
 
             dispatchInFlight = true;
-            m_dispatcher.send(next).whenComplete((result, ex) -> onDispatched(ctx, ex));
+            try {
+                m_dispatchPool.execute(() -> {
+                    try {
+                        m_dispatcher.send(next).whenComplete((result, ex) -> onDispatched(ctx, ex));
+                    } catch (Throwable e) {
+                        onDispatched(ctx, e);
+                    }
+                });
+            } catch (RejectedExecutionException e) {
+                dispatchInFlight = false;
+                ctx.fireExceptionCaught(e);
+            }
         }
 
-        /** Hops back onto the event loop, because the dispatch completes on a sink thread. */
+        /** Hops back onto the event loop, because this runs on a dispatch or sink thread. */
         private void onDispatched(final ChannelHandlerContext ctx, final Throwable ex) {
             if (ctx.executor().isShuttingDown()) {
                 return;
             }
-            ctx.executor().execute(() -> {
-                dispatchInFlight = false;
-                if (ex != null) {
-                    ctx.fireExceptionCaught(ex);
-                    return;
-                }
-                dispatchNext(ctx);
-            });
+            try {
+                ctx.executor().execute(() -> {
+                    dispatchInFlight = false;
+                    if (ex != null) {
+                        ctx.fireExceptionCaught(ex);
+                        return;
+                    }
+                    dispatchNext(ctx);
+                });
+            } catch (RejectedExecutionException e) {
+                LOG.debug("Syslog TCP channel from {} went away before its dispatch completed", m_config.getPort(), e);
+            }
         }
     }
 
@@ -279,6 +314,22 @@ public class SyslogTcpListener {
                 channel.parent().close().awaitUninterruptibly();
             }
             m_socketFuture = null;
+        }
+
+        // After the channels are closed, so nothing new is submitted, and before the caller
+        // closes the dispatcher these tasks are calling into.
+        if (m_dispatchPool != null) {
+            m_dispatchPool.shutdown();
+            try {
+                if (!m_dispatchPool.awaitTermination(SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                    LOG.warn("Syslog TCP dispatch pool did not drain within {} seconds", SHUTDOWN_TIMEOUT_SECONDS);
+                    m_dispatchPool.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                m_dispatchPool.shutdownNow();
+            }
+            m_dispatchPool = null;
         }
 
         shutdownGracefully(m_workerGroup, "worker");
