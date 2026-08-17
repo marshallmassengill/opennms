@@ -24,9 +24,11 @@ package org.opennms.smoketest.minion;
 import static java.util.concurrent.TimeUnit.MINUTES;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.awaitility.Awaitility.await;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 
 import java.util.Date;
+import java.util.concurrent.Callable;
 
 import org.junit.ClassRule;
 import org.junit.Test;
@@ -69,7 +71,7 @@ public class SyslogTcpIT {
      * still be inside.
      */
     @Test
-    public void canReceiveSyslogOverTcpInBothFramings() {
+    public void canReceiveSyslogOverTcpInBothFramings() throws Exception {
         final int count = 5;
         final Date startOfTest = new Date();
         final String sender = TestContainerUtils.getInternalIpAddress(stack.postgres());
@@ -88,14 +90,20 @@ public class SyslogTcpIT {
      * Exact count, not "at least". Over-delivery is what a framing bug produces, and a
      * greater-than assertion would pass straight over one message becoming several.
      */
-    private void awaitEventCount(final Date startOfTest, final int expected) {
-        await().atMost(2, MINUTES).pollInterval(5, SECONDS)
-                .until(DaoUtils.countMatchingCallable(stack.postgres().dao(EventDaoHibernate.class),
-                        new CriteriaBuilder(OnmsEvent.class)
-                                .eq("eventUei", SYSLOG_UEI)
-                                .ge("eventCreateTime", startOfTest)
-                                .toCriteria()),
-                        is(expected));
+    private void awaitEventCount(final Date startOfTest, final int expected) throws Exception {
+        final Callable<Integer> count = DaoUtils.countMatchingCallable(
+                stack.postgres().dao(EventDaoHibernate.class),
+                new CriteriaBuilder(OnmsEvent.class)
+                        .eq("eventUei", SYSLOG_UEI)
+                        .ge("eventCreateTime", startOfTest)
+                        .toCriteria());
+
+        await().atMost(2, MINUTES).pollInterval(5, SECONDS).until(count, is(expected));
+
+        // Awaitility stops the moment the count matches, so a duplicate arriving just after
+        // would go unnoticed. Give it a chance to show up and assert the count again.
+        Thread.sleep(10_000);
+        assertThat("more events arrived than were sent", count.call(), is(expected));
     }
 
     private void awaitMinion(final Date startOfTest) {

@@ -48,8 +48,23 @@ The `dir` assembly resolves helpers through the absolute paths it was built at, 
 
 Interrupted test runs leave an OpenNMS JVM holding eventd's port 5817, which makes every DB-backed IT fail with "Failed to load ApplicationContext". Check `ss -tlnp | grep 5817` before believing such a failure.
 
+## The smoke test cannot run on this machine
+
+`SyslogTcpIT` compiles, and `mvn -o verify -P smoke.minion -DskipITs=false -Dit.test=SyslogTcpIT` does select and execute it, but it dies before any test logic:
+
+```
+UnixSocketClientProviderStrategy: failed with exception BadRequestException
+  (Status 400: client version 1.32 is too old. Minimum supported API version is 1.40)
+```
+
+The docker-java client bundled with the smoke-test framework on this branch speaks Docker API 1.32 and the daemon here requires 1.40 or newer. `DOCKER_API_VERSION` does not help, the version is fixed by the dependency. This is not specific to the new test: the pre-existing `SyslogIT` fails identically, so no smoke test runs locally until that dependency moves. CI presumably runs an older daemon.
+
+Note that `-P smoke.minion` alone is not enough, the profile leaves `skipITs=true` and the build reports success having run nothing.
+
+The container images the test would need are built and present from this branch as `opennms/horizon:36.0.4-SNAPSHOT` and `opennms/minion:36.0.4-SNAPSHOT`, both verified to carry the final listener fix. `opennms/horizon:latest` was left pointing at the stock 2025 image it pointed at before, because the smoke tests are what wanted `:latest` and they cannot run; retag the branch build if that changes.
+
 ## Remaining
 
-The `SyslogTcpIT` smoke test under `smoke-test/` compiles but has not been run; it needs the containerised smoke stack rather than this environment.
+Running `SyslogTcpIT` needs either an older Docker daemon or a smoke-test framework with a newer docker-java.
 
-Rebuilding the Minion needs `features/minion/repository` rebuilt first and the assembly built with `clean`, or the tarball ships a stale blueprint from a cached staging directory.
+Rebuilding the Minion needs `features/minion/repository` rebuilt first and the assembly built with `clean`, or the tarball ships a stale blueprint from a cached staging directory. The container image builds do not work through `make image` here either: the nested make dies at `check-docker-buildx-default` with exit 255 before the check even prints. Calling `docker buildx build` directly with `--builder=default` works, and the Makefile has already unpacked the tarball into `tarball-root/` by then.
