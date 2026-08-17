@@ -262,11 +262,24 @@ public class SyslogTcpListener {
             dispatchInFlight = true;
             try {
                 m_dispatchPool.execute(() -> {
+                    Throwable failure = null;
                     try {
-                        m_dispatcher.send(next).whenComplete((result, ex) -> onDispatched(ctx, ex));
+                        // send() returning is what says the sink took the message, and that
+                        // is what reading resumes on. The future it returns is only watched
+                        // for logging: on a Minion whose configuration has been reloaded it
+                        // is sometimes completed by a previous dispatcher's drain thread and
+                        // never by this one, and gating reads on it stalled ingestion after
+                        // a single message with nothing in the log.
+                        m_dispatcher.send(next).whenComplete((result, ex) -> {
+                            if (ex != null) {
+                                LOG.warn("Syslog message from {} failed after the sink accepted it",
+                                        next.getSource(), ex);
+                            }
+                        });
                     } catch (Throwable e) {
-                        onDispatched(ctx, e);
+                        failure = e;
                     }
+                    onDispatched(ctx, failure);
                 });
             } catch (RejectedExecutionException e) {
                 dispatchInFlight = false;

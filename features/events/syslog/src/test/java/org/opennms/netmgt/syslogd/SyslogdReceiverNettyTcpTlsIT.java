@@ -157,6 +157,33 @@ public class SyslogdReceiverNettyTcpTlsIT {
     }
 
     @Test(timeout = 60 * 1000)
+    public void receivesABurstOverTlsOnOneConnection() throws Exception {
+        // Reads are paused while each dispatch is outstanding. SslHandler can hold decrypted
+        // data of its own, and re-enabling autoRead does not by itself make it hand that
+        // data on, so a burst can stop after the first message even though the socket is
+        // still open. That is what a Minion did over TLS: 1 of 25.
+        final int count = 50;
+        final SyslogTcpConfig config = tlsConfig();
+        final int port = startReceiver(config);
+
+        final Channel client = connect(port, clientContext(false));
+        try {
+            final StringBuilder burst = new StringBuilder();
+            for (int i = 0; i < count; i++) {
+                final String message = "<34>Oct 11 22:14:15 tlsburst app: message " + i;
+                burst.append(message.getBytes(StandardCharsets.UTF_8).length).append(' ').append(message);
+            }
+            client.writeAndFlush(Unpooled.copiedBuffer(burst.toString(), StandardCharsets.UTF_8)).sync();
+
+            for (int i = 0; i < count; i++) {
+                assertEquals("<34>Oct 11 22:14:15 tlsburst app: message " + i, nextMessage());
+            }
+        } finally {
+            client.close().awaitUninterruptibly();
+        }
+    }
+
+    @Test(timeout = 60 * 1000)
     public void acceptsASenderPresentingATrustedCertificate() throws Exception {
         final SyslogTcpConfig config = tlsConfig();
         config.setTlsClientAuth("require");

@@ -40,10 +40,22 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.After;
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.opennms.core.ipc.sink.api.AsyncDispatcher;
 import org.opennms.netmgt.config.syslogd.SyslogTcpConfig;
 import org.opennms.netmgt.syslogd.api.SyslogConnection;
+
+import io.netty.bootstrap.Bootstrap;
+import io.netty.buffer.Unpooled;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.util.SelfSignedCertificate;
 
 /**
  * Pins how the listener is allowed to call the sink dispatcher.
@@ -60,13 +72,98 @@ public class SyslogTcpListenerDispatchIT {
 
     private static final long TIMEOUT_SECONDS = 20;
 
+    private static SelfSignedCertificate s_certificate;
+
     private SyslogTcpListener m_listener;
+    private EventLoopGroup m_clientGroup;
+
+    @BeforeClass
+    public static void generateCertificate() throws Exception {
+        s_certificate = new SelfSignedCertificate();
+    }
+
+    @AfterClass
+    public static void deleteCertificate() {
+        if (s_certificate != null) {
+            s_certificate.delete();
+        }
+    }
 
     @After
     public void tearDown() {
         if (m_listener != null) {
             m_listener.stop();
             m_listener = null;
+        }
+        if (m_clientGroup != null) {
+            m_clientGroup.shutdownGracefully(0, 5, TimeUnit.SECONDS).awaitUninterruptibly(10, TimeUnit.SECONDS);
+            m_clientGroup = null;
+        }
+    }
+
+    @Test(timeout = 120 * 1000)
+    public void keepsIngestingOverTlsWhenEachDispatchIsSlow() throws Exception {
+        // TLS plus a slow sink is the combination that failed on a Minion: 1 of 25. Reads are
+        // paused while a dispatch is outstanding, and SslHandler holds decrypted data of its
+        // own that re-enabling autoRead does not by itself hand on. A fast dispatcher hides
+        // this because the pause is too short to matter.
+        final int count = 25;
+        final RecordingDispatcher dispatcher = new RecordingDispatcher(0);
+        dispatcher.setDelayMillis(40);
+        final int port = startTls(dispatcher);
+
+        m_clientGroup = new NioEventLoopGroup();
+        final Channel client = new Bootstrap()
+                .group(m_clientGroup)
+                .channel(NioSocketChannel.class)
+                .handler(new ChannelInitializer<io.netty.channel.socket.SocketChannel>() {
+                    @Override
+                    protected void initChannel(final io.netty.channel.socket.SocketChannel ch) throws Exception {
+                        ch.pipeline().addLast(SslContextBuilder.forClient()
+                                .trustManager(s_certificate.certificate())
+                                .endpointIdentificationAlgorithm(null)
+                                .build()
+                                .newHandler(ch.alloc()));
+                    }
+                })
+                .connect("127.0.0.1", port).sync().channel();
+
+        try {
+            final StringBuilder burst = new StringBuilder();
+            for (int i = 0; i < count; i++) {
+                burst.append("<34>Oct 11 22:14:15 host app: message ").append(i).append('\n');
+            }
+            client.writeAndFlush(Unpooled.copiedBuffer(burst.toString(), StandardCharsets.UTF_8)).sync();
+
+            for (int i = 0; i < count; i++) {
+                assertEquals("message " + i, dispatcher.nextMessage());
+            }
+        } finally {
+            client.close().awaitUninterruptibly();
+        }
+    }
+
+    @Test(timeout = 60 * 1000)
+    public void keepsIngestingWhenTheDispatchFutureNeverCompletes() throws Exception {
+        // A Minion whose syslog configuration had been reloaded delivered the message but
+        // never completed the future for it, because a previous dispatcher's drain thread
+        // completed the wrong one. Reading must not depend on that future: send() returning
+        // is what says the sink took the message.
+        final int count = 10;
+        final RecordingDispatcher dispatcher = new RecordingDispatcher(0);
+        dispatcher.setNeverCompleteFutures(true);
+        final int port = start(dispatcher);
+
+        try (Socket socket = new Socket("127.0.0.1", port)) {
+            final StringBuilder burst = new StringBuilder();
+            for (int i = 0; i < count; i++) {
+                burst.append("<34>Oct 11 22:14:15 host app: message ").append(i).append('\n');
+            }
+            write(socket, burst.toString());
+
+            for (int i = 0; i < count; i++) {
+                assertEquals("message " + i, dispatcher.nextMessage());
+            }
         }
     }
 
@@ -113,6 +210,23 @@ public class SyslogTcpListenerDispatchIT {
 
     // --- harness ------------------------------------------------------------
 
+    private int startTls(final AsyncDispatcher<SyslogConnection> dispatcher) throws Exception {
+        final int port = findFreePort();
+
+        final SyslogTcpConfig config = new SyslogTcpConfig();
+        config.setPort(port);
+        config.setListenAddress("127.0.0.1");
+        config.setFraming("non-transparent");
+        config.setTlsEnabled(true);
+        config.setTlsCertFilePath(s_certificate.certificate().getAbsolutePath());
+        config.setTlsPrivateKeyFilePath(s_certificate.privateKey().getAbsolutePath());
+
+        m_listener = new SyslogTcpListener(config, dispatcher);
+        m_listener.start();
+        assertTrue("the listener did not bind", m_listener.isStarted());
+        return port;
+    }
+
     private int start(final AsyncDispatcher<SyslogConnection> dispatcher) throws Exception {
         final int port = findFreePort();
 
@@ -137,6 +251,10 @@ public class SyslogTcpListenerDispatchIT {
         private final LinkedBlockingQueue<String> delivered = new LinkedBlockingQueue<>();
         private final CountDownLatch release = new CountDownLatch(1);
         private final int blockFirst;
+
+        private volatile long delayMillis;
+
+        private volatile boolean neverCompleteFutures;
 
         private int seen;
 
@@ -164,8 +282,24 @@ public class SyslogTcpListenerDispatchIT {
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
+            } else if (delayMillis > 0) {
+                try {
+                    Thread.sleep(delayMillis);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
             }
-            return CompletableFuture.completedFuture(DispatchStatus.DISPATCHED);
+            // An uncompleted future, the way a reloaded Minion leaves them.
+            return neverCompleteFutures ? new CompletableFuture<>()
+                    : CompletableFuture.completedFuture(DispatchStatus.DISPATCHED);
+        }
+
+        void setDelayMillis(final long delayMillis) {
+            this.delayMillis = delayMillis;
+        }
+
+        void setNeverCompleteFutures(final boolean neverCompleteFutures) {
+            this.neverCompleteFutures = neverCompleteFutures;
         }
 
         void release() {
