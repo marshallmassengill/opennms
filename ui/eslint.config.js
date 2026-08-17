@@ -112,6 +112,7 @@ export default tseslint.config(
           { name: 'primevue/card', message: 'Use OnmsCard from @opennms/onms-ui.' },
           { name: 'primevue/checkbox', message: 'Use OnmsCheckbox from @opennms/onms-ui.' },
           { name: 'primevue/chip', message: 'Use OnmsChip from @opennms/onms-ui.' },
+          { name: 'primevue/colorpicker', message: 'Use OnmsColorPicker from @opennms/onms-ui.' },
           { name: 'primevue/column', message: 'Use OnmsColumn from @opennms/onms-ui.' },
           { name: 'primevue/confirmdialog', message: 'Use OnmsConfirmationDialog from @opennms/onms-ui.' },
           { name: 'primevue/contextmenu', message: 'Use OnmsContextMenu from @opennms/onms-ui.' },

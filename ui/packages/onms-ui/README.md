@@ -127,9 +127,10 @@ OnmsTable (+ the `OnmsTablePageEvent`, `OnmsTableSortEvent`,
 
 ## Components (tranche 4)
 
-OnmsSelectButton, OnmsSlider, OnmsContextMenu, OnmsTieredMenu and
-OnmsVirtualScroller, added for the topology map. The same tranche widened six
-existing wrappers to what topology needs: `size` on OnmsButton,
+OnmsSelectButton, OnmsSlider, OnmsContextMenu, OnmsTieredMenu,
+OnmsVirtualScroller and OnmsColorPicker, added for the topology map. The same
+tranche widened six existing wrappers to what topology needs: `size` on
+OnmsButton,
 `selectionMode` + `row-click` on OnmsTable, `showToggleAll` +
 `maxSelectedLabels` on OnmsMultiSelect, `showButtons` + `buttonLayout` on
 OnmsInputNumber, `completeOnFocus` on OnmsAutoComplete, and `fluid` on
@@ -164,6 +165,21 @@ OnmsSearchInput. Each keeps PrimeVue's own default when unset.
   Popup by default, matching `OnmsMenu`; open via the exposed `toggle(event)`.
   Both reuse the existing `OnmsMenuItem` type, whose `items` field already
   nests.
+- **`OnmsColorPicker`** replaced hand-rolled `<input type="color">` fields.
+  That is a behavioral choice, not a styling one: a native color input opens an
+  OS-level dialog the page can neither dismiss nor observe, so it outlives the
+  thing it was opened for. This wrapper's overlay is in the page, and PrimeVue
+  closes it on an outside click or Escape.
+
+  It bakes `format` to `'hex'` (every OpenNMS color is a CSS hex string; the
+  rgb/hsb formats would change `modelValue`'s type) and normalizes the value in
+  both directions. PrimeVue is asymmetric there: it accepts hex with or without
+  the leading `#` but always emits it *without*, and a bare `aabbcc` is not a
+  valid CSS color, so it fails silently wherever the value is used as one. The
+  seam's value is always `#rrggbb`, lowercased. A value that is not six hex
+  digits is passed through untouched rather than swallowed, so an upstream
+  format change surfaces instead of going missing.
+
 - **`OnmsVirtualScroller`** covers long uniform-height lists that aren't tables
   (`OnmsTable`'s `virtualScrollItemSize` remains the table case). Its `#item`
   slot is narrowed rather than forwarded: PrimeVue passes an `options` object

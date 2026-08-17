@@ -36,6 +36,7 @@ const EXPECTED_RUNTIME_EXPORTS = [
   'OnmsCard',
   'OnmsCheckbox',
   'OnmsChip',
+  'OnmsColorPicker',
   'OnmsColumn',
   'OnmsConfirmationDialog',
   'OnmsContextMenu',

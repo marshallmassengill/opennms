@@ -60,7 +60,11 @@ License.
         </div>
         <div class="ti-field">
           <label class="ti-label">Color</label>
-          <input type="color" :value="labelColor" class="ti-color" :disabled="!editable" @input="onLabelColor" />
+          <OnmsColorPicker
+            :model-value="labelColor"
+            :disabled="!editable"
+            @update:model-value="onLabelColor"
+          />
         </div>
         <div class="ti-field">
           <label class="ti-label">Font size</label>
@@ -146,11 +150,19 @@ License.
         </div>
         <div class="ti-field">
           <label class="ti-label">Border color</label>
-          <input type="color" :value="shape.stroke ?? '#64748b'" class="ti-color" :disabled="!editable" @input="onShapeStroke" />
+          <OnmsColorPicker
+            :model-value="shape.stroke ?? '#64748b'"
+            :disabled="!editable"
+            @update:model-value="onShapeStroke"
+          />
         </div>
         <div class="ti-field">
           <label class="ti-label">Fill color</label>
-          <input type="color" :value="shape.fill ?? '#cbd5e1'" class="ti-color" :disabled="!editable" @input="onShapeFill" />
+          <OnmsColorPicker
+            :model-value="shape.fill ?? '#cbd5e1'"
+            :disabled="!editable"
+            @update:model-value="onShapeFill"
+          />
         </div>
         <div class="ti-field">
           <label class="ti-label">Fill opacity</label>
@@ -261,11 +273,9 @@ License.
           <div class="ti-field">
             <label class="ti-label">Node label color</label>
             <div class="ti-row">
-              <input
-                type="color"
-                :value="store.viewStyle?.nodeLabelColor ?? '#000000'"
-                class="ti-color"
-                @input="onNodeLabelColor"
+              <OnmsColorPicker
+                :model-value="store.viewStyle?.nodeLabelColor ?? '#000000'"
+                @update:model-value="onNodeLabelColor"
               />
               <OnmsButton
                 v-if="store.viewStyle?.nodeLabelColor"
@@ -281,11 +291,9 @@ License.
           <div class="ti-field">
             <label class="ti-label">Link label color</label>
             <div class="ti-row">
-              <input
-                type="color"
-                :value="store.viewStyle?.linkLabelColor ?? '#9aa7b8'"
-                class="ti-color"
-                @input="onLinkLabelColor"
+              <OnmsColorPicker
+                :model-value="store.viewStyle?.linkLabelColor ?? '#9aa7b8'"
+                @update:model-value="onLinkLabelColor"
               />
               <OnmsButton
                 v-if="store.viewStyle?.linkLabelColor"
@@ -359,7 +367,7 @@ License.
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { OnmsButton, OnmsCard, OnmsInputNumber, OnmsInputText } from '@opennms/onms-ui'
+import { OnmsButton, OnmsCard, OnmsColorPicker, OnmsInputNumber, OnmsInputText } from '@opennms/onms-ui'
 import { useTopologyStore } from '@/stores/topologyStore'
 import { isLabelId, isShapeId, nodeIdFromPlacedId } from '@/components/Topology/nodeIds'
 import { severityColor } from '@/components/Topology/severity'
@@ -488,9 +496,9 @@ const labelText = computed<string>({
   set: text => label.value && store.updateLabel(label.value.id, { text })
 })
 const labelColor = computed<string>(() => label.value?.color ?? '#1d2939')
-const onLabelColor = (event: Event) => {
+const onLabelColor = (color: string) => {
   if (label.value) {
-    store.updateLabel(label.value.id, { color: (event.target as HTMLInputElement).value })
+    store.updateLabel(label.value.id, { color })
   }
 }
 const labelFontSize = computed<number>({
@@ -638,12 +646,12 @@ const addNeighbor = (neighbor: DiscoveredNeighbor) => {
 }
 
 /* ---- Canvas defaults (Edit mode, nothing selected) ---- */
-const onNodeLabelColor = (event: Event) => {
-  store.setViewStyle({ nodeLabelColor: (event.target as HTMLInputElement).value })
+const onNodeLabelColor = (nodeLabelColor: string) => {
+  store.setViewStyle({ nodeLabelColor })
 }
 
-const onLinkLabelColor = (event: Event) => {
-  store.setViewStyle({ linkLabelColor: (event.target as HTMLInputElement).value })
+const onLinkLabelColor = (linkLabelColor: string) => {
+  store.setViewStyle({ linkLabelColor })
 }
 
 /* ---- View background (Edit mode, nothing selected) ---- */
@@ -735,15 +743,15 @@ const shapeType = computed<'rect' | 'ellipse'>({
   set: type => shape.value && store.updateShape(shape.value.id, { type })
 })
 
-const onShapeStroke = (event: Event) => {
+const onShapeStroke = (stroke: string) => {
   if (shape.value) {
-    store.updateShape(shape.value.id, { stroke: (event.target as HTMLInputElement).value })
+    store.updateShape(shape.value.id, { stroke })
   }
 }
 
-const onShapeFill = (event: Event) => {
+const onShapeFill = (fill: string) => {
   if (shape.value) {
-    store.updateShape(shape.value.id, { fill: (event.target as HTMLInputElement).value })
+    store.updateShape(shape.value.id, { fill })
   }
 }
 
@@ -899,15 +907,6 @@ const linkLabel = computed<string>({
 
 .ti-input {
   width: 100%;
-}
-
-.ti-color {
-  width: 3rem;
-  height: 2rem;
-  padding: 0;
-  border: 1px solid var(--onms-border-on-surface);
-  border-radius: 4px;
-  background: none;
 }
 
 .ti-node-header {
