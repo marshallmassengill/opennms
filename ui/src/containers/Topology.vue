@@ -262,6 +262,7 @@ import {
   useOnmsToast
 } from '@opennms/onms-ui'
 import type { OnmsMenuItem } from '@opennms/onms-ui'
+import type { SourceGroup } from '@/components/Topology/sources'
 import ExpandMore from '@/components/icons/navigation/ExpandMore.vue'
 import { useRoute, useRouter } from 'vue-router'
 import TopologyCanvas from '@/components/Topology/TopologyCanvas.vue'
@@ -336,10 +337,19 @@ const sourceMenuModel = computed<OnmsMenuItem[]>(() => {
     class: slug === sourceSlug.value ? 'source-item-active' : undefined,
     command: () => goToSource(slug)
   })
-  const discovered = store.topologySources
-    .filter(s => s.kind === 'discovered')
-    .map(s => item(s.slug, s.label.replace(/^Discovered · /, '')))
-  return [item(CUSTOM_SOURCE_SLUG, 'Custom'), { label: 'Discovered', items: discovered }]
+  // Headings split on how the topology came to exist. A heading with nothing
+  // under it is dropped rather than rendered empty, since the container list is
+  // whatever the server happens to serve.
+  const group = (g: SourceGroup) => store.topologySources
+    .filter(s => s.group === g)
+    .map(s => item(s.slug, s.label))
+  const heading = (label: string, items: OnmsMenuItem[]) =>
+    items.length > 0 ? [{ label, items }] : []
+  return [
+    item(CUSTOM_SOURCE_SLUG, 'Custom Topologies'),
+    ...heading('Discovered Topologies', group('discovered')),
+    ...heading('Derived Topologies', group('derived'))
+  ]
 })
 
 const discoveredHint = computed<string>(() => {

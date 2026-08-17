@@ -67,7 +67,7 @@ const curated = buildSources([])
 
 describe('buildSources', () => {
   it('falls back to the curated groups when nothing is known yet', () => {
-    expect(curated.map(s => s.slug)).toEqual([CUSTOM_SOURCE_SLUG, 'layer2', 'layer3', 'pathoutage'])
+    expect(curated.map(s => s.slug)).toEqual([CUSTOM_SOURCE_SLUG, 'layer2', 'layer3', 'links', 'pathoutage'])
   })
 
   it('keeps curated groups first and derives the rest, sorted by label', () => {
@@ -75,28 +75,59 @@ describe('buildSources', () => {
       CUSTOM_SOURCE_SLUG,
       'layer2',
       'layer3',
+      'links',
       'pathoutage',
-      // Derived, alphabetical by the label the server reports.
+      // Derived from the API, alphabetical by displayed label. No `enlinkd`
+      // entry: the curated groups now claim all eleven of its namespaces.
       'application',
-      'bsm',
-      'enlinkd',
       'vmware'
     ])
   })
 
-  it('labels derived sources from the server, not from the container id', () => {
+  // Business services get their own home rather than sitting among network
+  // topologies, so the container is dropped even though the API serves it.
+  it('excludes the bsm container', () => {
     const sources = buildSources(LIVE_CONTAINERS)
-    expect(sourceForSlug(sources, 'bsm')?.label).toBe('Business Service Graph')
-    expect(sourceForSlug(sources, 'vmware')?.label).toBe('VMware Topology Provider')
+    expect(sources.some(s => s.container === 'bsm')).toBe(false)
+    expect(LIVE_CONTAINERS.some(c => c.id === 'bsm')).toBe(true)
   })
 
-  // The point of deriving: a namespace no curated group claims is still
-  // reachable, so one added by a future release cannot go silently missing.
-  it('surfaces the enlinkd namespaces the curated groups do not claim', () => {
-    const leftovers = sourceForSlug(buildSources(LIVE_CONTAINERS), 'enlinkd')
+  it('assigns each source a menu heading', () => {
+    const sources = buildSources(LIVE_CONTAINERS)
+    const byGroup = (g: string) => sources.filter(s => s.group === g).map(s => s.slug)
+    expect(byGroup('discovered')).toEqual(['layer2', 'layer3', 'links', 'vmware'])
+    expect(byGroup('derived')).toEqual(['pathoutage', 'application'])
+    // The custom source sits above the headings, not under one.
+    expect(sourceForSlug(sources, CUSTOM_SOURCE_SLUG)?.group).toBeUndefined()
+  })
+
+  it('groups the enlinkd leftovers into one Link Discovery entry', () => {
+    const links = sourceForSlug(buildSources(LIVE_CONTAINERS), 'links')
+    expect(links?.label).toBe('Link Discovery')
+    expect(links?.variants).toEqual([
+      { key: 'all', label: 'All protocols', namespace: 'nodes' },
+      { key: 'user-defined', label: 'User-defined', namespace: 'nodes:UserDefined' }
+    ])
+  })
+
+  it('takes a derived label from the server unless overridden', () => {
+    const sources = buildSources(LIVE_CONTAINERS)
+    expect(sourceForSlug(sources, 'application')?.label).toBe('Application Graph')
+    // "Topology Provider" is noise inside a topology menu.
+    expect(sourceForSlug(sources, 'vmware')?.label).toBe('VMware')
+  })
+
+  // The curated groups claim every enlinkd namespace today, so this covers the
+  // case that motivated deriving at all: one added by a future release, which
+  // must not go silently missing.
+  it('surfaces a namespace no curated group claims, still under Discovered', () => {
+    const withNew = LIVE_CONTAINERS.map(c => c.id === 'enlinkd'
+      ? { ...c, graphs: [...c.graphs, graph('nodes:Wireless', 'Wireless')] }
+      : c)
+    const leftovers = sourceForSlug(buildSources(withNew), 'enlinkd')
+    expect(leftovers?.group).toBe('discovered')
     expect(leftovers?.variants).toEqual([
-      { key: 'nodes', label: 'All', namespace: 'nodes' },
-      { key: 'userdefined', label: 'UserDefined', namespace: 'nodes:UserDefined' }
+      { key: 'wireless', label: 'Wireless', namespace: 'nodes:Wireless' }
     ])
   })
 
@@ -111,20 +142,23 @@ describe('buildSources', () => {
     ])
     const graphml = sourceForSlug(sources, 'graphml-acme-sites')
     expect(graphml?.label).toBe('Acme Sites')
+    // Nothing classified it, so it lands under Derived rather than claiming to
+    // have been discovered from the network.
+    expect(graphml?.group).toBe('derived')
     expect(graphml?.container).toBe('graphml:acme-sites')
     expect(graphml?.layout).toBe('force')
     expect(graphml?.variants?.map(v => v.key)).toEqual(['region', 'site'])
   })
 
-  it('lays out business services and applications as hierarchies, others as force', () => {
+  it('lays out applications as a hierarchy and vmware as force', () => {
     const sources = buildSources(LIVE_CONTAINERS)
-    expect(sourceForSlug(sources, 'bsm')?.layout).toBe('hierarchy')
     expect(sourceForSlug(sources, 'application')?.layout).toBe('hierarchy')
     expect(sourceForSlug(sources, 'vmware')?.layout).toBe('force')
   })
 
   it('drops a curated group whose container is not installed', () => {
-    const slugs = buildSources([LIVE_CONTAINERS[3]]).map(s => s.slug)
+    const pathoutageOnly = LIVE_CONTAINERS.find(c => c.id === 'pathoutage')!
+    const slugs = buildSources([pathoutageOnly]).map(s => s.slug)
     expect(slugs).toEqual([CUSTOM_SOURCE_SLUG, 'pathoutage'])
   })
 
@@ -240,9 +274,9 @@ describe('graphSourceFor', () => {
 
   it('carries a derived source through too', () => {
     const sources = buildSources(LIVE_CONTAINERS)
-    expect(graphSourceFor(sourceForSlug(sources, 'bsm'), undefined)).toEqual({
-      container: 'bsm',
-      namespace: 'bsm',
+    expect(graphSourceFor(sourceForSlug(sources, 'application'), undefined)).toEqual({
+      container: 'application',
+      namespace: 'application',
       layout: 'hierarchy'
     })
   })
