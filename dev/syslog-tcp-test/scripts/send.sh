@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 #
-# Sends a known number of marked syslog messages to a listener, using a chosen sender,
-# framing and transport. Every message carries a unique marker so that verify.sh can count
-# exactly what arrived.
+# Sends a known number of marked syslog messages through a real syslog daemon, using a
+# chosen framing and transport. Every message carries a unique marker so verify.sh can
+# count exactly what arrived.
+#
+# The daemons are run as relays: they accept the messages on a local TCP port and forward
+# them to the listener under test. That keeps the message content exactly what this script
+# chose while still putting the daemon's own framing on the wire, which is the thing being
+# tested. Injecting through the daemon's own log socket would let it rewrite the content.
 #
 # usage: send.sh <sender> <framing> <transport> <host> <port> <count> <marker>
 #   sender     rsyslog | syslog-ng | raw
@@ -22,113 +27,119 @@ MARKER="$7"
 cd "$(dirname "$0")/.."
 CERTS="$PWD/certs"
 
+RELAY_PORT=5514
+CONTAINER="syslog-tcp-test-sender-$$"
+
+cleanup() {
+    docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+    rm -rf "${CONF:-}" "${SPOOL:-}"
+}
+trap cleanup EXIT
+
+# Feeds the relay. Content is fixed here so the expected count and body are known.
+inject() {
+    for i in $(seq 1 "$COUNT"); do
+        printf '<190>Mar 11 08:35:17 %shost%s 30128311: %%SEC-6-IPACCESSLOGP: list in110 denied tcp 192.168.10.100(63923) -> 192.168.11.128(1521), %s seq%s packet\n' \
+            "$1" "$i" "$MARKER" "$i" \
+            | timeout 5 nc -q1 127.0.0.1 "$RELAY_PORT" || true
+    done
+}
+
 case "$SENDER" in
 rsyslog)
-    CONF=$(mktemp /tmp/rsyslog-send-XXXXXX.conf)
-    SPOOL=$(mktemp -d /tmp/rsyslog-spool-XXXXXX)
-    trap 'rm -rf "$CONF" "$SPOOL"' EXIT
-
-    TLS_LINES=""
-    if [ "$TRANSPORT" != "plain" ]; then
-        TLS_LINES="
-global(
-  defaultNetstreamDriver=\"gtls\"
-  defaultNetstreamDriverCAFile=\"/certs/ca.crt\""
-        if [ "$TRANSPORT" = "mtls" ]; then
-            TLS_LINES="$TLS_LINES
-  defaultNetstreamDriverCertFile=\"/certs/client.crt\"
-  defaultNetstreamDriverKeyFile=\"/certs/client.key\""
-        fi
-        TLS_LINES="$TLS_LINES
-)"
+    # Built locally rather than using rsyslog/syslog_appliance_alpine: that image ships
+    # without lmnsd_gtls.so so it cannot do TLS, and its entrypoint ignores -f.
+    if ! docker image inspect syslog-tcp-test-rsyslog:latest >/dev/null 2>&1; then
+        echo "building the rsyslog sender image"
+        docker build -q -t syslog-tcp-test-rsyslog:latest senders/rsyslog >/dev/null
     fi
 
+    CONF=$(mktemp /tmp/rsyslog-send-XXXXXX.conf)
+    SPOOL=$(mktemp -d /tmp/rsyslog-spool-XXXXXX)
+    # The container runs rsyslog as root, but keep both readable regardless of umask.
+    chmod 644 "$CONF"
+    chmod 777 "$SPOOL"
+
+    GLOBAL_TLS=""
     ACTION_TLS=""
     if [ "$TRANSPORT" != "plain" ]; then
-        # StreamDriverMode 1 is TLS; anon would skip certificate checks, so the name is
-        # pinned to what the server certificate carries.
-        ACTION_TLS='StreamDriver="gtls" StreamDriverMode="1" StreamDriverAuthMode="x509/name" StreamDriverPermittedPeers="localhost"'
+        GLOBAL_TLS='
+       defaultNetstreamDriver="gtls"
+       defaultNetstreamDriverCAFile="/certs/ca.crt"'
+        # x509/name rather than anon: this verifies the listener's certificate against the
+        # CA and matches the name, so a broken TLS setup fails instead of silently passing.
+        ACTION_TLS='StreamDriver="gtls" StreamDriverMode="1"
+         StreamDriverAuthMode="x509/name" StreamDriverPermittedPeers="localhost"'
+        if [ "$TRANSPORT" = "mtls" ]; then
+            GLOBAL_TLS="$GLOBAL_TLS"'
+       defaultNetstreamDriverCertFile="/certs/client.crt"
+       defaultNetstreamDriverKeyFile="/certs/client.key"'
+        fi
     fi
 
     cat > "$CONF" <<EOF
-module(load="imfile")
-$TLS_LINES
-\$WorkDirectory $SPOOL
-
-template(name="passthru" type="string" string="%rawmsg%\n")
-
+global(workDirectory="/spool"$GLOBAL_TLS)
+module(load="imtcp")
+template(name="passthru" type="string" string="%rawmsg%")
 ruleset(name="fwd") {
-  action(type="omfwd"
-         target="$HOST" port="$PORT" protocol="tcp"
+  action(type="omfwd" target="$HOST" port="$PORT" protocol="tcp"
          TCP_Framing="$FRAMING"
          $ACTION_TLS
          template="passthru"
          action.resumeRetryCount="3")
 }
-
-module(load="imtcp" ruleset="fwd")
-input(type="imtcp" port="5514")
+input(type="imtcp" port="$RELAY_PORT" ruleset="fwd")
 EOF
 
-    docker run --rm --network host \
+    docker run -d --name "$CONTAINER" --network host \
         -v "$CONF:/etc/rsyslog.conf:ro" \
         -v "$CERTS:/certs:ro" \
-        -v "$SPOOL:$SPOOL" \
-        --name "syslog-tcp-test-rsyslog-$$" \
-        -d rsyslog/syslog_appliance_alpine:latest \
-        rsyslogd -n -f /etc/rsyslog.conf >/dev/null
-
-    sleep 3
-    for i in $(seq 1 "$COUNT"); do
-        printf '<34>Oct 11 22:14:15 sender%s app: %s seq %s\n' "$i" "$MARKER" "$i" \
-            | timeout 5 nc -q1 127.0.0.1 5514 || true
-    done
-    sleep 3
-    docker rm -f "syslog-tcp-test-rsyslog-$$" >/dev/null 2>&1 || true
+        -v "$SPOOL:/spool" \
+        syslog-tcp-test-rsyslog:latest >/dev/null
+    sleep 6
+    inject rsys
+    sleep 5
     ;;
 
 syslog-ng)
+    RELAY_PORT=5515
     CONF=$(mktemp /tmp/syslog-ng-send-XXXXXX.conf)
-    trap 'rm -f "$CONF"' EXIT
+    chmod 644 "$CONF"
 
+    # The driver choice is the framing: network() emits newline-delimited RFC3164, syslog()
+    # emits octet-counted RFC5424. syslog-ng has no TCP_Framing knob.
     if [ "$FRAMING" = "octet-counted" ]; then
-        DEST_OPTS="transport(\"tcp\") flags(syslog-protocol)"
-        PROTO="syslog"
+        DRIVER="syslog"
     else
-        DEST_OPTS="transport(\"tcp\")"
-        PROTO="network"
+        DRIVER="network"
     fi
 
-    if [ "$TRANSPORT" != "plain" ]; then
-        TLS_BLOCK="transport(\"tls\") tls( ca-file(\"/certs/ca.crt\")"
+    if [ "$TRANSPORT" = "plain" ]; then
+        DEST_OPTS='transport("tcp")'
+    else
+        DEST_OPTS='transport("tls") tls( ca-file("/certs/ca.crt") peer-verify(required-trusted)'
         if [ "$TRANSPORT" = "mtls" ]; then
-            TLS_BLOCK="$TLS_BLOCK cert-file(\"/certs/client.crt\") key-file(\"/certs/client.key\")"
+            DEST_OPTS="$DEST_OPTS"' cert-file("/certs/client.crt") key-file("/certs/client.key")'
         fi
-        TLS_BLOCK="$TLS_BLOCK peer-verify(optional-untrusted) )"
-        DEST_OPTS="$TLS_BLOCK"
+        DEST_OPTS="$DEST_OPTS )"
     fi
 
     cat > "$CONF" <<EOF
-@version: 4.0
-source s_net { network(ip("127.0.0.1") port(5515) transport("tcp")); };
-destination d_onms { $PROTO("$HOST" port($PORT) $DEST_OPTS template("\${MSG}\n")); };
-log { source(s_net); destination(d_onms); };
+@version: 4.2
+source s_in { network(ip("0.0.0.0") port($RELAY_PORT) transport("tcp")); };
+destination d_onms { ${DRIVER}("$HOST" port($PORT) $DEST_OPTS); };
+log { source(s_in); destination(d_onms); };
 EOF
 
-    docker run --rm --network host \
+    # --no-caps: the image warns and degrades without it when not running with capabilities.
+    docker run -d --name "$CONTAINER" --network host \
         -v "$CONF:/etc/syslog-ng/syslog-ng.conf:ro" \
         -v "$CERTS:/certs:ro" \
-        --name "syslog-tcp-test-syslogng-$$" \
-        -d balabit/syslog-ng:latest \
-        -F -f /etc/syslog-ng/syslog-ng.conf >/dev/null
-
-    sleep 3
-    for i in $(seq 1 "$COUNT"); do
-        printf '<34>Oct 11 22:14:15 sender%s app: %s seq %s\n' "$i" "$MARKER" "$i" \
-            | timeout 5 nc -q1 127.0.0.1 5515 || true
-    done
-    sleep 3
-    docker rm -f "syslog-tcp-test-syslogng-$$" >/dev/null 2>&1 || true
+        balabit/syslog-ng:latest \
+        -F -f /etc/syslog-ng/syslog-ng.conf --no-caps >/dev/null
+    sleep 6
+    inject sng
+    sleep 5
     ;;
 
 raw)
@@ -136,7 +147,7 @@ raw)
     # a real daemon will not produce.
     payload=""
     for i in $(seq 1 "$COUNT"); do
-        msg="<34>Oct 11 22:14:15 rawhost app: $MARKER seq $i"
+        msg="<190>Mar 11 08:35:17 rawhost$i 30128311: %SEC-6-IPACCESSLOGP: list in110 denied tcp 192.168.10.100(63923) -> 192.168.11.128(1521), $MARKER seq$i packet"
         if [ "$FRAMING" = "octet-counted" ]; then
             payload="$payload${#msg} $msg"
         else
@@ -152,8 +163,11 @@ raw)
         if [ "$TRANSPORT" = "mtls" ]; then
             CLIENT_ARGS=(-cert "$CERTS/client.crt" -key "$CERTS/client.key")
         fi
+        # s_client exits nonzero when the peer closes a connection it considers finished,
+        # which is the normal ending here, so the exit status says nothing useful. What
+        # arrived is asserted by verify.sh.
         printf '%s' "$payload" | timeout 10 openssl s_client -quiet -verify_quiet \
-            -connect "$HOST:$PORT" -CAfile "$CERTS/ca.crt" "${CLIENT_ARGS[@]}" >/dev/null 2>&1
+            -connect "$HOST:$PORT" -CAfile "$CERTS/ca.crt" "${CLIENT_ARGS[@]}" >/dev/null 2>&1 || true
     fi
     ;;
 

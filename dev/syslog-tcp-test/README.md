@@ -47,6 +47,41 @@ The sustained-load run is the only check that exercises the `setAutoRead(false)`
 
 The churn run exists because `SyslogSinkModule` keys its batches on the source address including the ephemeral port, so every short-lived connection forms its own batch. It reports how long the connections took so the cost is recorded rather than assumed.
 
+## Senders
+
+`send.sh` runs the daemons as relays: they accept messages on a local TCP port and forward
+them to the listener under test. The content therefore stays exactly what the script chose,
+while the framing on the wire is the daemon's own, which is the part being tested.
+
+Two things about the images, both learned the hard way. `rsyslog/syslog_appliance_alpine`
+ignores `-f` because its entrypoint installs its own config, and it ships without
+`lmnsd_gtls.so` so it cannot do TLS at all; `senders/rsyslog/` builds a Debian-based image
+instead. syslog-ng has no `TCP_Framing` knob, so the framing is the driver: `network()`
+emits newline-delimited RFC 3164 and `syslog()` emits octet-counted RFC 5424.
+
 ## Results
+
+Confirmed against a real OpenNMS built from this branch, 5 messages per cell, exact counts,
+no leaked length prefix and no stray carriage return in any of them:
+
+| Sender | Framing | Transport | Result |
+| --- | --- | --- | --- |
+| rsyslog 8.2302 | traditional (LF) | plaintext | 5/5 |
+| rsyslog 8.2302 | octet-counted | plaintext | 5/5 |
+| rsyslog 8.2302 | octet-counted | TLS, server cert verified `x509/name` | 5/5 |
+| rsyslog 8.2302 | octet-counted | mutual TLS | 5/5 |
+| syslog-ng 4.12 `network()` | traditional (LF) | plaintext | 5/5 |
+| syslog-ng 4.12 `syslog()` | octet-counted | plaintext | 5/5 |
+| syslog-ng 4.12 `syslog()` | octet-counted | TLS, `peer-verify(required-trusted)` | 5/5 |
+| syslog-ng 4.12 `syslog()` | octet-counted | mutual TLS | 5/5 |
+| raw frames | both | plaintext and TLS | 5/5 |
+
+The listener logged `Detected non-transparent framing` for the LF cells and
+`Detected octet-counting framing` for the others, so auto-detection was doing the work
+rather than both cells happening to land on one default.
+
+Mutual TLS was checked against `tcp-tls-client-auth="require"` rather than only `optional`:
+rsyslog with a client certificate delivered 5, and the same rsyslog without one delivered 0.
+Under `optional` both would have passed and proved nothing.
 
 `run-matrix.sh` appends a table to `results.md` on each run.
