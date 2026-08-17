@@ -80,6 +80,10 @@ The listener logged `Detected non-transparent framing` for the LF cells and
 `Detected octet-counting framing` for the others, so auto-detection was doing the work
 rather than both cells happening to land on one default.
 
+The same cells pass through a Minion, with both daemons and both framings, reaching the core
+over the sink. Those events are attributed to the Minion's `systemid` and location in the
+`events` table rather than to the core, which is what proves they actually took that path.
+
 Mutual TLS was checked against `tcp-tls-client-auth="require"` rather than only `optional`:
 rsyslog with a client certificate delivered 5, and the same rsyslog without one delivered 0.
 Under `optional` both would have passed and proved nothing.

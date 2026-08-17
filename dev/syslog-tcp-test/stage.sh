@@ -92,6 +92,26 @@ sed -e "s|syslog-tcp-port=\"${ONMS_SYSLOG_TCP}\"|syslog-tcp-port=\"${ONMS_SYSLOG
 
 cp core/etc/syslogd-configuration.xml.plain core/etc/syslogd-configuration.xml
 
+# The Minion reaches the core over ActiveMQ, and the shipped broker config has only the
+# vm:// connector, so the openwire TCP one has to be uncommented or the Minion sits in a
+# "Failed to connect ... Connection refused" retry loop with no other clue.
+echo "==> enabling the openwire transport connector"
+python3 - core/etc/opennms-activemq.xml <<'ACTIVEMQ'
+import sys
+path = sys.argv[1]
+with open(path) as fh:
+    xml = fh.read()
+commented = '<!-- <transportConnector name="openwire" uri="tcp://0.0.0.0:61616?useJmx=false&amp;maximumConnections=1000&amp;wireformat.maxFrameSize=104857600"/> -->'
+enabled = '<transportConnector name="openwire" uri="tcp://0.0.0.0:61616?useJmx=false&amp;maximumConnections=1000&amp;wireformat.maxFrameSize=104857600"/>'
+if commented in xml:
+    xml = xml.replace(commented, enabled, 1)
+    with open(path, 'w') as fh:
+        fh.write(xml)
+    print("openwire connector enabled")
+else:
+    print("openwire connector already enabled or not found")
+ACTIVEMQ
+
 echo "==> staging minion"
 rm -rf minion
 mkdir -p minion
