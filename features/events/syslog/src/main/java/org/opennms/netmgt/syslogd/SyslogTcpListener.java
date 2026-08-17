@@ -138,6 +138,13 @@ public class SyslogTcpListener {
                     .childHandler(new ChannelInitializer<SocketChannel>() {
                         @Override
                         protected void initChannel(final SocketChannel ch) {
+                            // Channels still closing are counted, because they are only
+                            // removed from the group once their close completes. A sender
+                            // that opens a connection per message can therefore be refused
+                            // below its apparent concurrency: 500 sequential connections in
+                            // 0.3s exceeded a limit of 256. Raising the limit is the answer,
+                            // not tightening the accounting, since those channels do still
+                            // hold resources.
                             if (m_channels.size() >= m_config.getMaxConnections()) {
                                 // Logged at debug because a client that retries in a loop
                                 // would otherwise fill the log faster than it sends syslog.

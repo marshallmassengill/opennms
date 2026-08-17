@@ -40,9 +40,13 @@ The `tcp-framing` attribute selects between them.
 The default, `auto`, reads the framing from the first message of each connection and then keeps it for the rest of that connection.
 Setting it to `octet-counting` or `non-transparent` may help if a sender is inconsistent, though it will then reject anything that arrives in the other framing.
 
-A framing mismatch tends to show up in one of two ways.
-Under `non-transparent` against an octet-counting sender, the length prefix appears at the start of the event body.
-Under `octet-counting` against a newline-delimited sender, the connection is dropped with a message in `syslogd.log`.
+A framing mismatch shows up differently depending on which way round it is.
+
+Under `octet-counting` against a newline-delimited sender, the first byte is not a digit, so the connection is dropped and the reason is logged in `syslogd.log`.
+
+Under `non-transparent` against an octet-counting sender, the symptom depends on whether the sender's messages happen to contain newlines.
+Octet-counted frames normally do not, in which case the listener never sees a message boundary: nothing arrives at all, and the connection is eventually dropped once the buffered stream passes `tcp-max-message-size`.
+If the messages do contain newlines, events arrive instead with the length prefix at the front of the body.
 
 [caption=]
 .Optional TCP attributes
@@ -65,6 +69,8 @@ A sender that exceeds it has its connection closed, since the position of the ne
 
 | tcp-max-connections
 | Largest number of connections accepted at once.
+Connections that are still closing count towards it, so a sender that opens a fresh connection per message can be refused well below its apparent concurrency; refusals are logged at debug level.
+A sender that holds one connection open avoids this entirely.
 | 1024
 
 | tcp-idle-timeout

@@ -47,6 +47,22 @@ The sustained-load run is the only check that exercises the `setAutoRead(false)`
 
 The churn run exists because `SyslogSinkModule` keys its batches on the source address including the ephemeral port, so every short-lived connection forms its own batch. It reports how long the connections took so the cost is recorded rather than assumed.
 
+It also asserts that delivered plus refused equals sent, rather than that everything was delivered. The listener counts connections that are still closing towards `tcp-max-connections`, so 500 sequential connections in 0.3s are refused partway through at a limit of 256: the run measured 285 delivered and 215 refused. Nothing was lost, and raising the limit delivers all 500, but a sender that reconnects per message needs that limit set with this in mind.
+
+## Extra runs
+
+All pass against a real instance:
+
+| Check | Result |
+| --- | --- |
+| 20000 messages on one long-lived connection | 20000 delivered, no loss |
+| 500 connections in 0.3s | 285 delivered, 215 refused by the limit, none lost |
+| UDP and TCP at the same time | both deliver |
+| `reloadDaemonConfig` | both listeners rebind |
+| framing pinned to the wrong one | delivers nothing rather than corrupt events |
+| frame past `tcp-max-message-size` | connection closed, 2 log lines, no flooding |
+| unreadable TLS certificate path | listener refuses to start, port stays closed |
+
 ## Senders
 
 `send.sh` runs the daemons as relays: they accept messages on a local TCP port and forward
