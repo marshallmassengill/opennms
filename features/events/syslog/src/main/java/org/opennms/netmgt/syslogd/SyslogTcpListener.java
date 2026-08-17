@@ -25,10 +25,12 @@ import java.net.InetSocketAddress;
 import java.util.ArrayDeque;
 import java.util.Objects;
 import java.util.Queue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import org.opennms.core.concurrent.LogPreservingThreadFactory;
 import org.opennms.core.ipc.sink.api.AsyncDispatcher;
@@ -74,6 +76,8 @@ public class SyslogTcpListener {
 
     private static final int SHUTDOWN_TIMEOUT_SECONDS = 15;
 
+    private static final long DEFAULT_DISPATCH_TIMEOUT_MS = 30_000;
+
     private final SyslogTcpConfig m_config;
 
     private final AsyncDispatcher<SyslogConnection> m_dispatcher;
@@ -96,9 +100,16 @@ public class SyslogTcpListener {
      */
     private ExecutorService m_dispatchPool;
 
+    /** Overridden only by tests, which cannot afford to wait out the real timeout. */
+    private long m_dispatchTimeoutMs = DEFAULT_DISPATCH_TIMEOUT_MS;
+
     public SyslogTcpListener(final SyslogTcpConfig config, final AsyncDispatcher<SyslogConnection> dispatcher) {
         m_config = Objects.requireNonNull(config);
         m_dispatcher = Objects.requireNonNull(dispatcher);
+    }
+
+    void setDispatchTimeoutMs(final long dispatchTimeoutMs) {
+        m_dispatchTimeoutMs = dispatchTimeoutMs;
     }
 
     public boolean isStarted() {
@@ -241,6 +252,13 @@ public class SyslogTcpListener {
 
         private boolean dispatchInFlight;
 
+        /**
+         * Cleared for the rest of the connection once the sink stops confirming dispatches,
+         * which is the only way it stops being able to keep this connection's messages in
+         * order. Written and read from the dispatch pool, hence volatile.
+         */
+        private volatile boolean waitForDispatch = true;
+
         @Override
         protected void channelRead0(final ChannelHandlerContext ctx, final SyslogConnection connection) {
             pending.add(connection);
@@ -264,18 +282,38 @@ public class SyslogTcpListener {
                 m_dispatchPool.execute(() -> {
                     Throwable failure = null;
                     try {
-                        // send() returning is what says the sink took the message, and that
-                        // is what reading resumes on. The future it returns is only watched
-                        // for logging: on a Minion whose configuration has been reloaded it
-                        // is sometimes completed by a previous dispatcher's drain thread and
-                        // never by this one, and gating reads on it stalled ingestion after
-                        // a single message with nothing in the log.
-                        m_dispatcher.send(next).whenComplete((result, ex) -> {
-                            if (ex != null) {
-                                LOG.warn("Syslog message from {} failed after the sink accepted it",
-                                        next.getSource(), ex);
+                        // Blocking here is the point of this pool: send() blocks while the
+                        // sink queue is full, which is backpressure, and blocking an event
+                        // loop for it would stall every other connection on that worker.
+                        final CompletableFuture<?> dispatched = m_dispatcher.send(next);
+
+                        // Waiting for the dispatch, not just the enqueue, is what keeps a
+                        // connection's messages in order: the sink drains its queue with
+                        // several threads, so releasing the next message at enqueue lets
+                        // them overtake each other.
+                        //
+                        // Bounded, because the wait is not always survivable. A Minion whose
+                        // configuration had been reloaded delivered messages but never
+                        // completed their futures, and an unbounded wait stalled ingestion
+                        // after a single message. Giving up and carrying on can reorder what
+                        // follows, so it is logged rather than passed over.
+                        if (waitForDispatch) {
+                            try {
+                                dispatched.get(m_dispatchTimeoutMs, TimeUnit.MILLISECONDS);
+                            } catch (TimeoutException e) {
+                                // Stop waiting for the rest of this connection rather than
+                                // paying the timeout per message. A Minion in this state
+                                // delivered 6 of 25 within two minutes while waiting each
+                                // time, and all 25 promptly once it stopped.
+                                waitForDispatch = false;
+                                LOG.warn("The sink took a syslog message from {} but did not report it dispatched"
+                                        + " within {}ms. No longer waiting for confirmation on this connection,"
+                                        + " so its messages may reach the consumer out of order.",
+                                        next.getSource(), m_dispatchTimeoutMs);
                             }
-                        });
+                        }
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
                     } catch (Throwable e) {
                         failure = e;
                     }

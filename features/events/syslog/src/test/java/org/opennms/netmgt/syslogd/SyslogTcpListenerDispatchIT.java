@@ -147,12 +147,13 @@ public class SyslogTcpListenerDispatchIT {
     public void keepsIngestingWhenTheDispatchFutureNeverCompletes() throws Exception {
         // A Minion whose syslog configuration had been reloaded delivered the message but
         // never completed the future for it, because a previous dispatcher's drain thread
-        // completed the wrong one. Reading must not depend on that future: send() returning
-        // is what says the sink took the message.
-        final int count = 10;
+        // completed the wrong one. The wait on that future has to be bounded, or ingestion
+        // stops after a single message. The timeout is shortened here because the shipped one
+        // is thirty seconds.
+        final int count = 5;
         final RecordingDispatcher dispatcher = new RecordingDispatcher(0);
         dispatcher.setNeverCompleteFutures(true);
-        final int port = start(dispatcher);
+        final int port = start(dispatcher, 250);
 
         try (Socket socket = new Socket("127.0.0.1", port)) {
             final StringBuilder burst = new StringBuilder();
@@ -228,6 +229,11 @@ public class SyslogTcpListenerDispatchIT {
     }
 
     private int start(final AsyncDispatcher<SyslogConnection> dispatcher) throws Exception {
+        return start(dispatcher, 0);
+    }
+
+    private int start(final AsyncDispatcher<SyslogConnection> dispatcher, final long dispatchTimeoutMs)
+            throws Exception {
         final int port = findFreePort();
 
         final SyslogTcpConfig config = new SyslogTcpConfig();
@@ -236,6 +242,9 @@ public class SyslogTcpListenerDispatchIT {
         config.setFraming("non-transparent");
 
         m_listener = new SyslogTcpListener(config, dispatcher);
+        if (dispatchTimeoutMs > 0) {
+            m_listener.setDispatchTimeoutMs(dispatchTimeoutMs);
+        }
         m_listener.start();
         assertTrue("the listener did not bind", m_listener.isStarted());
         return port;
