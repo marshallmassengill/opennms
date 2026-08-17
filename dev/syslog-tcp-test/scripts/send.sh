@@ -41,7 +41,7 @@ inject() {
     for i in $(seq 1 "$COUNT"); do
         printf '<190>Mar 11 08:35:17 %shost%s 30128311: %%SEC-6-IPACCESSLOGP: list in110 denied tcp 192.168.10.100(63923) -> 192.168.11.128(1521), %s seq%s packet\n' \
             "$1" "$i" "$MARKER" "$i" \
-            | timeout 5 nc -q1 127.0.0.1 "$RELAY_PORT" || true
+            | timeout 5 nc -N 127.0.0.1 "$RELAY_PORT" || true
     done
 }
 
@@ -157,7 +157,9 @@ raw)
     done
 
     if [ "$TRANSPORT" = "plain" ]; then
-        printf '%s' "$payload" | timeout 10 nc -q1 "$HOST" "$PORT"
+        # -N and a tolerated exit status for the same reason as the TLS branch below: the
+        # listener does not close the connection, so nc's exit says nothing about delivery.
+        printf '%s' "$payload" | timeout 10 nc -N "$HOST" "$PORT" || true
     else
         CLIENT_ARGS=()
         if [ "$TRANSPORT" = "mtls" ]; then

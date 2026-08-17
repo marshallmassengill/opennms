@@ -1,80 +1,55 @@
 # Syslog over TCP: where this stands
 
-Paused 2026-08-13. Branch `syslog-tcp-ingestion`, 15 commits, pushed to `origin` (marshallmassengill/opennms). Worktree `/home/marshall/Development/opennms-worktrees/syslog-tcp`, based on `upstream/release-36.x` at 485fc29585d. Plan it was built from: repo-root `syslog-tcp-ingestion-plan.md`.
+Branch `syslog-tcp-ingestion`, based on `upstream/release-36.x` at 485fc29585d, pushed to `origin` (marshallmassengill/opennms). Worktree `/home/marshall/Development/opennms-worktrees/syslog-tcp`. Plan it was built from: repo-root `syslog-tcp-ingestion-plan.md`.
 
-## What works and is verified
+## State
 
-`mvn -o verify -pl features/events/syslog -DskipITs=false` is green: 97 unit tests (2 pre-existing skips) and every IT, including the pre-existing `SyslogdIT` 17/17, `SyslogdLoadIT`, `SyslogdImplementationsIT`, `SyslogReloadDaemonIT` and both existing blueprint ITs.
+Feature complete and verified end to end on both ingestion paths.
 
-New coverage: 25 decoder unit tests, 10 config tests, 6 TLS-context tests, 9 TCP ITs, 7 TLS ITs, 3 multi-listener ITs.
+`mvn -o verify -pl features/events/syslog -DskipITs=false` is green: 97 unit tests and 63 integration tests. Note that the DB-backed ITs need a Postgres; with the end-to-end environment up, point them at it with `-Dmock.db.url=jdbc:postgresql://localhost:5436/ -Dmock.db.adminUser=postgres -Dmock.db.adminPassword=postgres`.
 
-Verified end to end against a real OpenNMS built from this branch (`opennms-full-assembly -P dir` plus the Minion tarball, staged into `dev/syslog-tcp-test/`):
+`dev/syslog-tcp-test/scripts/run-matrix.sh` reports 20 of 20 cells passing at 25 messages each: rsyslog, syslog-ng and hand-built frames, both RFC 6587 framings, plaintext, TLS and mutual TLS, against both the core and a Minion. `extra-runs.sh` also passes throughout: 20000 messages on one connection with no loss, connection churn accounted for, both transports at once, reload, and the three failure modes.
 
-- UDP and TCP listeners both up under one Syslogd.
-- LF-framed messages over TCP: exact event count, correct bodies.
-- Octet-counted messages over TCP: exact event count, `hostname`, `severity`, `timestamp`, `process` all parsed, no leaked length prefix.
-- TLS context builds and the `reloadDaemonConfig` path picks it up on a new port.
+## The three bugs the end-to-end work found
 
-The senders used were a Python socket client, `nc`, `openssl s_client`, and Java.
+None of these were reachable from the module tests as they stood, because `MockMessageDispatcherFactory` builds a dispatcher that never blocks, always completes its futures, and hands out a fresh `MetricRegistry` per call. Each now has a regression test that fails on the code that preceded it.
 
-## The open gap
+**Two dispatchers for one sink module.** Running the TCP listener as a second `SyslogReceiver` meant two `AsyncDispatcher` instances for the same module id, and the Sink API names its metrics after that id, so the second registration threw `A metric named Syslog.queue-size already exists` and killed whichever listener lost the race, sometimes the UDP one that installs already rely on. The TCP socket is now a `SyslogTcpListener` owned by whichever receiver owns the dispatcher. `SyslogdMultiListenerIT` runs against a factory that shares one registry.
 
-**rsyslog and syslog-ng have never actually run.** They are scripted in `dev/syslog-tcp-test/scripts/send.sh` but that script is unexecuted, so the generated rsyslog and syslog-ng configs in it are unproven. This matters more than anything else outstanding, because the whole framing auto-detect design exists precisely because those two daemons disagree on defaults. Treat `send.sh` as a draft.
+**Dispatching on the Netty event loop.** `AsyncDispatcher.send()` blocks once the sink queue fills and the module asks for `blockWhenFull`, which `SyslogSinkModule` does. Calling it from `channelRead0` blocked the event loop, so a Minion ingested one message per connection and then stopped reading, silently. The dispatch runs on the listener's own pool now. `SyslogTcpListenerDispatchIT` asserts `send()` is never called from a thread named `nioEventLoopGroup`.
 
-Also unrun: `scripts/run-matrix.sh` (the 8-cell matrix across both ingestion paths), `scripts/extra-runs.sh` (sustained load, connection churn, reload, and the failure modes), and the `SyslogTcpIT` smoke test.
+**Depending on the dispatch future.** After a Minion configuration reload the sink delivers messages but completes the wrong futures, logging `No future found for message`. Reading resumed on that future, so ingestion stalled again with the message already delivered. The wait is now bounded at thirty seconds, and the first timeout turns confirmation off for the rest of that connection with a warning, because paying the timeout per message delivered only 6 of 25 in two minutes. Ordering still holds whenever the sink confirms dispatches, which is the normal case; when it stops, the log says so.
 
-## Design, and the one thing that changed mid-flight
+## Design, settled
 
-The TCP socket is **not** a `SyslogReceiver`. It is a `SyslogTcpListener` component that whichever receiver owns the sink dispatcher starts and stops.
+The TCP socket is not a `SyslogReceiver`. `SinkDispatchingSyslogReceiver` owns one dispatcher and starts a `SyslogTcpListener` when a TCP port is configured, so both existing receiver implementations get TCP without knowing about it, `Syslogd` is untouched, and a Minion configures TCP on the listener feature it already has rather than installing a second one.
 
-That was not the original shape. The first implementation ran it as a second `SyslogReceiver` under a `Syslogd` that held a list. A real instance rejected that:
+Framing is detected on the first frame of a connection and then latched. Messages from one connection are dispatched one at a time in arrival order. Reads are paused while a dispatch is outstanding, so a slow sink becomes TCP backpressure rather than unbounded buffering. A bad certificate path stops the listener rather than falling back to plaintext.
 
-```
-IllegalArgumentException: A metric named Syslog.queue-size already exists
-    at org.opennms.core.ipc.sink.common.AsyncDispatcherImpl.<init>
-```
-
-Two receivers each create a dispatcher for the same sink module, the Sink API names its metrics after the module id, and the second registration throws and kills its listener. Nondeterministic: on one start the loser was the UDP listener that installs already depend on. The ITs could not catch it because `MockMessageDispatcherFactory` returns a fresh `MetricRegistry` per call while the production factory shares one. `SyslogdMultiListenerIT` now runs against a factory that shares one registry, which is what makes it a regression test rather than a test that cannot fail.
-
-Consequences of the one-receiver shape: `Syslogd` is untouched, both existing receiver implementations get TCP without knowing about it, and on a Minion TCP is configuration on the listener feature already installed rather than a second feature that would have collided the same way inside one Karaf.
-
-Deliberate and settled: framing is auto-detected on the first frame of a connection then latched; messages from one connection are dispatched one at a time in arrival order; reads are switched off while a dispatch is outstanding so a full sink queue never blocks a Netty worker; a bad certificate path stops the listener rather than falling back to plaintext.
-
-One Syslogd runs one TCP listener, so plaintext and TLS cannot be reachable at once. That is why the verification matrix runs in two passes with a reload between, and it is recorded in the docs.
+One Syslogd runs one TCP listener, so plaintext and TLS cannot both be reachable. The verification matrix therefore runs in two passes with a reload between.
 
 ## Config surface
 
-Core, `etc/syslogd-configuration.xml`: `syslog-tcp-port` (unset means off), `tcp-listen-address`, `tcp-framing` (`auto`|`octet-counting`|`non-transparent`), `tcp-max-message-size`, `tcp-max-connections`, `tcp-idle-timeout`, `tcp-tls-enabled`, `tcp-tls-cert-filepath`, `tcp-tls-private-key-filepath`, `tcp-tls-trust-cert-filepath`, `tcp-tls-client-auth` (`none`|`optional`|`require`). The XSD `syslog.xsd` was updated; the plan wrongly claimed there was none.
+Core, `etc/syslogd-configuration.xml`: `syslog-tcp-port` (unset means off), `tcp-listen-address`, `tcp-framing` (`auto`|`octet-counting`|`non-transparent`), `tcp-max-message-size`, `tcp-max-connections`, `tcp-idle-timeout`, `tcp-tls-enabled`, `tcp-tls-cert-filepath`, `tcp-tls-private-key-filepath`, `tcp-tls-trust-cert-filepath`, `tcp-tls-client-auth` (`none`|`optional`|`require`). `syslog.xsd` was updated; the plan wrongly claimed there was no XSD.
 
-Minion, `etc/org.opennms.netmgt.syslog.cfg`: the same as `syslog.tcp.*` keys, on the existing listener feature. `syslog.tcp.listen.port` defaults to `0`, which means off, because the .cfg always carries the key.
+Minion, `etc/org.opennms.netmgt.syslog.cfg`: the same as `syslog.tcp.*` keys on the existing listener feature, with `syslog.tcp.listen.port` defaulting to `0`, meaning off, because the .cfg always carries the key.
 
 ## Environment notes worth keeping
 
-The `dir` assembly resolves helpers through the absolute paths it was built at, so `start-core.sh` symlinks those to the mount. jrrd2 comes from the host (`/usr/lib/jni`, `/usr/share/java`) because the `dir` profile does not ship it. Syslogd is enabled with `CORE_SERVICE_SYSLOGD_ENABLED=true`, not by editing service-configuration.xml. `bin/install` runs as root and leaves `data/tmp` root-owned, which hangs the boot at Eventd with only a repeating kahadb lock line; `start-core.sh` now chowns after install.
+Documented in `dev/syslog-tcp-test/README.md` and encoded in the scripts, but the ones that cost the most time:
 
-The environment's UDP port was moved from 10514 to 10516. 10514 is `SyslogClient.PORT` in the syslog module's own tests, and publishing it from the container made four unrelated ITs fail with "Address already in use" whenever the environment was up. That cost about an hour of chasing a phantom regression, so do not move it back.
+Never publish container port 10514: it is `SyslogClient.PORT` in this module's own ITs, and four unrelated ITs then fail with "Address already in use". The environment uses 10516.
 
-`core/`, `minion/` and `certs/` under `dev/syslog-tcp-test/` are gitignored: staged from built assemblies and generated. An earlier commit swallowed 10,986 of those files and was rewritten out.
+Never probe a published port from the host to decide whether something is listening. docker-proxy answers either way. Two checks reported passes as failures that way, and `set-mode.sh` once let the matrix start its TLS pass while the Minion was six minutes from applying the config.
 
-## Picking it back up
+The Minion must not start before the core's ActiveMQ broker accepts connections, or its sink Camel context stays stopped and every dispatch fails with `CamelContext is stopped` while the syslog listener still binds and decodes correctly. `start-minion.sh` waits for the broker. The shipped broker config only has the vm:// connector, so `stage.sh` uncomments the openwire one.
 
-The containers are still running. `docker compose stop` in `dev/syslog-tcp-test/` preserves everything; `docker compose down` deletes the Postgres container and the schema has to be reinstalled with `docker exec syslog-tcp-core /opt/opennms/bin/install -dis`.
+The `dir` assembly resolves helpers through the absolute paths it was built at, jrrd2 comes from the host, `bin/install` leaves `data/tmp` root-owned which hangs the boot at Eventd, and Syslogd is enabled with `CORE_SERVICE_SYSLOGD_ENABLED`. All handled by `start-core.sh` and `stage.sh`.
 
-The immediate next step, interrupted mid-command, is redeploying the post-refactor jars into the running install, because it still has pre-refactor ones and therefore no TCP listener:
+Interrupted test runs leave an OpenNMS JVM holding eventd's port 5817, which makes every DB-backed IT fail with "Failed to load ApplicationContext". Check `ss -tlnp | grep 5817` before believing such a failure.
 
-```sh
-cd /home/marshall/Development/opennms-worktrees/syslog-tcp
-D=dev/syslog-tcp-test/core
-cp features/events/syslog/target/org.opennms.features.events.syslog-36.0.4-SNAPSHOT.jar $D/lib/
-cp opennms-config-model/target/opennms-config-model-36.0.4-SNAPSHOT.jar $D/lib/
-cp features/events/syslog/target/org.opennms.features.events.syslog-36.0.4-SNAPSHOT.jar \
-   $D/system/org/opennms/features/events/org.opennms.features.events.syslog/36.0.4-SNAPSHOT/
-find $D/system -path "*config-model*" -name "*.jar" \
-   -exec cp opennms-config-model/target/opennms-config-model-36.0.4-SNAPSHOT.jar {} \;
-```
+## Remaining
 
-Then restart the core and confirm `Listening for syslog messages over TCP` appears in `core/logs/syslogd.log`. A cleaner alternative is to rebuild the assembly and re-run `stage.sh`, which avoids hand-patching an install.
+The `SyslogTcpIT` smoke test under `smoke-test/` compiles but has not been run; it needs the containerised smoke stack rather than this environment.
 
-After that, in order: get rsyslog working through `send.sh` and check the count, then syslog-ng, then the matrix, then `extra-runs.sh`, then the `SyslogTcpIT` smoke test.
-
-Note that `core/logs/syslogd.log` had grown to 96MB from repeated DEBUG restarts, so truncate it before reading.
+Rebuilding the Minion needs `features/minion/repository` rebuilt first and the assembly built with `clean`, or the tarball ships a stale blueprint from a cached staging directory.

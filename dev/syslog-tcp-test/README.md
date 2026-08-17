@@ -100,6 +100,21 @@ The same cells pass through a Minion, with both daemons and both framings, reach
 over the sink. Those events are attributed to the Minion's `systemid` and location in the
 `events` table rather than to the core, which is what proves they actually took that path.
 
+`run-matrix.sh` covering all twenty cells, both ingestion paths, plaintext, TLS and mutual
+TLS, currently reports 20 passed, 0 failed at 25 messages per cell.
+
+Two listener bugs were found here that no unit or integration test had caught, because both
+needed a sink that is slower or less well behaved than the in-process mock:
+
+* The dispatch ran on the Netty event loop, where `AsyncDispatcher.send()` blocks once the
+  sink queue fills. One message per connection was ingested and then the worker stopped
+  reading, silently.
+* Reading resumed on the dispatch future rather than on `send()` returning. After a Minion
+  configuration reload the sink completes the wrong future, so ingestion stalled again with
+  the message already delivered.
+
+Both now have regression tests in `SyslogTcpListenerDispatchIT` that fail on the old code.
+
 Mutual TLS was checked against `tcp-tls-client-auth="require"` rather than only `optional`:
 rsyslog with a client certificate delivered 5, and the same rsyslog without one delivered 0.
 Under `optional` both would have passed and proved nothing.
