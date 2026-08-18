@@ -262,6 +262,13 @@ export const useTopologyStore = defineStore('topologyStore', () => {
   }
 
   /**
+   * Bumped every time refreshStatus completes. Anything else built on the same
+   * alarm data watches this instead of running a timer of its own, so the
+   * canvas and the tables cannot drift apart or disagree about what is current.
+   */
+  const statusRevision = ref<number>(0)
+
+  /**
    * Fetch current severities for the placed nodes that map to real
    * OnmsNode ids. Placed-node palette ids are the node ids; non-numeric
    * ids (mock/decorative nodes) are skipped.
@@ -270,11 +277,8 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     const ids = Array.from(placedNodeIds.value)
       .map(id => Number(id))
       .filter(n => Number.isInteger(n))
-    if (ids.length === 0) {
-      severities.value = {}
-      return
-    }
-    severities.value = await getNodeSeverities(ids)
+    severities.value = ids.length === 0 ? {} : await getNodeSeverities(ids)
+    statusRevision.value++
   }
 
   /**
@@ -628,6 +632,7 @@ export const useTopologyStore = defineStore('topologyStore', () => {
     isEditMode,
     isLinkDrawMode,
     isSaving,
+    statusRevision,
     graphContainers,
     topologySources,
     loadGraphContainers,

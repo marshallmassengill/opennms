@@ -199,7 +199,6 @@ interface NodeRow {
   nodeId: number
   label: string
   location: string
-  severity: string
 }
 interface AlarmRow {
   id: number
@@ -291,7 +290,12 @@ const serviceCountFor = (applicationId: number): number => {
 const matchesSelection = (nodeId: number | undefined): boolean =>
   !isFiltered.value || (nodeId != null && selectedNodeIds.value.includes(nodeId))
 
-const filteredNodeRows = computed(() => nodeRows.value.filter(r => matchesSelection(r.nodeId)))
+const filteredNodeRows = computed(() => nodeRows.value
+  .filter(r => matchesSelection(r.nodeId))
+  // Severity is attached here rather than at fetch time: captured, it froze at
+  // whatever the store held when the rows were loaded, so the column contradicted
+  // the canvas after every status poll.
+  .map(r => ({ ...r, severity: store.severities[r.nodeId] ?? 'NORMAL' })))
 const filteredAlarmRows = computed(() => alarmRows.value.filter(r => matchesSelection(r.nodeId)))
 const filteredPerspectiveRows = computed(() =>
   perspectiveRows.value.filter(r => matchesSelection(r.nodeId))
@@ -342,8 +346,7 @@ const fetchData = async (): Promise<void> => {
             id: `placed-${nid}`,
             nodeId: nid,
             label: n.label ?? String(nid),
-            location: n.location ?? '',
-            severity: store.severities[nid] ?? 'NORMAL'
+            location: n.location ?? ''
           }
         })
         : []
@@ -363,13 +366,18 @@ const fetchData = async (): Promise<void> => {
   }
 }
 
-// Fetch when first expanded, and whenever the placed-node set or the loaded
-// source changes while open.
-watch([collapsed, placedRealIds, isApplicationGraph], ([isCollapsed]) => {
-  if (!isCollapsed) {
-    void fetchData()
+// Fetch when first expanded, whenever the placed-node set or the loaded source
+// changes, and on every status refresh. That last one is what keeps the tables
+// honest: alarms were fetched once and then left, so the canvas could show a node
+// as newly critical while the Alarms tab beside it still did not list the alarm.
+watch(
+  [collapsed, placedRealIds, isApplicationGraph, () => store.statusRevision],
+  ([isCollapsed]) => {
+    if (!isCollapsed) {
+      void fetchData()
+    }
   }
-})
+)
 
 // Never leave a tab selected that is no longer rendered, whichever way the set
 // of tabs changed.

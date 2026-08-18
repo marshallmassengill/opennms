@@ -25,6 +25,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import TopologyExplorePanel from '@/components/Topology/TopologyExplorePanel.vue'
+import { getAlarms } from '@/services/alarmService'
 import { useTopologyStore } from '@/stores/topologyStore'
 
 // vi.mock is hoisted above the module body, so the fixtures live inside the
@@ -94,6 +95,51 @@ const tabLabels = (wrapper: Awaited<ReturnType<typeof mountPanel>>['wrapper']) =
 
 const rowTexts = (wrapper: Awaited<ReturnType<typeof mountPanel>>['wrapper']) =>
   wrapper.findAll('tbody tr').map(r => r.text())
+
+describe('TopologyExplorePanel staying current', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  // The column used to copy the severity at fetch time, so it froze while the
+  // canvas recoloured on every status poll.
+  it('reads the severity column from the store rather than freezing it', async () => {
+    const { wrapper, store } = await mountPanel()
+    const nodesTab = wrapper.findAll('.te-tabs button').find(b => b.text().includes('Nodes'))!
+    await nodesTab.trigger('click')
+    expect(rowTexts(wrapper).join(' ')).not.toContain('CRITICAL')
+
+    // A status poll landing, with no refetch of the rows themselves.
+    store.severities = { 7: 'CRITICAL' } as never
+    await flushPromises()
+
+    expect(rowTexts(wrapper).join(' ')).toContain('CRITICAL')
+  })
+
+  // Alarms were fetched once and left, so the canvas could show a node as newly
+  // critical while the Alarms tab beside it still did not list the alarm.
+  it('refetches when the status poll ticks', async () => {
+    const { store } = await mountPanel()
+    const before = vi.mocked(getAlarms).mock.calls.length
+
+    store.statusRevision = store.statusRevision + 1
+    await flushPromises()
+
+    expect(vi.mocked(getAlarms).mock.calls.length).toBeGreaterThan(before)
+  })
+
+  it('does not refetch on a status tick while collapsed', async () => {
+    const { wrapper, store } = await mountPanel()
+    await wrapper.find('.te-toggle').trigger('click')
+    await flushPromises()
+    const before = vi.mocked(getAlarms).mock.calls.length
+
+    store.statusRevision = store.statusRevision + 1
+    await flushPromises()
+
+    expect(vi.mocked(getAlarms).mock.calls.length).toBe(before)
+  })
+})
 
 describe('TopologyExplorePanel selection filtering', () => {
   afterEach(() => {
