@@ -2335,6 +2335,14 @@ const onShapeDrawEnd = () => {
 }
 
 /**
+ * Hover/selection halo fill. Slightly translucent so the halo reads as sitting
+ * over the map rather than punching a hole in it: links and nodes it overlaps
+ * stay faintly visible.
+ */
+const HOVER_HALO_LIGHT = 'rgba(255, 255, 255, 0.85)'
+const HOVER_HALO_DARK = 'rgba(38, 44, 69, 0.85)'
+
+/**
  * Themed replacement for sigma's default node hover/selection renderer.
  * The stock drawDiscNodeHover hardcodes a WHITE halo box behind the label;
  * in dark mode our label default is near-white, so hovered and selected
@@ -2351,11 +2359,13 @@ const drawThemedNodeHover = (
   context.font = `${weight} ${size}px ${font}`
 
   const dark = appStore.theme === 'open-dark'
-  context.fillStyle = dark ? '#262c45' : '#FFF'
+  context.fillStyle = dark ? HOVER_HALO_DARK : HOVER_HALO_LIGHT
   context.shadowOffsetX = 0
   context.shadowOffsetY = 0
-  context.shadowBlur = 8
-  context.shadowColor = '#000'
+  // Softer than sigma's default 8: the halo is translucent now, and a heavy
+  // blur reads through it as a grey smudge rather than a shadow.
+  context.shadowBlur = 5
+  context.shadowColor = 'rgba(0, 0, 0, 0.35)'
 
   const PADDING = 2
   if (typeof data.label === 'string') {
