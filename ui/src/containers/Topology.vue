@@ -228,8 +228,8 @@ License.
       />
     </div>
 
-    <!-- Bottom browse panel: Nodes / Alarms for the view, tied to selection. -->
-    <TopologyBrowsePanel @select="onBrowseSelect" />
+    <!-- Bottom Explore panel: tables for the view, tied to selection. -->
+    <TopologyExplorePanel @select="onExploreSelect" />
 
     <OnmsContextMenu ref="nodeMenuRef" :items="nodeMenuItems" />
     <OnmsConfirmationDialog
@@ -268,7 +268,7 @@ import { useRoute, useRouter } from 'vue-router'
 import TopologyCanvas from '@/components/Topology/TopologyCanvas.vue'
 import TopologyPalette from '@/components/Topology/TopologyPalette.vue'
 import TopologyInspector from '@/components/Topology/TopologyInspector.vue'
-import TopologyBrowsePanel from '@/components/Topology/TopologyBrowsePanel.vue'
+import TopologyExplorePanel from '@/components/Topology/TopologyExplorePanel.vue'
 import { useTopologyStore } from '@/stores/topologyStore'
 import {
   CUSTOM_SOURCE_SLUG,
@@ -556,8 +556,8 @@ const nodeSizeModel = computed<number>({
   set: n => store.setNodeSize(n)
 })
 
-// Browse-panel row -> select that node on the canvas (or clear to "show all").
-const onBrowseSelect = (placedId: string | null) => {
+// Explore-panel row -> select that node on the canvas (or clear to "show all").
+const onExploreSelect = (placedId: string | null) => {
   if (placedId) {
     store.selectOnly(placedId)
   } else {

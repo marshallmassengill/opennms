@@ -87,7 +87,7 @@ vi.mock('@/services/topologyService', () => ({
 const stubs = {
   TopologyPalette: { template: '<div />' },
   TopologyInspector: { template: '<div />' },
-  TopologyBrowsePanel: { template: '<div />' }
+  TopologyExplorePanel: { template: '<div />' }
 }
 
 const currentView = { id: 'v1', name: 'Core switches' }

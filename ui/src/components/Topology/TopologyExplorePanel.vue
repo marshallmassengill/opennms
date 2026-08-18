@@ -1,16 +1,21 @@
 <!--
-  Bottom browse panel: Nodes / Alarms tables for the nodes in the current view,
-  tied to the canvas selection (legacy AlarmTable/NodeTable). Collapsible.
-  Selecting a row selects that node on the canvas; selecting a single node on
-  the canvas filters the tables to it.
+  Bottom Explore panel: collapsible tables of what is in the current view,
+  filtered by the canvas selection. Alarms and Nodes always (the legacy map's
+  AlarmTable/NodeTable), plus Applications and Perspective Outages while the
+  Application graph is the loaded source.
+
+  Selection runs both ways: clicking a row selects that node on the canvas, and
+  selecting on the canvas filters the tables. Selecting several nodes filters to
+  all of them; selecting a vertex that is not a node itself (an application)
+  filters to what hangs off it.
 -->
 <template>
-  <section class="topology-browse" :class="{ collapsed }">
-    <header class="tb-header">
-      <button class="tb-toggle" type="button" @click="collapsed = !collapsed">
-        <span class="tb-caret">{{ collapsed ? '▸' : '▾' }}</span> Browse
+  <section class="topology-explore" :class="{ collapsed }">
+    <header class="te-header">
+      <button class="te-toggle" type="button" @click="collapsed = !collapsed">
+        <span class="te-caret">{{ collapsed ? '▸' : '▾' }}</span> Explore
       </button>
-      <div v-if="!collapsed" class="tb-tabs">
+      <div v-if="!collapsed" class="te-tabs">
         <button
           v-for="t in tabs"
           :key="t.key"
@@ -21,15 +26,15 @@
           {{ t.label }} ({{ t.count }})
         </button>
       </div>
-      <span v-if="!collapsed && (isFiltered || selectedApplicationIds.length > 0)" class="tb-filter">
+      <span v-if="!collapsed && (isFiltered || selectedApplicationIds.length > 0)" class="te-filter">
         filtered to selection
         <a href="#" @click.prevent="$emit('select', null)">show all</a>
       </span>
     </header>
 
-    <div v-if="!collapsed" class="tb-body">
-      <p v-if="loading" class="tb-empty">Loading…</p>
-      <p v-else-if="nodeRows.length === 0 && tab !== 'applications'" class="tb-empty">
+    <div v-if="!collapsed" class="te-body">
+      <p v-if="loading" class="te-empty">Loading…</p>
+      <p v-else-if="nodeRows.length === 0 && tab !== 'applications'" class="te-empty">
         No nodes in this view.
       </p>
 
@@ -45,7 +50,7 @@
       >
         <OnmsColumn header="" :style="{ width: '2rem' }">
           <template #body="{ data }">
-            <span class="tb-dot" :style="{ background: severityColor(data.severity) }" />
+            <span class="te-dot" :style="{ background: severityColor(data.severity) }" />
           </template>
         </OnmsColumn>
         <OnmsColumn field="label" header="Node" sortable />
@@ -102,26 +107,26 @@
       >
         <OnmsColumn header="" :style="{ width: '2rem' }">
           <template #body="{ data }">
-            <span class="tb-dot" :style="{ background: severityColor(data.severity) }" />
+            <span class="te-dot" :style="{ background: severityColor(data.severity) }" />
           </template>
         </OnmsColumn>
         <OnmsColumn field="nodeLabel" header="Node" sortable />
         <OnmsColumn field="logMessage" header="Message">
           <template #body="{ data }">
-            <span class="tb-msg" v-text="stripHtml(data.logMessage)" />
+            <span class="te-msg" v-text="stripHtml(data.logMessage)" />
           </template>
         </OnmsColumn>
         <OnmsColumn field="lastEventTime" header="Last event" sortable>
           <template #body="{ data }">{{ formatTime(data.lastEventTime) }}</template>
         </OnmsColumn>
       </OnmsTable>
-      <p v-if="!loading && tab === 'alarms' && filteredAlarmRows.length === 0" class="tb-empty">
+      <p v-if="!loading && tab === 'alarms' && filteredAlarmRows.length === 0" class="te-empty">
         No alarms for these nodes.
       </p>
-      <p v-if="!loading && tab === 'applications' && filteredApplicationRows.length === 0" class="tb-empty">
+      <p v-if="!loading && tab === 'applications' && filteredApplicationRows.length === 0" class="te-empty">
         {{ applicationRows.length === 0 ? 'No applications defined.' : 'No applications match the selection.' }}
       </p>
-      <p v-if="!loading && tab === 'perspective' && filteredPerspectiveRows.length === 0" class="tb-empty">
+      <p v-if="!loading && tab === 'perspective' && filteredPerspectiveRows.length === 0" class="te-empty">
         No perspective currently reports an outage for these nodes.
       </p>
     </div>
@@ -151,8 +156,8 @@ const store = useTopologyStore()
 const collapsed = ref(true)
 // Alarms first, and active by default: it is the tab an operator opens the
 // panel for, and leaving Nodes selected would highlight the second tab.
-type BrowseTab = 'alarms' | 'nodes' | 'applications' | 'perspective'
-const tab = ref<BrowseTab>('alarms')
+type ExploreTab = 'alarms' | 'nodes' | 'applications' | 'perspective'
+const tab = ref<ExploreTab>('alarms')
 const loading = ref(false)
 
 /**
@@ -164,7 +169,7 @@ const isApplicationGraph = computed(() =>
 )
 
 interface TabDef {
-  key: BrowseTab
+  key: ExploreTab
   label: string
   /** Rows the tab will actually render, so the count tracks the selection. */
   count: number
@@ -376,7 +381,7 @@ watch(tabs, (available) => {
 </script>
 
 <style scoped>
-.topology-browse {
+.topology-explore {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
@@ -386,10 +391,10 @@ watch(tabs, (available) => {
   overflow: hidden;
   max-height: 38vh;
 }
-.topology-browse.collapsed {
+.topology-explore.collapsed {
   max-height: none;
 }
-.tb-header {
+.te-header {
   display: flex;
   align-items: center;
   gap: 1rem;
@@ -397,10 +402,10 @@ watch(tabs, (available) => {
   background: rgba(31, 95, 176, 0.10);
   border-bottom: 1px solid var(--onms-border-on-surface);
 }
-.topology-browse.collapsed .tb-header {
+.topology-explore.collapsed .te-header {
   border-bottom: none;
 }
-.tb-toggle {
+.te-toggle {
   border: none;
   background: none;
   font-weight: 600;
@@ -408,15 +413,15 @@ watch(tabs, (available) => {
   cursor: pointer;
   color: var(--onms-primary-text-on-surface);
 }
-.tb-caret {
+.te-caret {
   display: inline-block;
   width: 1em;
 }
-.tb-tabs {
+.te-tabs {
   display: flex;
   gap: 0.25rem;
 }
-.tb-tabs button {
+.te-tabs button {
   border: 1px solid transparent;
   background: none;
   padding: 0.2rem 0.6rem;
@@ -425,35 +430,35 @@ watch(tabs, (available) => {
   font-size: 0.85rem;
   color: var(--onms-primary-text-on-surface);
 }
-.tb-tabs button.active {
+.te-tabs button.active {
   background: rgba(31, 95, 176, 0.10);
   border-color: var(--onms-border-on-surface);
   color: #1f5fb0;
   font-weight: 600;
 }
-.tb-filter {
+.te-filter {
   margin-left: auto;
   font-size: 0.8rem;
   color: var(--onms-secondary-text-on-surface);
 }
-.tb-body {
+.te-body {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
   padding: 0.25rem;
 }
-.tb-empty {
+.te-empty {
   padding: 0.75rem;
   color: var(--onms-secondary-text-on-surface);
   font-size: 0.85rem;
 }
-.tb-dot {
+.te-dot {
   display: inline-block;
   width: 10px;
   height: 10px;
   border-radius: 50%;
 }
-.tb-msg {
+.te-msg {
   display: inline-block;
   max-width: 48ch;
   overflow: hidden;

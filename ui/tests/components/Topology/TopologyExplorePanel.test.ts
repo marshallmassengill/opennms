@@ -24,7 +24,7 @@ import { createTestingPinia } from '@pinia/testing'
 import { flushPromises, mount } from '@vue/test-utils'
 import PrimeVue from 'primevue/config'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import TopologyBrowsePanel from '@/components/Topology/TopologyBrowsePanel.vue'
+import TopologyExplorePanel from '@/components/Topology/TopologyExplorePanel.vue'
 import { useTopologyStore } from '@/stores/topologyStore'
 
 // vi.mock is hoisted above the module body, so the fixtures live inside the
@@ -67,7 +67,7 @@ vi.mock('@/services/topologyService', async importOriginal => ({
 }))
 
 const mountPanel = async () => {
-  const wrapper = mount(TopologyBrowsePanel, {
+  const wrapper = mount(TopologyExplorePanel, {
     global: { plugins: [PrimeVue, createTestingPinia({ stubActions: false })] }
   })
   const store = useTopologyStore()
@@ -84,18 +84,18 @@ const mountPanel = async () => {
   store.placedNodeIds = new Set(['7', '8', '9']) as never
   await flushPromises()
   // The panel opens collapsed, and the tabs and the fetch both hang off that.
-  await wrapper.find('.tb-toggle').trigger('click')
+  await wrapper.find('.te-toggle').trigger('click')
   await flushPromises()
   return { wrapper, store }
 }
 
 const tabLabels = (wrapper: Awaited<ReturnType<typeof mountPanel>>['wrapper']) =>
-  wrapper.findAll('.tb-tabs button').map(b => b.text().replace(/\s*\(\d+\)$/, ''))
+  wrapper.findAll('.te-tabs button').map(b => b.text().replace(/\s*\(\d+\)$/, ''))
 
 const rowTexts = (wrapper: Awaited<ReturnType<typeof mountPanel>>['wrapper']) =>
   wrapper.findAll('tbody tr').map(r => r.text())
 
-describe('TopologyBrowsePanel selection filtering', () => {
+describe('TopologyExplorePanel selection filtering', () => {
   afterEach(() => {
     vi.restoreAllMocks()
   })
@@ -155,7 +155,7 @@ describe('TopologyBrowsePanel selection filtering', () => {
   })
 })
 
-describe('TopologyBrowsePanel application tabs', () => {
+describe('TopologyExplorePanel application tabs', () => {
   afterEach(() => {
     vi.restoreAllMocks()
   })
@@ -187,7 +187,7 @@ describe('TopologyBrowsePanel application tabs', () => {
 
   it('lists applications with their perspectives and service count', async () => {
     const { wrapper } = await withApplicationGraph()
-    const appTab = wrapper.findAll('.tb-tabs button').find(b => b.text().includes('Applications'))!
+    const appTab = wrapper.findAll('.te-tabs button').find(b => b.text().includes('Applications'))!
     await appTab.trigger('click')
 
     const rows = rowTexts(wrapper)
@@ -201,7 +201,7 @@ describe('TopologyBrowsePanel application tabs', () => {
 
   it('lists perspective outages and filters them by selection', async () => {
     const { wrapper, store } = await withApplicationGraph()
-    const outageTab = wrapper.findAll('.tb-tabs button').find(b => b.text().includes('Perspective Outages'))!
+    const outageTab = wrapper.findAll('.te-tabs button').find(b => b.text().includes('Perspective Outages'))!
     await outageTab.trigger('click')
     expect(rowTexts(wrapper)).toHaveLength(3)
 
@@ -216,7 +216,7 @@ describe('TopologyBrowsePanel application tabs', () => {
   // The label counts used to show the unfiltered totals, so they never moved.
   it('counts what the tab will render, not the whole set', async () => {
     const { wrapper, store } = await withApplicationGraph()
-    const counts = () => wrapper.findAll('.tb-tabs button')
+    const counts = () => wrapper.findAll('.te-tabs button')
       .map(b => Number(/\((\d+)\)$/.exec(b.text().trim())?.[1]))
 
     expect(counts()).toEqual([3, 3, 2, 3])
@@ -234,13 +234,13 @@ describe('TopologyBrowsePanel application tabs', () => {
     store.selectedIds = ['disc-Application:1'] as never
     await flushPromises()
 
-    const counts = wrapper.findAll('.tb-tabs button')
+    const counts = wrapper.findAll('.te-tabs button')
       .map(b => Number(/\((\d+)\)$/.exec(b.text().trim())?.[1]))
     // The application's one service sits on node 7, so the node-scoped tabs
     // narrow to it, and the Applications tab narrows to the application itself.
     expect(counts).toEqual([1, 1, 1, 1])
 
-    const appTab = wrapper.findAll('.tb-tabs button').find(b => b.text().includes('Applications'))!
+    const appTab = wrapper.findAll('.te-tabs button').find(b => b.text().includes('Applications'))!
     await appTab.trigger('click')
     const rows = rowTexts(wrapper)
     expect(rows).toHaveLength(1)
@@ -249,19 +249,19 @@ describe('TopologyBrowsePanel application tabs', () => {
 
   it('falls back to Alarms when the application graph goes away', async () => {
     const { wrapper, store } = await withApplicationGraph()
-    const appTab = wrapper.findAll('.tb-tabs button').find(b => b.text().includes('Applications'))!
+    const appTab = wrapper.findAll('.te-tabs button').find(b => b.text().includes('Applications'))!
     await appTab.trigger('click')
 
     store.discoveredGraph = null as never
     await flushPromises()
 
-    const active = wrapper.findAll('.tb-tabs button').filter(b => b.classes('active'))
+    const active = wrapper.findAll('.te-tabs button').filter(b => b.classes('active'))
     expect(active).toHaveLength(1)
     expect(active[0].text()).toContain('Alarms')
   })
 })
 
-describe('TopologyBrowsePanel tabs', () => {
+describe('TopologyExplorePanel tabs', () => {
   afterEach(() => {
     vi.restoreAllMocks()
   })
@@ -274,17 +274,17 @@ describe('TopologyBrowsePanel tabs', () => {
   // The first tab has to be the active one, or the panel looks broken on open.
   it('opens on Alarms', async () => {
     const { wrapper } = await mountPanel()
-    const active = wrapper.findAll('.tb-tabs button').filter(b => b.classes('active'))
+    const active = wrapper.findAll('.te-tabs button').filter(b => b.classes('active'))
     expect(active).toHaveLength(1)
     expect(active[0].text()).toContain('Alarms')
   })
 
   it('switches to Nodes when that tab is clicked', async () => {
     const { wrapper } = await mountPanel()
-    const nodesTab = wrapper.findAll('.tb-tabs button').find(b => b.text().includes('Nodes'))!
+    const nodesTab = wrapper.findAll('.te-tabs button').find(b => b.text().includes('Nodes'))!
     await nodesTab.trigger('click')
 
-    const active = wrapper.findAll('.tb-tabs button').filter(b => b.classes('active'))
+    const active = wrapper.findAll('.te-tabs button').filter(b => b.classes('active'))
     expect(active).toHaveLength(1)
     expect(active[0].text()).toContain('Nodes')
   })
