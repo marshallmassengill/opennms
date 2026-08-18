@@ -74,6 +74,19 @@ License.
 
       <!-- A placed OpenNMS node (detail is read-only; full/View only) -->
       <div v-else-if="kind === 'node' && variant === 'full'" class="ti-section">
+        <!-- What the provider called this vertex, when it is not simply the node:
+             an application's service, a GraphML element. Outside the node-detail
+             branch below, so a failed node lookup does not also lose this. -->
+        <template v-if="discoveredVertex && vertexDetail.length > 0">
+          <div class="ti-node-header">
+            <span class="ti-node-label">{{ discoveredVertex.label }}</span>
+          </div>
+          <dl class="ti-detail">
+            <template v-for="row in vertexDetail" :key="row.label">
+              <dt>{{ row.label }}</dt><dd>{{ row.value }}</dd>
+            </template>
+          </dl>
+        </template>
         <div v-if="nodeLoading" class="ti-empty">Loading node…</div>
         <template v-else-if="nodeDetail">
           <div class="ti-node-header">
@@ -100,6 +113,21 @@ License.
           </section>
         </template>
         <p v-else class="ti-empty">Node details unavailable.</p>
+      </div>
+
+      <!-- A discovered vertex that is not an OnmsNode: an application, a
+           business service, a GraphML group. The provider's own properties are
+           all the detail there is. -->
+      <div v-else-if="kind === 'vertex' && variant === 'full'" class="ti-section">
+        <div class="ti-node-header">
+          <span class="ti-node-label">{{ discoveredVertex?.label }}</span>
+        </div>
+        <dl v-if="vertexDetail.length > 0" class="ti-detail">
+          <template v-for="row in vertexDetail" :key="row.label">
+            <dt>{{ row.label }}</dt><dd>{{ row.value }}</dd>
+          </template>
+        </dl>
+        <p v-else class="ti-empty">No further detail for this element.</p>
       </div>
 
       <!-- A link between two nodes -->
@@ -468,7 +496,50 @@ const selectedId = computed<string | null>(() =>
   store.selectedIds.length === 1 ? store.selectedIds[0] : null
 )
 
-const kind = computed<'none' | 'multi' | 'label' | 'node' | 'shape' | 'link'>(() => {
+/**
+ * The selected canvas node, when it belongs to the discovered graph. This is
+ * where a provider's own vocabulary lives for a vertex that is not an OnmsNode.
+ */
+const discoveredVertex = computed(() =>
+  selectedId.value ? store.discoveredGraph?.nodes.find(n => n.id === selectedId.value) : undefined
+)
+
+/**
+ * The OnmsNode behind the selection. The canvas id encodes it for custom views
+ * and for discovered graphs with one vertex per node; where several vertices
+ * share a node (an application watching two services on one host) the id
+ * cannot, so the vertex carries it instead.
+ */
+const selectedNodeId = computed<number | null>(() => {
+  const id = selectedId.value
+  if (!id) {
+    return null
+  }
+  return nodeIdFromPlacedId(id) ?? discoveredVertex.value?.nodeId ?? null
+})
+
+// Keys arrive in the provider's vocabulary and there is no fixed set to map, so
+// they are split on camel case and sentence-cased. These two would otherwise
+// read as "Application id" and "Ip address".
+const KEY_ACRONYMS: Record<string, string> = { id: 'ID', ip: 'IP' }
+
+const humanizeKey = (key: string): string =>
+  key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .split(' ')
+    .map((word, i) => KEY_ACRONYMS[word.toLowerCase()]
+      ?? (i === 0 ? word.charAt(0).toUpperCase() + word.slice(1) : word.toLowerCase()))
+    .join(' ')
+
+/** The selected vertex's provider properties, as display rows. */
+const vertexDetail = computed<Array<{ label: string, value: string }>>(() =>
+  Object.entries(discoveredVertex.value?.properties ?? {}).map(([key, value]) => ({
+    label: humanizeKey(key),
+    value
+  }))
+)
+
+const kind = computed<'none' | 'multi' | 'label' | 'node' | 'shape' | 'vertex' | 'link'>(() => {
   if (store.selectedIds.length === 0) {
     return 'none'
   }
@@ -482,8 +553,13 @@ const kind = computed<'none' | 'multi' | 'label' | 'node' | 'shape' | 'link'>(()
   if (isShapeId(id)) {
     return 'shape'
   }
-  if (nodeIdFromPlacedId(id) !== null) {
+  if (selectedNodeId.value !== null) {
     return 'node'
+  }
+  // A discovered vertex that is not an OnmsNode at all: an application, a
+  // business service, a GraphML group. Its provider properties are the detail.
+  if (discoveredVertex.value) {
+    return 'vertex'
   }
   return 'link'
 })
@@ -522,8 +598,8 @@ watch(
   selectedId,
   async (id) => {
     infoPanelItems.value = []
-    const nid = id ? nodeIdFromPlacedId(id) : null
-    if (nid === null) {
+    const nid = selectedNodeId.value
+    if (id === null || nid === null) {
       return
     }
     infoPanelItems.value = await getNodeInfoPanel(nid)
@@ -536,7 +612,7 @@ const nodeSeverity = computed<string | undefined>(() => {
   if (!id) {
     return undefined
   }
-  const nid = nodeIdFromPlacedId(id)
+  const nid = selectedNodeId.value
   return nid !== null ? store.severities[nid] : undefined
 })
 
@@ -544,8 +620,8 @@ watch(
   selectedId,
   async (id) => {
     nodeDetail.value = null
-    const nid = id ? nodeIdFromPlacedId(id) : null
-    if (nid === null) {
+    const nid = selectedNodeId.value
+    if (id === null || nid === null) {
       return
     }
     nodeLoading.value = true
@@ -907,6 +983,12 @@ const linkLabel = computed<string>({
 
 .ti-input {
   width: 100%;
+}
+
+.ti-detail + .ti-node-header {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--onms-border-on-surface);
 }
 
 .ti-node-header {

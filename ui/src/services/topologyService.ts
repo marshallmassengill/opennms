@@ -320,7 +320,11 @@ const graphsEndpoint = 'graphs'
 interface GraphApiVertex {
   id: string
   label?: string
+  /** Providers disagree: enlinkd sends `label`, the application graph `name`. */
+  name?: string
   nodeID?: string
+  /** The application graph's node reference; bare id or foreignSource:foreignId. */
+  nodeCriteria?: string
   iconKey?: string
   tooltipText?: string
 }
@@ -345,17 +349,57 @@ interface GraphApiResponse {
 }
 
 /**
- * Canvas id for a discovered vertex. When the vertex maps to a real OnmsNode
- * we reuse the custom-view `placed-<nodeId>` convention, so discovered nodes
- * inherit severity coloring and the inspector's node detail for free. A vertex
- * without a numeric node id (e.g. a group/category vertex from another
- * provider) falls back to a `disc-` prefix so it can't collide or be mistaken
- * for a node.
+ * A vertex's OnmsNode id, if it has one. Providers disagree on the field name:
+ * enlinkd sends `nodeID`, the application graph sends `nodeCriteria`. Only a
+ * bare number is usable, since nodeCriteria may instead be
+ * `foreignSource:foreignId`.
  */
-const discoveredNodeCanvasId = (vertex: GraphApiVertex): string =>
-  vertex.nodeID != null && /^\d+$/.test(vertex.nodeID)
-    ? placedIdFor(vertex.nodeID)
+const vertexNodeId = (vertex: GraphApiVertex): number | undefined => {
+  for (const raw of [vertex.nodeID, vertex.nodeCriteria]) {
+    if (raw != null && /^\d+$/.test(raw)) {
+      return Number(raw)
+    }
+  }
+  return undefined
+}
+
+/**
+ * Canvas id for a discovered vertex. Where the vertex is the only one on its
+ * node we reuse the custom-view `placed-<nodeId>` convention, so it inherits
+ * the inspector's node detail for free. Anything else gets a `disc-` prefix:
+ * a vertex with no node id, and -- importantly -- every vertex on a node that
+ * carries more than one, which the application graph does whenever an
+ * application watches several services on the same node. Reusing the node id
+ * there would silently merge them into one canvas node.
+ */
+const discoveredNodeCanvasId = (
+  vertex: GraphApiVertex,
+  nodeIdCounts: Map<number, number>
+): string => {
+  const nodeId = vertexNodeId(vertex)
+  return nodeId !== undefined && nodeIdCounts.get(nodeId) === 1
+    ? placedIdFor(String(nodeId))
     : `disc-${vertex.id}`
+}
+
+// Fields the canvas model already carries, or that are internal plumbing; the
+// rest is provider vocabulary worth showing verbatim in the inspector.
+const MODELLED_VERTEX_FIELDS = new Set([
+  'id', 'namespace', 'label', 'name', 'nodeID', 'nodeCriteria', 'iconKey', 'tooltipText', 'x', 'y'
+])
+
+const vertexProperties = (vertex: GraphApiVertex): Record<string, string> | undefined => {
+  const out: Record<string, string> = {}
+  for (const [key, value] of Object.entries(vertex as unknown as Record<string, unknown>)) {
+    if (MODELLED_VERTEX_FIELDS.has(key) || value == null || typeof value === 'object') {
+      continue
+    }
+    // Java's InetAddress.toString() leads with a slash; it is a serialization
+    // artifact, not part of the address an operator should be shown.
+    out[key] = key === 'ipAddress' ? String(value).replace(/^\//, '') : String(value)
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
 
 /**
  * Pure transform of a Graph REST API response into a normalized
@@ -367,15 +411,27 @@ const mapDiscoveredGraph = (
   source: DiscoveredGraphSource
 ): DiscoveredGraph => {
   const vertices = data.vertices ?? []
+  // How many vertices sit on each node, so the canvas id can tell a
+  // one-vertex-per-node graph (enlinkd) from a many-per-node one (application).
+  const nodeIdCounts = new Map<number, number>()
+  for (const v of vertices) {
+    const nodeId = vertexNodeId(v)
+    if (nodeId !== undefined) {
+      nodeIdCounts.set(nodeId, (nodeIdCounts.get(nodeId) ?? 0) + 1)
+    }
+  }
   // vertex id (the id edges reference) -> canvas node id
-  const canvasIdByVertexId = new Map(vertices.map(v => [v.id, discoveredNodeCanvasId(v)]))
+  const canvasIdByVertexId = new Map(
+    vertices.map(v => [v.id, discoveredNodeCanvasId(v, nodeIdCounts)])
+  )
   const nodes: CanvasNode[] = vertices.map(v => ({
     id: canvasIdByVertexId.get(v.id) as string,
-    nodeId: v.nodeID != null && /^\d+$/.test(v.nodeID) ? Number(v.nodeID) : undefined,
-    label: v.label ?? v.id,
+    nodeId: vertexNodeId(v),
+    label: v.label ?? v.name ?? v.id,
     x: 0,
     y: 0,
-    icon: v.iconKey
+    icon: v.iconKey,
+    properties: vertexProperties(v)
   }))
   const links: CanvasLink[] = (data.edges ?? [])
     .filter(

@@ -493,11 +493,17 @@ const mountSigma = (g: Graph) => {
     // (sysObjectId-derived; store.nodeIconIds). The severities/nodeIconIds
     // watchers below trigger a sigma.refresh() so changes repaint.
     nodeReducer: (node, attrs) => {
+      // Prefer the node's own id attribute over parsing the canvas id: a
+      // discovered graph can put several vertices on one node, in which case the
+      // canvas id cannot encode it (see discoveredNodeCanvasId).
       const paletteId = paletteIdFromPlacedId(node)
+      const nodeIdAttr = typeof attrs.nodeId === 'number' ? attrs.nodeId : null
+      const resolvedNodeId = nodeIdAttr
+        ?? (paletteId !== null && /^\d+$/.test(paletteId) ? Number(paletteId) : null)
       // All nodes render at the store's (density-defaulted, slider-adjustable) size.
       let res: typeof attrs = { ...attrs, size: store.nodeSize }
-      if (paletteId !== null && /^\d+$/.test(paletteId)) {
-        const nid = Number(paletteId)
+      if (resolvedNodeId !== null) {
+        const nid = resolvedNodeId
         const severity = store.severities[nid]
         if (severity) {
           res = { ...res, color: severityColor(severity) }
@@ -646,6 +652,7 @@ const loadView = (view: TopologyView) => {
       y: n.y,
       size: 20,
       color: n.color ?? '#1f5fb0',
+      nodeId: n.nodeId,
       iconOverride: n.iconOverride
     })
   }
@@ -821,7 +828,8 @@ const loadDiscoveredGraph = (dg: DiscoveredGraph) => {
       // Discovered graphs can be large (100+ nodes); a smaller node keeps them
       // legible without overlap. Hand-composed views use the larger size 20.
       size: 12,
-      color: n.color ?? '#1f5fb0'
+      color: n.color ?? '#1f5fb0',
+      nodeId: n.nodeId
     })
   }
   // Links whose straight run would pass under a third node render curved so

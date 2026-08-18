@@ -28,6 +28,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import TopologyInspector from '@/components/Topology/TopologyInspector.vue'
 import { useTopologyStore } from '@/stores/topologyStore'
 
+import { getNodeById } from '@/services/nodeService'
+
 vi.mock('@/services/nodeService', () => ({ getNodeById: vi.fn().mockResolvedValue(null) }))
 vi.mock('@/services/topologyService', () => ({
   listAssets: vi.fn().mockResolvedValue([]),
@@ -63,6 +65,71 @@ const picker = (wrapper: Awaited<ReturnType<typeof mountInspector>>['wrapper'], 
   expect(found.exists(), `no color picker under "${label}"`).toBe(true)
   return found
 }
+
+// A discovered graph can hold vertices that are not OnmsNodes (an application)
+// and vertices that are on a node but not identified by the canvas id (two
+// services on one host). Both used to fall through to the link branch and
+// render an empty panel.
+describe('TopologyInspector discovered vertices', () => {
+  const mountFull = async (nodes: unknown[], selected: string) => {
+    const wrapper = mount(TopologyInspector, {
+      props: { canvas: null, variant: 'full' },
+      global: { plugins: [PrimeVue, createTestingPinia({ stubActions: false })] }
+    })
+    const store = useTopologyStore()
+    store.discoveredGraph = {
+      source: { container: 'application', namespace: 'application' },
+      label: 'Application Graph',
+      nodes,
+      links: []
+    } as never
+    store.selectedIds = [selected] as never
+    await flushPromises()
+    return { wrapper, store }
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('shows an application vertex by name with its provider properties', async () => {
+    const { wrapper } = await mountFull([
+      {
+        id: 'disc-Application:1', label: 'Review Billing', x: 0, y: 0,
+        properties: { vertexType: 'Application', applicationId: '1' }
+      }
+    ], 'disc-Application:1')
+
+    expect(wrapper.text()).toContain('Review Billing')
+    // Keys are de-camel-cased for display rather than mapped.
+    expect(wrapper.text()).toContain('Vertex type')
+    expect(wrapper.text()).toContain('Application ID')
+    expect(wrapper.text()).not.toContain('Select a node, link, label, or box')
+  })
+
+  it('resolves the node behind a vertex the canvas id cannot identify', async () => {
+    const { wrapper } = await mountFull([
+      {
+        id: 'disc-Service:1', label: 'HTTP-8080', nodeId: 7, x: 0, y: 0,
+        properties: { vertexType: 'Service', ipAddress: '127.0.0.1' }
+      }
+    ], 'disc-Service:1')
+
+    // nodeId came off the vertex, not out of the id, so the node branch runs
+    // and the service's own identity is shown alongside it.
+    expect(getNodeById).toHaveBeenCalledWith('7')
+    expect(wrapper.text()).toContain('HTTP-8080')
+  })
+
+  it('says so when a vertex carries no further detail', async () => {
+    const { wrapper } = await mountFull(
+      [{ id: 'disc-group-a', label: 'Group A', x: 0, y: 0 }],
+      'disc-group-a'
+    )
+    expect(wrapper.text()).toContain('Group A')
+    expect(wrapper.text()).toContain('No further detail')
+  })
+})
 
 describe('TopologyInspector color pickers', () => {
   afterEach(() => {

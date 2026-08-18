@@ -39,6 +39,14 @@ export interface CanvasNode {
    * asset. Absent = automatic (sysObjectId-derived glyph, else a circle).
    */
   iconOverride?: string
+  /**
+   * Whatever else the provider said about a discovered vertex, in its own
+   * vocabulary (an application's id, a service's type and address, a GraphML
+   * author's custom attributes). Set only for discovered graphs, which are not
+   * persisted, and shown verbatim by the inspector: for a vertex that is not an
+   * OnmsNode this is the only detail there is.
+   */
+  properties?: Record<string, string>
 }
 
 /**

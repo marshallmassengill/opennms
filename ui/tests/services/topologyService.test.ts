@@ -371,6 +371,66 @@ describe('topologyService discovered graph (Graph REST API)', () => {
         links: []
       })
     })
+
+    // The application graph names vertices with `name`, not `label`; without
+    // this every vertex rendered as its internal id.
+    it('takes the label from `name` when `label` is absent', () => {
+      const data = { vertices: [{ id: 'Application:1', name: 'Review Billing' }], edges: [] }
+      expect(mapDiscoveredGraph(data, layer2Source).nodes[0].label).toBe('Review Billing')
+    })
+
+    // ...and references its node with `nodeCriteria`, not `nodeID`.
+    it('resolves a node id from `nodeCriteria`', () => {
+      const data = { vertices: [{ id: 'Service:1', name: 'HTTP', nodeCriteria: '7' }], edges: [] }
+      expect(mapDiscoveredGraph(data, layer2Source).nodes[0]).toMatchObject({
+        id: 'placed-7', nodeId: 7, label: 'HTTP'
+      })
+    })
+
+    it('ignores a nodeCriteria that is not a bare node id', () => {
+      const data = { vertices: [{ id: 'Service:1', name: 'HTTP', nodeCriteria: 'acme:host-1' }], edges: [] }
+      expect(mapDiscoveredGraph(data, layer2Source).nodes[0]).toMatchObject({
+        id: 'disc-Service:1', nodeId: undefined
+      })
+    })
+
+    // Reusing placed-<nodeId> for several vertices on one node would collapse
+    // them into a single canvas node, silently losing all but one.
+    it('keeps vertices distinct when several sit on the same node', () => {
+      const data = {
+        vertices: [
+          { id: 'Service:1', name: 'HTTP', nodeCriteria: '7' },
+          { id: 'Service:2', name: 'SSH', nodeCriteria: '7' },
+          { id: 'Service:3', name: 'ICMP', nodeCriteria: '8' }
+        ],
+        edges: []
+      }
+      const nodes = mapDiscoveredGraph(data, layer2Source).nodes
+      expect(nodes.map(n => n.id)).toEqual(['disc-Service:1', 'disc-Service:2', 'placed-8'])
+      // The node id survives regardless, so status and node detail still resolve.
+      expect(nodes.map(n => n.nodeId)).toEqual([7, 7, 8])
+    })
+
+    it('carries the provider properties, minus what the model already holds', () => {
+      const data = {
+        vertices: [{
+          id: 'Service:1', name: 'HTTP', namespace: 'application', nodeCriteria: '7',
+          vertexType: 'Service', serviceTypeId: '2', ipAddress: '/127.0.0.1'
+        }],
+        edges: []
+      }
+      expect(mapDiscoveredGraph(data, layer2Source).nodes[0].properties).toEqual({
+        vertexType: 'Service',
+        serviceTypeId: '2',
+        // Java's InetAddress.toString() leads with a slash.
+        ipAddress: '127.0.0.1'
+      })
+    })
+
+    it('leaves properties undefined when the vertex has nothing extra', () => {
+      const data = { vertices: [{ id: '1', label: 'core', nodeID: '1' }], edges: [] }
+      expect(mapDiscoveredGraph(data, layer2Source).nodes[0].properties).toBeUndefined()
+    })
   })
 
   describe('loadDiscoveredGraph', () => {
