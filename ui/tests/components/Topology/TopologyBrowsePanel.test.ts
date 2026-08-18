@@ -33,7 +33,8 @@ vi.mock('@/services/nodeService', () => ({
   getNodes: vi.fn().mockResolvedValue({
     node: [
       { id: 7, label: 'core-sw1', location: 'HQ' },
-      { id: 8, label: 'edge-sw2', location: 'DC' }
+      { id: 8, label: 'edge-sw2', location: 'DC' },
+      { id: 9, label: 'edge-sw3', location: 'DC' }
     ]
   })
 }))
@@ -179,9 +180,9 @@ describe('TopologyBrowsePanel application tabs', () => {
     expect(tabLabels(wrapper)).toEqual(['Alarms', 'Nodes'])
   })
 
-  it('adds Applications and Perspective Outages for the application graph', async () => {
+  it('leads with alarms then perspective outages for the application graph', async () => {
     const { wrapper } = await withApplicationGraph()
-    expect(tabLabels(wrapper)).toEqual(['Alarms', 'Nodes', 'Applications', 'Perspective Outages'])
+    expect(tabLabels(wrapper)).toEqual(['Alarms', 'Perspective Outages', 'Applications', 'Nodes'])
   })
 
   it('lists applications with their perspectives and service count', async () => {
@@ -210,6 +211,40 @@ describe('TopologyBrowsePanel application tabs', () => {
     expect(rows).toHaveLength(1)
     expect(rows[0]).toContain('core-sw1')
     expect(rows[0]).toContain('Default')
+  })
+
+  // The label counts used to show the unfiltered totals, so they never moved.
+  it('counts what the tab will render, not the whole set', async () => {
+    const { wrapper, store } = await withApplicationGraph()
+    const counts = () => wrapper.findAll('.tb-tabs button')
+      .map(b => Number(/\((\d+)\)$/.exec(b.text().trim())?.[1]))
+
+    expect(counts()).toEqual([3, 3, 2, 3])
+
+    store.selectedIds = ['placed-7'] as never
+    await flushPromises()
+    // Alarms, perspective outages and nodes narrow to the one node; the
+    // applications list is not node-scoped, so it stays whole.
+    expect(counts()).toEqual([1, 1, 2, 1])
+  })
+
+  // Selecting an application stands for everything hanging off it.
+  it('narrows to an application\'s services when the application is selected', async () => {
+    const { wrapper, store } = await withApplicationGraph()
+    store.selectedIds = ['disc-Application:1'] as never
+    await flushPromises()
+
+    const counts = wrapper.findAll('.tb-tabs button')
+      .map(b => Number(/\((\d+)\)$/.exec(b.text().trim())?.[1]))
+    // The application's one service sits on node 7, so the node-scoped tabs
+    // narrow to it, and the Applications tab narrows to the application itself.
+    expect(counts).toEqual([1, 1, 1, 1])
+
+    const appTab = wrapper.findAll('.tb-tabs button').find(b => b.text().includes('Applications'))!
+    await appTab.trigger('click')
+    const rows = rowTexts(wrapper)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toContain('Review Billing')
   })
 
   it('falls back to Alarms when the application graph goes away', async () => {

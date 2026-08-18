@@ -11,22 +11,17 @@
         <span class="tb-caret">{{ collapsed ? '▸' : '▾' }}</span> Browse
       </button>
       <div v-if="!collapsed" class="tb-tabs">
-        <button type="button" :class="{ active: tab === 'alarms' }" @click="tab = 'alarms'">
-          Alarms ({{ alarmRows.length }})
+        <button
+          v-for="t in tabs"
+          :key="t.key"
+          type="button"
+          :class="{ active: tab === t.key }"
+          @click="tab = t.key"
+        >
+          {{ t.label }} ({{ t.count }})
         </button>
-        <button type="button" :class="{ active: tab === 'nodes' }" @click="tab = 'nodes'">
-          Nodes ({{ nodeRows.length }})
-        </button>
-        <template v-if="isApplicationGraph">
-          <button type="button" :class="{ active: tab === 'applications' }" @click="tab = 'applications'">
-            Applications ({{ applicationRows.length }})
-          </button>
-          <button type="button" :class="{ active: tab === 'perspective' }" @click="tab = 'perspective'">
-            Perspective Outages ({{ perspectiveRows.length }})
-          </button>
-        </template>
       </div>
-      <span v-if="!collapsed && isFiltered && tab !== 'applications'" class="tb-filter">
+      <span v-if="!collapsed && (isFiltered || selectedApplicationIds.length > 0)" class="tb-filter">
         filtered to selection
         <a href="#" @click.prevent="$emit('select', null)">show all</a>
       </span>
@@ -34,7 +29,9 @@
 
     <div v-if="!collapsed" class="tb-body">
       <p v-if="loading" class="tb-empty">Loading…</p>
-      <p v-else-if="nodeRows.length === 0" class="tb-empty">No nodes in this view.</p>
+      <p v-else-if="nodeRows.length === 0 && tab !== 'applications'" class="tb-empty">
+        No nodes in this view.
+      </p>
 
       <OnmsTable
         v-else-if="tab === 'nodes'"
@@ -58,7 +55,7 @@
 
       <OnmsTable
         v-else-if="tab === 'applications'"
-        :value="applicationRows"
+        :value="filteredApplicationRows"
         data-key="id"
         scrollable
         scroll-height="flex"
@@ -118,11 +115,11 @@
           <template #body="{ data }">{{ formatTime(data.lastEventTime) }}</template>
         </OnmsColumn>
       </OnmsTable>
-      <p v-if="!loading && tab === 'alarms' && alarmRows.length === 0" class="tb-empty">
+      <p v-if="!loading && tab === 'alarms' && filteredAlarmRows.length === 0" class="tb-empty">
         No alarms for these nodes.
       </p>
-      <p v-if="!loading && tab === 'applications' && applicationRows.length === 0" class="tb-empty">
-        No applications defined.
+      <p v-if="!loading && tab === 'applications' && filteredApplicationRows.length === 0" class="tb-empty">
+        {{ applicationRows.length === 0 ? 'No applications defined.' : 'No applications match the selection.' }}
       </p>
       <p v-if="!loading && tab === 'perspective' && filteredPerspectiveRows.length === 0" class="tb-empty">
         No perspective currently reports an outage for these nodes.
@@ -166,6 +163,32 @@ const isApplicationGraph = computed(() =>
   store.discoveredGraph?.source.container === 'application'
 )
 
+interface TabDef {
+  key: BrowseTab
+  label: string
+  /** Rows the tab will actually render, so the count tracks the selection. */
+  count: number
+}
+
+/**
+ * Tabs in display order. The Application graph leads with what an operator is
+ * chasing there -- alarms, then what a perspective reports down -- and keeps the
+ * raw node list last.
+ */
+const tabs = computed<TabDef[]>(() => {
+  const alarms: TabDef = { key: 'alarms', label: 'Alarms', count: filteredAlarmRows.value.length }
+  const nodes: TabDef = { key: 'nodes', label: 'Nodes', count: filteredNodeRows.value.length }
+  if (!isApplicationGraph.value) {
+    return [alarms, nodes]
+  }
+  return [
+    alarms,
+    { key: 'perspective', label: 'Perspective Outages', count: filteredPerspectiveRows.value.length },
+    { key: 'applications', label: 'Applications', count: filteredApplicationRows.value.length },
+    nodes
+  ]
+})
+
 interface NodeRow {
   id: string // placed canvas id
   nodeId: number
@@ -202,15 +225,46 @@ const placedRealIds = computed<number[]>(() =>
  * consulted as a fallback.
  */
 const selectedNodeIds = computed<number[]>(() => {
+  const graph = store.discoveredGraph
   const ids = new Set<number>()
   for (const selected of store.selectedIds) {
     const fromId = nodeIdFromPlacedId(selected)
-    const nodeId = fromId ?? store.discoveredGraph?.nodes.find(n => n.id === selected)?.nodeId
-    if (nodeId != null) {
-      ids.add(nodeId)
+    if (fromId != null) {
+      ids.add(fromId)
+      continue
+    }
+    const vertex = graph?.nodes.find(n => n.id === selected)
+    if (vertex?.nodeId != null) {
+      ids.add(vertex.nodeId)
+      continue
+    }
+    // A vertex that is no node itself (an application) stands for what hangs
+    // off it, so selecting one narrows the tables to its children's nodes.
+    // One hop, which is the whole subtree for an application-to-service graph.
+    if (vertex && graph) {
+      for (const link of graph.links) {
+        const neighbourId = link.sourceId === vertex.id
+          ? link.targetId
+          : link.targetId === vertex.id ? link.sourceId : undefined
+        const neighbour = neighbourId ? graph.nodes.find(n => n.id === neighbourId) : undefined
+        if (neighbour?.nodeId != null) {
+          ids.add(neighbour.nodeId)
+        }
+      }
     }
   }
   return Array.from(ids)
+})
+
+/** Applications named by the selection, so the Applications tab narrows too. */
+const selectedApplicationIds = computed<string[]>(() => {
+  const graph = store.discoveredGraph
+  if (!graph) {
+    return []
+  }
+  return store.selectedIds
+    .map(id => graph.nodes.find(n => n.id === id)?.properties?.applicationId)
+    .filter((id): id is string => id != null)
 })
 
 const isFiltered = computed(() => selectedNodeIds.value.length > 0)
@@ -236,6 +290,11 @@ const filteredNodeRows = computed(() => nodeRows.value.filter(r => matchesSelect
 const filteredAlarmRows = computed(() => alarmRows.value.filter(r => matchesSelection(r.nodeId)))
 const filteredPerspectiveRows = computed(() =>
   perspectiveRows.value.filter(r => matchesSelection(r.nodeId))
+)
+const filteredApplicationRows = computed(() =>
+  selectedApplicationIds.value.length === 0
+    ? applicationRows.value
+    : applicationRows.value.filter(r => selectedApplicationIds.value.includes(String(r.id)))
 )
 
 const onRowSelect = (placedId: string) => emit('select', placedId)
@@ -307,11 +366,11 @@ watch([collapsed, placedRealIds, isApplicationGraph], ([isCollapsed]) => {
   }
 })
 
-// Leaving the Application graph takes its two tabs with it, so fall back rather
-// than leaving a tab selected that is no longer rendered.
-watch(isApplicationGraph, (isApplication) => {
-  if (!isApplication && (tab.value === 'applications' || tab.value === 'perspective')) {
-    tab.value = 'alarms'
+// Never leave a tab selected that is no longer rendered, whichever way the set
+// of tabs changed.
+watch(tabs, (available) => {
+  if (!available.some(t => t.key === tab.value)) {
+    tab.value = available[0].key
   }
 })
 </script>
