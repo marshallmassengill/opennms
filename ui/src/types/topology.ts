@@ -40,6 +40,13 @@ export interface CanvasNode {
    */
   iconOverride?: string
   /**
+   * The provider's own id and namespace for a discovered vertex, kept because
+   * the canvas id is ours (`placed-7`, `disc-Service:1`) and says nothing about
+   * what the provider called it. Set only for discovered graphs.
+   */
+  vertexId?: string
+  namespace?: string
+  /**
    * Whatever else the provider said about a discovered vertex, in its own
    * vocabulary (an application's id, a service's type and address, a GraphML
    * author's custom attributes). Set only for discovered graphs, which are not

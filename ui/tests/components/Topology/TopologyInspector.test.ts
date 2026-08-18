@@ -101,6 +101,7 @@ describe('TopologyInspector discovered vertices', () => {
     ], 'disc-Application:1')
 
     expect(wrapper.text()).toContain('Review Billing')
+    expect(wrapper.text()).toContain('Technical Details')
     // Keys are de-camel-cased for display rather than mapped.
     expect(wrapper.text()).toContain('Vertex type')
     expect(wrapper.text()).toContain('Application ID')
@@ -121,13 +122,66 @@ describe('TopologyInspector discovered vertices', () => {
     expect(wrapper.text()).toContain('HTTP-8080')
   })
 
-  it('says so when a vertex carries no further detail', async () => {
+  // The legacy map's Technical Details: the provider's own name, id and icon,
+  // which exist even when it sent no other properties.
+  it('shows Technical Details for a vertex with no extra properties', async () => {
     const { wrapper } = await mountFull(
-      [{ id: 'disc-group-a', label: 'Group A', x: 0, y: 0 }],
+      [{ id: 'disc-group-a', label: 'Group A', vertexId: 'group-a', namespace: 'acme', x: 0, y: 0 }],
       'disc-group-a'
     )
+    expect(wrapper.text()).toContain('Technical Details')
     expect(wrapper.text()).toContain('Group A')
-    expect(wrapper.text()).toContain('No further detail')
+    expect(wrapper.text()).toContain('acme:group-a')
+  })
+
+  it('puts the icon key in Technical Details when the provider sent one', async () => {
+    const { wrapper } = await mountFull(
+      [{ id: 'disc-1', label: 'core', vertexId: '1', namespace: 'nodes', icon: 'linkd.system', x: 0, y: 0 }],
+      'disc-1'
+    )
+    expect(wrapper.text()).toContain('Icon key')
+    expect(wrapper.text()).toContain('linkd.system')
+  })
+})
+
+describe('TopologyInspector node details', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const mountWithNode = async (node: Record<string, unknown>) => {
+    vi.mocked(getNodeById).mockResolvedValue(node as never)
+    const wrapper = mount(TopologyInspector, {
+      props: { canvas: null, variant: 'full' },
+      global: { plugins: [PrimeVue, createTestingPinia({ stubActions: false })] }
+    })
+    const store = useTopologyStore()
+    store.selectedIds = ['placed-7'] as never
+    await flushPromises()
+    return { wrapper, store }
+  }
+
+  it('titles the block and calls the severity an alarm severity', async () => {
+    const { wrapper } = await mountWithNode({ id: 7, label: 'core-sw1', location: 'HQ' })
+    expect(wrapper.text()).toContain('Node Details')
+    expect(wrapper.text()).toContain('Alarm severity')
+    // "Severity" alone read as the node's own state rather than its alarms'.
+    expect(wrapper.text()).not.toMatch(/(?<!Alarm )Severity/)
+  })
+
+  // The legacy map calls sysObjectId the Enterprise OID, and omits the row
+  // entirely for a node with no SNMP data rather than showing a blank.
+  it('shows the Enterprise OID when the node has one', async () => {
+    const { wrapper } = await mountWithNode({
+      id: 7, label: 'core-sw1', sysObjectId: '.1.3.6.1.4.1.9.1.485'
+    })
+    expect(wrapper.text()).toContain('Enterprise OID')
+    expect(wrapper.text()).toContain('.1.3.6.1.4.1.9.1.485')
+  })
+
+  it('omits the Enterprise OID row when the node has none', async () => {
+    const { wrapper } = await mountWithNode({ id: 7, label: 'core-sw1' })
+    expect(wrapper.text()).not.toContain('Enterprise OID')
   })
 })
 

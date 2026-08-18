@@ -74,28 +74,22 @@ License.
 
       <!-- A placed OpenNMS node (detail is read-only; full/View only) -->
       <div v-else-if="kind === 'node' && variant === 'full'" class="ti-section">
-        <!-- What the provider called this vertex, when it is not simply the node:
-             an application's service, a GraphML element. Outside the node-detail
-             branch below, so a failed node lookup does not also lose this. -->
-        <template v-if="discoveredVertex && vertexDetail.length > 0">
-          <div class="ti-node-header">
-            <span class="ti-node-label">{{ discoveredVertex.label }}</span>
-          </div>
-          <dl class="ti-detail">
-            <template v-for="row in vertexDetail" :key="row.label">
-              <dt>{{ row.label }}</dt><dd>{{ row.value }}</dd>
-            </template>
-          </dl>
-        </template>
         <div v-if="nodeLoading" class="ti-empty">Loading node…</div>
         <template v-else-if="nodeDetail">
           <div class="ti-node-header">
             <span class="ti-severity-dot" :style="{ background: severityColor(nodeSeverity) }" />
             <span class="ti-node-label">{{ nodeDetail.label }}</span>
           </div>
+          <h4 class="ti-section-title">Node Details</h4>
           <dl class="ti-detail">
             <dt>Node ID</dt><dd>{{ nodeDetail.id }}</dd>
-            <dt>Severity</dt><dd>{{ nodeSeverity || 'Normal / none' }}</dd>
+            <dt>Node label</dt><dd>{{ nodeDetail.label }}</dd>
+            <!-- The legacy map shows the sysObjectId as "Enterprise OID", and
+                 only when the node has one (it needs SNMP data). -->
+            <template v-if="nodeDetail.sysObjectId">
+              <dt>Enterprise OID</dt><dd>{{ nodeDetail.sysObjectId }}</dd>
+            </template>
+            <dt>Alarm severity</dt><dd>{{ nodeSeverity || 'Normal / none' }}</dd>
             <dt>Location</dt><dd>{{ nodeDetail.location || '—' }}</dd>
             <dt>Foreign source</dt><dd>{{ nodeDetail.foreignSource || '—' }}</dd>
             <dt>Categories</dt>
@@ -113,6 +107,17 @@ License.
           </section>
         </template>
         <p v-else class="ti-empty">Node details unavailable.</p>
+        <!-- What the provider calls this vertex, as opposed to what OpenNMS
+             knows about the node behind it. Outside the node-detail branch, so a
+             failed node lookup does not lose it too. -->
+        <template v-if="technicalDetail.length > 0">
+          <h4 class="ti-section-title">Technical Details</h4>
+          <dl class="ti-detail">
+            <template v-for="row in technicalDetail" :key="row.label">
+              <dt>{{ row.label }}</dt><dd>{{ row.value }}</dd>
+            </template>
+          </dl>
+        </template>
       </div>
 
       <!-- A discovered vertex that is not an OnmsNode: an application, a
@@ -122,12 +127,12 @@ License.
         <div class="ti-node-header">
           <span class="ti-node-label">{{ discoveredVertex?.label }}</span>
         </div>
-        <dl v-if="vertexDetail.length > 0" class="ti-detail">
-          <template v-for="row in vertexDetail" :key="row.label">
+        <h4 class="ti-section-title">Technical Details</h4>
+        <dl class="ti-detail">
+          <template v-for="row in technicalDetail" :key="row.label">
             <dt>{{ row.label }}</dt><dd>{{ row.value }}</dd>
           </template>
         </dl>
-        <p v-else class="ti-empty">No further detail for this element.</p>
       </div>
 
       <!-- A link between two nodes -->
@@ -135,6 +140,11 @@ License.
         <div class="ti-node-header">
           <span class="ti-link-endpoints">{{ link.sourceLabel }} → {{ link.targetLabel }}</span>
         </div>
+        <h4 class="ti-section-title">Technical Details</h4>
+        <dl class="ti-detail">
+          <dt>Source</dt><dd>{{ link.sourceLabel }}</dd>
+          <dt>Target</dt><dd>{{ link.targetLabel }}</dd>
+        </dl>
         <p v-for="b in linkBindings" :key="b.protocol + (b.sourcePort ?? '')" class="ti-binding">
           Discovered via {{ b.protocol.toUpperCase() }}<template v-if="b.sourcePort">
             — {{ b.sourcePort }} ↔ {{ b.targetPort ?? '?' }}</template>
@@ -538,6 +548,27 @@ const vertexDetail = computed<Array<{ label: string, value: string }>>(() =>
     value
   }))
 )
+
+/**
+ * The legacy map's "Technical Details": what the provider calls this vertex,
+ * rather than what OpenNMS knows about the node behind it. Name, the
+ * provider's own namespace-qualified id and icon key, then whatever else it
+ * sent (IP address, vertex type, an application id).
+ */
+const technicalDetail = computed<Array<{ label: string, value: string }>>(() => {
+  const vertex = discoveredVertex.value
+  if (!vertex) {
+    return []
+  }
+  const rows = [{ label: 'Name', value: vertex.label }]
+  if (vertex.namespace && vertex.vertexId) {
+    rows.push({ label: 'ID', value: `${vertex.namespace}:${vertex.vertexId}` })
+  }
+  if (vertex.icon) {
+    rows.push({ label: 'Icon key', value: vertex.icon })
+  }
+  return [...rows, ...vertexDetail.value]
+})
 
 const kind = computed<'none' | 'multi' | 'label' | 'node' | 'shape' | 'vertex' | 'link'>(() => {
   if (store.selectedIds.length === 0) {
@@ -983,6 +1014,13 @@ const linkLabel = computed<string>({
 
 .ti-input {
   width: 100%;
+}
+
+.ti-section-title {
+  margin: 0.75rem 0 0.25rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--onms-primary-text-on-surface);
 }
 
 .ti-detail + .ti-node-header {

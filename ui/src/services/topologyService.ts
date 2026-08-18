@@ -319,6 +319,7 @@ const graphsEndpoint = 'graphs'
 
 interface GraphApiVertex {
   id: string
+  namespace?: string
   label?: string
   /** Providers disagree: enlinkd sends `label`, the application graph `name`. */
   name?: string
@@ -431,6 +432,8 @@ const mapDiscoveredGraph = (
     x: 0,
     y: 0,
     icon: v.iconKey,
+    vertexId: v.id,
+    namespace: v.namespace,
     properties: vertexProperties(v)
   }))
   const links: CanvasLink[] = (data.edges ?? [])

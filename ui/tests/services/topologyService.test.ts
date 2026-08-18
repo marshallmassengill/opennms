@@ -341,8 +341,14 @@ describe('topologyService discovered graph (Graph REST API)', () => {
       // Real node vertices reuse the custom-view placed-<nodeId> convention so
       // they inherit severity coloring + inspector detail.
       expect(graph.nodes).toEqual([
-        { id: 'placed-100001', nodeId: 100001, label: 'core-01', x: 0, y: 0, icon: 'linkd.system' },
-        { id: 'placed-100002', nodeId: 100002, label: 'core-02', x: 0, y: 0, icon: 'linkd.system' }
+        {
+          id: 'placed-100001', nodeId: 100001, label: 'core-01', x: 0, y: 0,
+          icon: 'linkd.system', vertexId: '100001', namespace: undefined, properties: undefined
+        },
+        {
+          id: 'placed-100002', nodeId: 100002, label: 'core-02', x: 0, y: 0,
+          icon: 'linkd.system', vertexId: '100002', namespace: undefined, properties: undefined
+        }
       ])
       expect(graph.links).toEqual([
         { id: '572|581', sourceId: 'placed-100001', targetId: 'placed-100002', origin: 'discovered' }
@@ -360,7 +366,10 @@ describe('topologyService discovered graph (Graph REST API)', () => {
     it('falls back to a disc- id and undefined nodeId for a non-node vertex', () => {
       const data = { vertices: [{ id: 'group-a', label: 'Group A' }], edges: [] }
       const graph = mapDiscoveredGraph(data, layer2Source)
-      expect(graph.nodes[0]).toEqual({ id: 'disc-group-a', nodeId: undefined, label: 'Group A', x: 0, y: 0, icon: undefined })
+      expect(graph.nodes[0]).toEqual({
+        id: 'disc-group-a', nodeId: undefined, label: 'Group A', x: 0, y: 0,
+        icon: undefined, vertexId: 'group-a', namespace: undefined, properties: undefined
+      })
     })
 
     it('handles an empty graph', () => {
