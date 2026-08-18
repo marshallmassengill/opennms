@@ -54,7 +54,7 @@
           </template>
         </OnmsColumn>
         <OnmsColumn field="label" header="Node" sortable />
-        <OnmsColumn field="severity" header="Severity" sortable />
+        <OnmsColumn field="severity" header="Highest Alarm Severity" sortable />
         <OnmsColumn field="location" header="Location" sortable />
       </OnmsTable>
 

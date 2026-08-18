@@ -161,12 +161,13 @@ describe('TopologyInspector node details', () => {
     return { wrapper, store }
   }
 
-  it('titles the block and calls the severity an alarm severity', async () => {
+  it('titles the block and names the severity as the highest across alarms', async () => {
     const { wrapper } = await mountWithNode({ id: 7, label: 'core-sw1', location: 'HQ' })
     expect(wrapper.text()).toContain('Node Details')
-    expect(wrapper.text()).toContain('Alarm severity')
-    // "Severity" alone read as the node's own state rather than its alarms'.
-    expect(wrapper.text()).not.toMatch(/(?<!Alarm )Severity/)
+    expect(wrapper.text()).toContain('Highest Alarm Severity')
+    // "Severity" alone read as the node's own state, and did not say it is a
+    // maximum across every alarm on the node.
+    expect(wrapper.text()).not.toMatch(/(?<!Highest Alarm )Severity/)
   })
 
   // The legacy map calls sysObjectId the Enterprise OID, and omits the row

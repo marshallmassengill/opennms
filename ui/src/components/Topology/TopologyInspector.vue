@@ -89,7 +89,7 @@ License.
             <template v-if="nodeDetail.sysObjectId">
               <dt>Enterprise OID</dt><dd>{{ nodeDetail.sysObjectId }}</dd>
             </template>
-            <dt>Alarm severity</dt><dd>{{ nodeSeverity || 'Normal / none' }}</dd>
+            <dt>Highest Alarm Severity</dt><dd>{{ nodeSeverity || 'Normal / none' }}</dd>
             <dt>Location</dt><dd>{{ nodeDetail.location || '—' }}</dd>
             <dt>Foreign source</dt><dd>{{ nodeDetail.foreignSource || '—' }}</dd>
             <dt>Categories</dt>
