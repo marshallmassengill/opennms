@@ -17,8 +17,16 @@
         <button type="button" :class="{ active: tab === 'nodes' }" @click="tab = 'nodes'">
           Nodes ({{ nodeRows.length }})
         </button>
+        <template v-if="isApplicationGraph">
+          <button type="button" :class="{ active: tab === 'applications' }" @click="tab = 'applications'">
+            Applications ({{ applicationRows.length }})
+          </button>
+          <button type="button" :class="{ active: tab === 'perspective' }" @click="tab = 'perspective'">
+            Perspective Outages ({{ perspectiveRows.length }})
+          </button>
+        </template>
       </div>
-      <span v-if="!collapsed && selectedNodeId !== null" class="tb-filter">
+      <span v-if="!collapsed && isFiltered && tab !== 'applications'" class="tb-filter">
         filtered to selection
         <a href="#" @click.prevent="$emit('select', null)">show all</a>
       </span>
@@ -49,7 +57,44 @@
       </OnmsTable>
 
       <OnmsTable
-        v-else
+        v-else-if="tab === 'applications'"
+        :value="applicationRows"
+        data-key="id"
+        scrollable
+        scroll-height="flex"
+        size="small"
+      >
+        <OnmsColumn field="name" header="Application" sortable />
+        <OnmsColumn header="Services">
+          <template #body="{ data }">{{ serviceCountFor(data.id) }}</template>
+        </OnmsColumn>
+        <OnmsColumn header="Perspectives">
+          <template #body="{ data }">
+            {{ data.perspectiveLocations.length ? data.perspectiveLocations.join(', ') : '—' }}
+          </template>
+        </OnmsColumn>
+      </OnmsTable>
+
+      <OnmsTable
+        v-else-if="tab === 'perspective'"
+        :value="filteredPerspectiveRows"
+        data-key="id"
+        scrollable
+        scroll-height="flex"
+        size="small"
+        selection-mode="single"
+        @row-click="onRowSelect(`placed-${$event.data.nodeId}`)"
+      >
+        <OnmsColumn field="nodeLabel" header="Node" sortable />
+        <OnmsColumn field="serviceName" header="Service" sortable />
+        <OnmsColumn field="perspective" header="Perspective" sortable />
+        <OnmsColumn field="lostAt" header="Down since" sortable>
+          <template #body="{ data }">{{ formatTime(data.lostAt) }}</template>
+        </OnmsColumn>
+      </OnmsTable>
+
+      <OnmsTable
+        v-else-if="tab === 'alarms'"
         :value="filteredAlarmRows"
         data-key="id"
         scrollable
@@ -76,6 +121,12 @@
       <p v-if="!loading && tab === 'alarms' && alarmRows.length === 0" class="tb-empty">
         No alarms for these nodes.
       </p>
+      <p v-if="!loading && tab === 'applications' && applicationRows.length === 0" class="tb-empty">
+        No applications defined.
+      </p>
+      <p v-if="!loading && tab === 'perspective' && filteredPerspectiveRows.length === 0" class="tb-empty">
+        No perspective currently reports an outage for these nodes.
+      </p>
     </div>
   </section>
 </template>
@@ -88,6 +139,12 @@ import { severityColor } from '@/components/Topology/severity'
 import { nodeIdFromPlacedId } from '@/components/Topology/nodeIds'
 import { getNodes } from '@/services/nodeService'
 import { getAlarms } from '@/services/alarmService'
+import {
+  getApplications,
+  getPerspectiveOutages,
+  type PerspectiveOutage,
+  type TopologyApplication
+} from '@/services/topologyService'
 
 
 const emit = defineEmits<{ (e: 'select', placedId: string | null): void }>()
@@ -97,8 +154,17 @@ const store = useTopologyStore()
 const collapsed = ref(true)
 // Alarms first, and active by default: it is the tab an operator opens the
 // panel for, and leaving Nodes selected would highlight the second tab.
-const tab = ref<'nodes' | 'alarms'>('alarms')
+type BrowseTab = 'alarms' | 'nodes' | 'applications' | 'perspective'
+const tab = ref<BrowseTab>('alarms')
 const loading = ref(false)
+
+/**
+ * Applications and perspective outages are only meaningful for the Application
+ * graph, so those two tabs appear only while it is the loaded source.
+ */
+const isApplicationGraph = computed(() =>
+  store.discoveredGraph?.source.container === 'application'
+)
 
 interface NodeRow {
   id: string // placed canvas id
@@ -118,6 +184,8 @@ interface AlarmRow {
 
 const nodeRows = ref<NodeRow[]>([])
 const alarmRows = ref<AlarmRow[]>([])
+const applicationRows = ref<TopologyApplication[]>([])
+const perspectiveRows = ref<PerspectiveOutage[]>([])
 
 // The real OnmsNode ids of the placed nodes (bare-number palette ids).
 const placedRealIds = computed<number[]>(() =>
@@ -126,23 +194,48 @@ const placedRealIds = computed<number[]>(() =>
     .filter(n => Number.isInteger(n))
 )
 
-// When exactly one placed node is selected, the tables filter to it.
-const selectedNodeId = computed<number | null>(() => {
-  if (store.selectedIds.length !== 1) {
-    return null
+/**
+ * The nodes behind the current selection, so the tables filter to all of them
+ * rather than only to a single pick. A canvas id encodes its node id for placed
+ * and one-vertex-per-node discovered graphs; where it cannot (several vertices
+ * on one node) the vertex carries it instead, so the discovered graph is
+ * consulted as a fallback.
+ */
+const selectedNodeIds = computed<number[]>(() => {
+  const ids = new Set<number>()
+  for (const selected of store.selectedIds) {
+    const fromId = nodeIdFromPlacedId(selected)
+    const nodeId = fromId ?? store.discoveredGraph?.nodes.find(n => n.id === selected)?.nodeId
+    if (nodeId != null) {
+      ids.add(nodeId)
+    }
   }
-  return nodeIdFromPlacedId(store.selectedIds[0])
+  return Array.from(ids)
 })
 
-const filteredNodeRows = computed(() =>
-  selectedNodeId.value === null
-    ? nodeRows.value
-    : nodeRows.value.filter(r => r.nodeId === selectedNodeId.value)
-)
-const filteredAlarmRows = computed(() =>
-  selectedNodeId.value === null
-    ? alarmRows.value
-    : alarmRows.value.filter(r => r.nodeId === selectedNodeId.value)
+const isFiltered = computed(() => selectedNodeIds.value.length > 0)
+
+/**
+ * How many services an application watches, counted from the loaded graph's
+ * application-to-service edges. The applications resource does not return them,
+ * and the graph is already on hand.
+ */
+const serviceCountFor = (applicationId: number): number => {
+  const graph = store.discoveredGraph
+  if (!graph) {
+    return 0
+  }
+  const vertex = graph.nodes.find(n => n.properties?.applicationId === String(applicationId))
+  return vertex ? graph.links.filter(l => l.sourceId === vertex.id || l.targetId === vertex.id).length : 0
+}
+
+const matchesSelection = (nodeId: number | undefined): boolean =>
+  !isFiltered.value || (nodeId != null && selectedNodeIds.value.includes(nodeId))
+
+const filteredNodeRows = computed(() => nodeRows.value.filter(r => matchesSelection(r.nodeId)))
+const filteredAlarmRows = computed(() => alarmRows.value.filter(r => matchesSelection(r.nodeId)))
+const filteredPerspectiveRows = computed(() =>
+  perspectiveRows.value.filter(r => matchesSelection(r.nodeId))
 )
 
 const onRowSelect = (placedId: string) => emit('select', placedId)
@@ -161,16 +254,22 @@ const fetchData = async (): Promise<void> => {
   if (ids.length === 0) {
     nodeRows.value = []
     alarmRows.value = []
+    applicationRows.value = []
+    perspectiveRows.value = []
     return
   }
   loading.value = true
   try {
     const nodeFiql = ids.map(id => `id==${id}`).join(',')
     const alarmFiql = ids.map(id => `node.id==${id}`).join(',')
-    const [nodesResp, alarmsResp] = await Promise.all([
+    const [nodesResp, alarmsResp, applications, perspectives] = await Promise.all([
       getNodes({ _s: nodeFiql, limit: 1000 }),
-      getAlarms({ _s: alarmFiql, limit: 1000 })
+      getAlarms({ _s: alarmFiql, limit: 1000 }),
+      isApplicationGraph.value ? getApplications() : Promise.resolve([]),
+      isApplicationGraph.value ? getPerspectiveOutages(ids) : Promise.resolve([])
     ])
+    applicationRows.value = applications
+    perspectiveRows.value = perspectives
     nodeRows.value =
       nodesResp && nodesResp.node
         ? nodesResp.node.map((n) => {
@@ -200,10 +299,19 @@ const fetchData = async (): Promise<void> => {
   }
 }
 
-// Fetch when first expanded and whenever the placed-node set changes while open.
-watch([collapsed, placedRealIds], ([isCollapsed]) => {
+// Fetch when first expanded, and whenever the placed-node set or the loaded
+// source changes while open.
+watch([collapsed, placedRealIds, isApplicationGraph], ([isCollapsed]) => {
   if (!isCollapsed) {
     void fetchData()
+  }
+})
+
+// Leaving the Application graph takes its two tabs with it, so fall back rather
+// than leaving a tab selected that is no longer rendered.
+watch(isApplicationGraph, (isApplication) => {
+  if (!isApplication && (tab.value === 'applications' || tab.value === 'perspective')) {
+    tab.value = 'alarms'
   }
 })
 </script>

@@ -517,6 +517,94 @@ export interface NodeInfoPanelItem {
   html: string
 }
 
+const applicationsEndpoint = 'applications'
+const outagesEndpoint = 'outages'
+
+/**
+ * An application and the locations it is watched from. The Application graph
+ * models only application-to-service edges, so an application's perspective
+ * locations are reachable nowhere else in that view.
+ */
+export interface TopologyApplication {
+  id: number
+  name: string
+  perspectiveLocations: string[]
+}
+
+/** Every application, with its perspective locations flattened to names. */
+const getApplications = async (): Promise<TopologyApplication[]> => {
+  try {
+    const resp = await v2.get<{ application?: Array<Record<string, unknown>> }>(
+      applicationsEndpoint, { params: { limit: 1000 }}
+    )
+    const rows = resp.data?.application
+    if (!Array.isArray(rows)) {
+      return []
+    }
+    return rows.map(row => ({
+      id: Number(row.id),
+      name: String(row.name ?? row.id),
+      // The resource renders a location as an object keyed `location-name`.
+      perspectiveLocations: Array.isArray(row.perspectiveLocations)
+        ? (row.perspectiveLocations as Array<Record<string, unknown>>)
+          .map(l => String(l['location-name'] ?? l.locationName ?? l.name ?? ''))
+          .filter(Boolean)
+        : []
+    }))
+  } catch {
+    return []
+  }
+}
+
+/** An outage a perspective (a Minion location) currently sees on a service. */
+export interface PerspectiveOutage {
+  id: number
+  nodeId?: number
+  nodeLabel: string
+  serviceName: string
+  perspective: string
+  lostAt?: number
+}
+
+/**
+ * Open outages seen from a perspective, for the given nodes.
+ *
+ * The perspective cannot be filtered server-side: the column is mapped as a
+ * monitoring-location entity, and `_s=perspective!=0` makes the outages
+ * resource throw while resolving `locationName`. So the node filter narrows the
+ * result and the perspective and open-ness are matched here.
+ */
+const getPerspectiveOutages = async (nodeIds: number[]): Promise<PerspectiveOutage[]> => {
+  if (nodeIds.length === 0) {
+    return []
+  }
+  try {
+    const resp = await v2.get<{ outage?: Array<Record<string, unknown>> }>(
+      outagesEndpoint,
+      { params: { _s: nodeIds.map(id => `node.id==${id}`).join(','), limit: 1000 }}
+    )
+    const rows = resp.data?.outage
+    if (!Array.isArray(rows)) {
+      return []
+    }
+    return rows
+      .filter(row => row.perspective && row.ifRegainedService == null)
+      .map(row => ({
+        id: Number(row.id),
+        nodeId: row.nodeId != null ? Number(row.nodeId) : undefined,
+        nodeLabel: String(row.nodeLabel ?? row.nodeId ?? ''),
+        serviceName: String(
+          ((row.monitoredService as Record<string, unknown> | undefined)
+            ?.serviceType as Record<string, unknown> | undefined)?.name ?? ''
+        ),
+        perspective: String(row.perspective),
+        lostAt: row.ifLostService != null ? Number(row.ifLostService) : undefined
+      }))
+  } catch {
+    return []
+  }
+}
+
 const infopanelEndpoint = 'topology/infopanel'
 
 /**
@@ -669,6 +757,8 @@ export {
   parseEnlinkdNeighbors,
   loadDiscoveredGraph,
   listGraphContainers,
+  getApplications,
+  getPerspectiveOutages,
   mapDiscoveredGraph,
   getEdgeInfoPanel,
   getNodeInfoPanel,

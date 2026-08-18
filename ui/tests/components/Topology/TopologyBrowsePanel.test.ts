@@ -40,9 +40,29 @@ vi.mock('@/services/nodeService', () => ({
 vi.mock('@/services/alarmService', () => ({
   getAlarms: vi.fn().mockResolvedValue({
     alarm: [
-      { id: 1, nodeId: 7, nodeLabel: 'core-sw1', severity: 'MAJOR', logMessage: 'link down', lastEventTime: 0 }
+      { id: 1, nodeId: 7, nodeLabel: 'core-sw1', severity: 'MAJOR', logMessage: 'link down', lastEventTime: 0 },
+      { id: 2, nodeId: 8, nodeLabel: 'edge-sw2', severity: 'MINOR', logMessage: 'iface flap', lastEventTime: 0 },
+      // A third, so selecting two of three distinguishes filtered from not.
+      { id: 3, nodeId: 9, nodeLabel: 'edge-sw3', severity: 'WARNING', logMessage: 'high latency', lastEventTime: 0 }
     ]
   })
+}))
+// Only the two the panel adds; the store imports plenty else from this module.
+vi.mock('@/services/topologyService', async importOriginal => ({
+  ...(await importOriginal<typeof import('@/services/topologyService')>()),
+  // The store refreshes these off placedNodeIds; stubbed so the suite makes no
+  // network calls of its own.
+  getNodeSeverities: vi.fn().mockResolvedValue({}),
+  getNodeIconIds: vi.fn().mockResolvedValue({}),
+  getApplications: vi.fn().mockResolvedValue([
+    { id: 1, name: 'Review Billing', perspectiveLocations: ['Default'] },
+    { id: 2, name: 'Review Storefront', perspectiveLocations: [] }
+  ]),
+  getPerspectiveOutages: vi.fn().mockResolvedValue([
+    { id: 900001, nodeId: 7, nodeLabel: 'core-sw1', serviceName: 'HTTP-8080', perspective: 'Default', lostAt: 0 },
+    { id: 900002, nodeId: 8, nodeLabel: 'edge-sw2', serviceName: 'HTTP-8080', perspective: 'Default', lostAt: 0 },
+    { id: 900003, nodeId: 9, nodeLabel: 'edge-sw3', serviceName: 'HTTP-8080', perspective: 'Default', lostAt: 0 }
+  ])
 }))
 
 const mountPanel = async () => {
@@ -51,8 +71,16 @@ const mountPanel = async () => {
   })
   const store = useTopologyStore()
   store.currentView = {
-    name: 'v', nodes: [{ id: 'placed-7', nodeId: 7, label: 'core-sw1', x: 0, y: 0 }], links: [], labels: []
+    name: 'v',
+    nodes: [
+      { id: 'placed-7', nodeId: 7, label: 'core-sw1', x: 0, y: 0 },
+      { id: 'placed-8', nodeId: 8, label: 'edge-sw2', x: 0, y: 0 },
+      { id: 'placed-9', nodeId: 9, label: 'edge-sw3', x: 0, y: 0 }
+    ],
+    links: [],
+    labels: []
   } as never
+  store.placedNodeIds = new Set(['7', '8', '9']) as never
   await flushPromises()
   // The panel opens collapsed, and the tabs and the fetch both hang off that.
   await wrapper.find('.tb-toggle').trigger('click')
@@ -62,6 +90,141 @@ const mountPanel = async () => {
 
 const tabLabels = (wrapper: Awaited<ReturnType<typeof mountPanel>>['wrapper']) =>
   wrapper.findAll('.tb-tabs button').map(b => b.text().replace(/\s*\(\d+\)$/, ''))
+
+const rowTexts = (wrapper: Awaited<ReturnType<typeof mountPanel>>['wrapper']) =>
+  wrapper.findAll('tbody tr').map(r => r.text())
+
+describe('TopologyBrowsePanel selection filtering', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('shows everything when nothing is selected', async () => {
+    const { wrapper } = await mountPanel()
+    expect(rowTexts(wrapper)).toHaveLength(3)
+  })
+
+  it('filters to a single selected node', async () => {
+    const { wrapper, store } = await mountPanel()
+    store.selectedIds = ['placed-7'] as never
+    await flushPromises()
+
+    const rows = rowTexts(wrapper)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toContain('core-sw1')
+  })
+
+  // Two or more used to fall back to showing everything unfiltered.
+  it('filters to all of several selected nodes', async () => {
+    const { wrapper, store } = await mountPanel()
+    store.selectedIds = ['placed-7', 'placed-8'] as never
+    await flushPromises()
+
+    const rows = rowTexts(wrapper)
+    expect(rows).toHaveLength(2)
+    expect(rows.join(' ')).toContain('core-sw1')
+    expect(rows.join(' ')).toContain('edge-sw2')
+    // The unselected third node is what makes this different from no filter.
+    expect(rows.join(' ')).not.toContain('edge-sw3')
+  })
+
+  it('excludes a selected node with no rows of its own', async () => {
+    const { wrapper, store } = await mountPanel()
+    store.selectedIds = ['placed-8'] as never
+    await flushPromises()
+
+    const rows = rowTexts(wrapper)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toContain('edge-sw2')
+  })
+
+  // A vertex the canvas id cannot identify still resolves through the graph.
+  it('resolves a selected discovered vertex to its node', async () => {
+    const { wrapper, store } = await mountPanel()
+    store.discoveredGraph = {
+      source: { container: 'application', namespace: 'application' },
+      label: 'Application Graph',
+      nodes: [{ id: 'disc-Service:1', label: 'HTTP-8080', nodeId: 7, x: 0, y: 0 }],
+      links: []
+    } as never
+    store.selectedIds = ['disc-Service:1'] as never
+    await flushPromises()
+
+    expect(rowTexts(wrapper).join(' ')).toContain('core-sw1')
+  })
+})
+
+describe('TopologyBrowsePanel application tabs', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const withApplicationGraph = async () => {
+    const mounted = await mountPanel()
+    mounted.store.discoveredGraph = {
+      source: { container: 'application', namespace: 'application' },
+      label: 'Application Graph',
+      nodes: [
+        { id: 'disc-Application:1', label: 'Review Billing', x: 0, y: 0, properties: { applicationId: '1' }},
+        { id: 'disc-Service:1', label: 'HTTP-8080', nodeId: 7, x: 0, y: 0 }
+      ],
+      links: [{ id: 'l1', sourceId: 'disc-Application:1', targetId: 'disc-Service:1', origin: 'discovered' }]
+    } as never
+    await flushPromises()
+    return mounted
+  }
+
+  it('hides both tabs for a non-application graph', async () => {
+    const { wrapper } = await mountPanel()
+    expect(tabLabels(wrapper)).toEqual(['Alarms', 'Nodes'])
+  })
+
+  it('adds Applications and Perspective Outages for the application graph', async () => {
+    const { wrapper } = await withApplicationGraph()
+    expect(tabLabels(wrapper)).toEqual(['Alarms', 'Nodes', 'Applications', 'Perspective Outages'])
+  })
+
+  it('lists applications with their perspectives and service count', async () => {
+    const { wrapper } = await withApplicationGraph()
+    const appTab = wrapper.findAll('.tb-tabs button').find(b => b.text().includes('Applications'))!
+    await appTab.trigger('click')
+
+    const rows = rowTexts(wrapper)
+    expect(rows.join(' ')).toContain('Review Billing')
+    // One application-to-service edge in the graph above.
+    expect(rows[0]).toContain('1')
+    expect(rows[0]).toContain('Default')
+    // An application with no perspective location reads as a dash, not blank.
+    expect(rows[1]).toContain('—')
+  })
+
+  it('lists perspective outages and filters them by selection', async () => {
+    const { wrapper, store } = await withApplicationGraph()
+    const outageTab = wrapper.findAll('.tb-tabs button').find(b => b.text().includes('Perspective Outages'))!
+    await outageTab.trigger('click')
+    expect(rowTexts(wrapper)).toHaveLength(3)
+
+    store.selectedIds = ['placed-7'] as never
+    await flushPromises()
+    const rows = rowTexts(wrapper)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toContain('core-sw1')
+    expect(rows[0]).toContain('Default')
+  })
+
+  it('falls back to Alarms when the application graph goes away', async () => {
+    const { wrapper, store } = await withApplicationGraph()
+    const appTab = wrapper.findAll('.tb-tabs button').find(b => b.text().includes('Applications'))!
+    await appTab.trigger('click')
+
+    store.discoveredGraph = null as never
+    await flushPromises()
+
+    const active = wrapper.findAll('.tb-tabs button').filter(b => b.classes('active'))
+    expect(active).toHaveLength(1)
+    expect(active[0].text()).toContain('Alarms')
+  })
+})
 
 describe('TopologyBrowsePanel tabs', () => {
   afterEach(() => {
