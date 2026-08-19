@@ -229,6 +229,21 @@ describe('Topology large-graph gate', () => {
     expect(labels).toContain('Render all 3,001 nodes')
   })
 
+  // The gate's other escape hatch. It was asserted to exist as a button label
+  // and never clicked, so nothing covered that it actually renders the graph.
+  it('renders the graph when the opt-in is clicked', async () => {
+    const { store } = await mountPage()
+    store.discoveredGraph = hugeGraph() as never
+    await flushPromises()
+    expect(document.querySelector('.large-graph-gate')).toBeTruthy()
+
+    await click('Render all 3,001 nodes')
+
+    expect(store.isLargeGraphGated).toBe(false)
+    expect(document.querySelector('.large-graph-gate')).toBeFalsy()
+    expect(canvasApi.loadDiscoveredGraph).toHaveBeenCalled()
+  })
+
   it('starting there focuses that node in the URL, so the view is shareable', async () => {
     // A discovered slug: focus only mirrors from the URL into the store there.
     const { store } = await mountPage('layer2')

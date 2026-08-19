@@ -102,6 +102,18 @@ html {
   height: 100vh;
 }
 
+// The body margin is reset per route rather than app-wide. onms-base.scss has a
+// reset under .onms-styles, but that class was only ever on #app, so body kept
+// its default 8px margin and every page overflowed the viewport by 16px. Putting
+// the class on <body> fixed that and two other things nobody asked for: it
+// stripped the right and top gutter from every .onms-row-rooted page, which have
+// no padding of their own, and it applied onms-body-small typography to every
+// teleported PrimeVue overlay, which had been inheriting the UA default. Scoped
+// here instead, so only the route that needs a viewport-exact page changes.
+body:has(.app-layout-bounded) {
+  margin: 0;
+}
+
 // Pass that bounded row height down to the page, instead of the page guessing it
 // from 100vh minus an allowance that has to match the footer's rendered height.
 .main-content.main-content-fill {
