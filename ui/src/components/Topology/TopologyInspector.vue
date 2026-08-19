@@ -95,6 +95,14 @@ License.
             <dt>Categories</dt>
             <dd>{{ nodeDetail.categories?.length ? nodeDetail.categories.map((c) => c.name).join(', ') : '—' }}</dd>
           </dl>
+          <!-- Where the node physically is, when an operator has filled in its
+               asset coordinates. Titled to distinguish it from the "Location"
+               row above, which is the monitoring location. -->
+          <template v-if="geoPosition">
+            <h4 class="ti-section-title">Geographic Location</h4>
+            <p v-if="geoPlace" class="ti-geo-place">{{ geoPlace }}</p>
+            <TopologyLocationMap :lat="geoPosition.lat" :lon="geoPosition.lon" />
+          </template>
           <!-- Operator-configured info-panel items (etc/infopanel templates),
                rendered server-side and sanitized before display. -->
           <section
@@ -430,6 +438,7 @@ import { OnmsButton, OnmsCard, OnmsColorPicker, OnmsInputNumber, OnmsInputText }
 import { useTopologyStore } from '@/stores/topologyStore'
 import { isLabelId, isShapeId, nodeIdFromPlacedId } from '@/components/Topology/nodeIds'
 import { severityColor } from '@/components/Topology/severity'
+import TopologyLocationMap from '@/components/Topology/TopologyLocationMap.vue'
 import {
   DEVICE_ICON_SVG,
   powerStateColor,
@@ -651,6 +660,34 @@ const labelFontSize = computed<number>({
 
 /* ---- Node detail (read-only, fetched on selection) ---- */
 const nodeDetail = ref<Node | null>(null)
+
+/**
+ * One coordinate, or null when the asset does not really carry it. Number() is
+ * not enough on its own: the nodes API sends an unset asset field as JSON null,
+ * and Number(null) is 0 rather than NaN, so a node with a longitude and no
+ * latitude was being plotted on the equator.
+ */
+const coordinate = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === '') {
+    return null
+  }
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+/**
+ * Asset coordinates, when the node has them. Read off the node the inspector
+ * already fetched, so the map costs no extra request. A node with only one of
+ * the two is not placeable and is treated as having none.
+ */
+const geoPosition = computed<{ lat: number, lon: number } | null>(() => {
+  const asset = nodeDetail.value?.assetRecord as
+    { latitude?: number | string, longitude?: number | string } | undefined
+  const lat = coordinate(asset?.latitude)
+  const lon = coordinate(asset?.longitude)
+  // 0,0 is the null island, not a location anyone provisioned.
+  return lat !== null && lon !== null && (lat !== 0 || lon !== 0) ? { lat, lon } : null
+})
 
 /** City and state if the asset names them, so the map has a caption. */
 const geoPlace = computed<string>(() => {
@@ -1106,6 +1143,12 @@ const linkLabel = computed<string>({
 
 .ti-binding-line {
   margin: 0;
+}
+
+.ti-geo-place {
+  margin: 0 0 0.35rem;
+  font-size: 0.85em;
+  color: var(--onms-secondary-text-on-surface);
 }
 
 .ti-detail-dot {

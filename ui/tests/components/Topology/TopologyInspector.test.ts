@@ -202,7 +202,18 @@ describe('TopologyInspector node details', () => {
     vi.mocked(getNodeById).mockResolvedValue(node as never)
     const wrapper = mount(TopologyInspector, {
       props: { canvas: null, variant: 'full' },
-      global: { plugins: [PrimeVue, createTestingPinia({ stubActions: false })] }
+      global: {
+        plugins: [PrimeVue, createTestingPinia({ stubActions: false })],
+        // Leaflet needs real layout, which happy-dom has none of; the props it
+        // is handed are what matters here.
+        stubs: {
+          TopologyLocationMap: {
+            name: 'TopologyLocationMap',
+            props: ['lat', 'lon'],
+            template: '<div class="map-stub" />'
+          }
+        }
+      }
     })
     const store = useTopologyStore()
     store.selectedIds = ['placed-7'] as never
@@ -280,3 +291,96 @@ describe('TopologyInspector color pickers', () => {
 
 })
 
+// A node's asset coordinates, shown as the Vaadin map's info panel did. Read off
+// the node the inspector already fetched, so no extra request is made.
+describe('TopologyInspector geographic location', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const mountWithNode = async (node: Record<string, unknown>) => {
+    vi.mocked(getNodeById).mockResolvedValue(node as never)
+    const wrapper = mount(TopologyInspector, {
+      props: { canvas: null, variant: 'full' },
+      global: {
+        plugins: [PrimeVue, createTestingPinia({ stubActions: false })],
+        stubs: {
+          TopologyLocationMap: {
+            name: 'TopologyLocationMap',
+            props: ['lat', 'lon'],
+            template: '<div class="map-stub" />'
+          }
+        }
+      }
+    })
+    const store = useTopologyStore()
+    store.selectedIds = ['placed-7'] as never
+    await flushPromises()
+    return { wrapper }
+  }
+
+  it('maps a node that has coordinates, and captions it', async () => {
+    const { wrapper } = await mountWithNode({
+      id: 7, label: 'core-sw1',
+      assetRecord: { latitude: 35.7796, longitude: -78.6382, city: 'Raleigh', state: 'NC' }
+    })
+    expect(wrapper.text()).toContain('Geographic Location')
+    expect(wrapper.text()).toContain('Raleigh, NC')
+    const map = wrapper.findComponent({ name: 'TopologyLocationMap' })
+    expect(map.props()).toEqual({ lat: 35.7796, lon: -78.6382 })
+  })
+
+  it('shows nothing at all for a node with no coordinates', async () => {
+    const { wrapper } = await mountWithNode({
+      id: 7, label: 'core-sw1', assetRecord: { city: 'Raleigh' }
+    })
+    expect(wrapper.text()).not.toContain('Geographic Location')
+    expect(wrapper.find('.map-stub').exists()).toBe(false)
+  })
+
+  it('treats a half-populated position as none, being unplaceable', async () => {
+    const { wrapper } = await mountWithNode({
+      id: 7, label: 'core-sw1', assetRecord: { latitude: 35.7796 }
+    })
+    expect(wrapper.find('.map-stub').exists()).toBe(false)
+  })
+
+  // The API sends an unset asset field as JSON null, and Number(null) is 0, not
+  // NaN -- so this plotted a node with only a longitude on the equator.
+  it('treats an explicitly null coordinate as absent, not as zero', async () => {
+    const { wrapper } = await mountWithNode({
+      id: 7, label: 'core-sw1', assetRecord: { latitude: null, longitude: -87.6658 }
+    })
+    expect(wrapper.find('.map-stub').exists()).toBe(false)
+  })
+
+  it('treats an empty-string coordinate the same way', async () => {
+    const { wrapper } = await mountWithNode({
+      id: 7, label: 'core-sw1', assetRecord: { latitude: '', longitude: -87.6658 }
+    })
+    expect(wrapper.find('.map-stub').exists()).toBe(false)
+  })
+
+  it('treats 0,0 as unset rather than the Gulf of Guinea', async () => {
+    const { wrapper } = await mountWithNode({
+      id: 7, label: 'core-sw1', assetRecord: { latitude: 0, longitude: 0 }
+    })
+    expect(wrapper.find('.map-stub').exists()).toBe(false)
+  })
+
+  it('accepts coordinates sent as strings', async () => {
+    const { wrapper } = await mountWithNode({
+      id: 7, label: 'core-sw1', assetRecord: { latitude: '35.7796', longitude: '-78.6382' }
+    })
+    const map = wrapper.findComponent({ name: 'TopologyLocationMap' })
+    expect(map.props()).toEqual({ lat: 35.7796, lon: -78.6382 })
+  })
+
+  it('does not confuse the monitoring location with a place', async () => {
+    const { wrapper } = await mountWithNode({
+      id: 7, label: 'core-sw1', location: 'Default', assetRecord: {}
+    })
+    expect(wrapper.text()).toContain('Default')
+    expect(wrapper.text()).not.toContain('Geographic Location')
+  })
+})
