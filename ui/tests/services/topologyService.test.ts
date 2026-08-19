@@ -860,3 +860,65 @@ describe('parseEnlinkdNeighbors across protocols', () => {
     expect(parseEnlinkdNeighbors({ lldpLinkNodes: [link, { ...link }] }, 1)).toHaveLength(1)
   })
 })
+
+// Two protocols report their far end in shapes the parser originally could not
+// read: IS-IS as an integer field with no port string at all, and bridge inside
+// a nested array, which is also how one bridge port reaches several neighbours.
+describe('parseEnlinkdNeighbors for isis and bridge', () => {
+  it('reads the IS-IS ifIndex from its integer field', () => {
+    const [n] = parseEnlinkdNeighbors({
+      isisLinkNodes: [{
+        isisCircIfIndex: 13,
+        isisISAdjNeighSysIDUrl: 'element/linkednode.jsp?node=2',
+        isisISAdjNeighSysID: 'loopback-001'
+      }]
+    }, 1)
+    expect(n.linkType).toBe('isis')
+    expect(n.localIfIndex).toBe(13)
+  })
+
+  it('does not take a remote-side index as the local one', () => {
+    const [n] = parseEnlinkdNeighbors({
+      isisLinkNodes: [{
+        // Deliberately first, so taking the first numeric ifindex-ish field
+        // would name an interface on the other node.
+        isisRemIfIndex: 99,
+        isisCircIfIndex: 13,
+        isisISAdjNeighSysIDUrl: 'element/linkednode.jsp?node=2'
+      }]
+    }, 1)
+    expect(n.localIfIndex).toBe(13)
+  })
+
+  it('resolves every far end of a bridge link, not none of them', () => {
+    const neighbors = parseEnlinkdNeighbors({
+      bridgeLinkNodes: [{
+        bridgeLocalPort: 'Gi0/1(ifindex:4)',
+        bridgeLocalPortUrl: 'element/snmpinterface.jsp?node=1&ifindex=4',
+        bridgeLinkRemoteNodes: [
+          { bridgeRemote: 'loopback-002', bridgeRemoteUrl: 'element/linkednode.jsp?node=2',
+            bridgeRemotePort: 'Gi0/9' },
+          { bridgeRemote: 'loopback-003', bridgeRemoteUrl: 'element/linkednode.jsp?node=3',
+            bridgeRemotePort: 'Gi0/8' }
+        ]
+      }]
+    }, 1)
+
+    expect(neighbors.map(n => n.neighborNodeId).sort()).toEqual([2, 3])
+    // The parent's local port survives the flatten; each remote keeps its own.
+    expect(neighbors.every(n => n.localIfIndex === 4)).toBe(true)
+    expect(neighbors.map(n => n.remotePort).sort()).toEqual(['Gi0/8', 'Gi0/9'])
+  })
+
+  it('leaves the single-far-end protocols alone', () => {
+    const neighbors = parseEnlinkdNeighbors({
+      lldpLinkNodes: [{
+        lldpLocalPort: 'Gi0/2(ifindex:2)',
+        lldpLocalPortUrl: 'element/snmpinterface.jsp?node=1&ifindex=2',
+        lldpRemChassisIdUrl: 'element/linkednode.jsp?node=2'
+      }]
+    }, 1)
+    expect(neighbors).toHaveLength(1)
+    expect(neighbors[0].localIfIndex).toBe(2)
+  })
+})

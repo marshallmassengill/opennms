@@ -171,7 +171,22 @@ License.
           </p>
           <dl v-if="b.sourceIfIndex != null || b.lastPollTime" class="ti-detail ti-binding-detail">
             <template v-if="b.sourceIfIndex != null">
-              <dt>Source ifIndex</dt><dd>{{ b.sourceIfIndex }}</dd>
+              <dt>Source ifIndex</dt>
+              <dd>{{ b.sourceIfIndex }}<template v-if="interfaceName"> ({{ interfaceName }})</template></dd>
+            </template>
+            <!-- The raw IF-MIB state, with how it got there. The same two numbers
+                 are seconds old where the SNMP Interface Poller runs and a day
+                 old where only the node scan writes them, so the age is the
+                 difference between a live signal and inventory. -->
+            <template v-if="adminStatus">
+              <dt>Admin status</dt><dd>{{ adminStatus }}</dd>
+            </template>
+            <template v-if="operStatus">
+              <dt>Oper status</dt>
+              <dd>
+                {{ operStatus }}
+                <span v-if="stateAge" class="ti-hint ti-state-age">{{ stateAge }}</span>
+              </dd>
             </template>
             <template v-if="b.lastPollTime">
               <dt>Last confirmed</dt><dd>{{ b.lastPollTime }}</dd>
@@ -440,6 +455,12 @@ import { isLabelId, isShapeId, nodeIdFromPlacedId } from '@/components/Topology/
 import { severityColor } from '@/components/Topology/severity'
 import TopologyLocationMap from '@/components/Topology/TopologyLocationMap.vue'
 import {
+  adminStatusName,
+  describeProvenance,
+  operStatusName,
+  stateProvenance
+} from '@/components/Topology/interfaceState'
+import {
   DEVICE_ICON_SVG,
   powerStateColor,
   powerStateForIconKey,
@@ -448,7 +469,9 @@ import {
 import { getNodeById } from '@/services/nodeService'
 import {
   getEdgeInfoPanel,
+  getInterfaceState,
   getNodeInfoPanel,
+  type InterfaceState,
   assetUrl,
   listAssets,
   uploadAsset,
@@ -713,7 +736,13 @@ watch(
     if (id === null || nid === null) {
       return
     }
-    infoPanelItems.value = await getNodeInfoPanel(nid)
+    const items = await getNodeInfoPanel(nid)
+    // The selection may have moved while this was in flight; the link watcher
+    // below has always guarded this and these two did not, so clicking one node
+    // then another could leave the first one's detail under the second.
+    if (selectedId.value === id) {
+      infoPanelItems.value = items
+    }
   },
   { immediate: true }
 )
@@ -738,9 +767,16 @@ watch(
     nodeLoading.value = true
     try {
       const res = await getNodeById(String(nid))
+      if (selectedId.value !== id) {
+        return
+      }
       nodeDetail.value = res === false ? null : res
     } finally {
-      nodeLoading.value = false
+      // Only the request for the current selection may clear the flag, or an
+      // older one finishing makes a newer, still-loading panel look settled.
+      if (selectedId.value === id) {
+        nodeLoading.value = false
+      }
     }
   },
   { immediate: true }
@@ -971,8 +1007,49 @@ const resolvedBindings = ref<CanvasLinkBinding[]>([])
 // legacy map's edge context); same render/sanitize path as the node panels.
 const edgeInfoPanelItems = ref<NodeInfoPanelItem[]>([])
 
+/**
+ * The SNMP interface behind the link's source end, when enlinkd told us which
+ * one it is. Only the source end: enlinkd reports an ifIndex for the local side
+ * of a link, so the far end has a port name but no index to look up.
+ */
+const interfaceState = ref<InterfaceState | null>(null)
+
+const interfaceName = computed<string | undefined>(() => interfaceState.value?.ifName)
+const adminStatus = computed<string | undefined>(
+  () => adminStatusName(interfaceState.value?.ifAdminStatus))
+const operStatus = computed<string | undefined>(
+  () => operStatusName(interfaceState.value?.ifOperStatus))
+
+const stateAge = computed<string | undefined>(() => {
+  if (!interfaceState.value) {
+    return undefined
+  }
+  const provenance = stateProvenance(interfaceState.value, Date.now())
+  return provenance ? describeProvenance(provenance) : undefined
+})
+
 const linkBindings = computed<CanvasLinkBinding[]>(() =>
   link.value?.binding ? [link.value.binding] : resolvedBindings.value
+)
+
+// The state is fetched from the bindings rather than from the link, because the
+// ifIndex only exists once enlinkd has been consulted.
+watch(
+  [linkBindings, () => link.value?.sourceId],
+  async ([bindings, sourceId]) => {
+    interfaceState.value = null
+    const ifIndex = bindings.find(b => b.sourceIfIndex != null)?.sourceIfIndex
+    const nodeId = typeof sourceId === 'string' ? nodeIdFromPlacedId(sourceId) : null
+    if (ifIndex == null || nodeId === null) {
+      return
+    }
+    const state = await getInterfaceState(nodeId, ifIndex)
+    // The selection may have moved while this was in flight.
+    if (link.value?.sourceId === sourceId) {
+      interfaceState.value = state
+    }
+  },
+  { immediate: true }
 )
 
 watch(
@@ -1141,6 +1218,10 @@ const linkLabel = computed<string>({
   margin: 0.15rem 0 0.5rem;
 }
 
+.ti-state-age {
+  display: block;
+}
+
 .ti-binding-line {
   margin: 0;
 }
@@ -1157,7 +1238,9 @@ const linkLabel = computed<string>({
   height: 0.6rem;
   border-radius: 50%;
   margin-right: 0.35rem;
-  border: 1px solid rgba(0, 0, 0, 0.15);
+  /* Tokenized: a black hairline is invisible against a dark surface, and this
+     token carries rgba(255, 255, 255, 0.24) in the dark theme. */
+  border: 1px solid var(--onms-border-on-surface);
 }
 
 .ti-severity-dot {
@@ -1165,7 +1248,7 @@ const linkLabel = computed<string>({
   height: 0.75rem;
   border-radius: 50%;
   flex: 0 0 auto;
-  border: 1px solid rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--onms-border-on-surface);
 }
 
 .ti-node-label {
@@ -1253,8 +1336,8 @@ const linkLabel = computed<string>({
 }
 
 .ti-icon-option.is-selected {
-  border-color: #1f5fb0;
-  box-shadow: 0 0 0 1px #1f5fb0;
+  border-color: var(--onms-topology-accent);
+  box-shadow: 0 0 0 1px var(--onms-topology-accent);
 }
 
 /* The built-in glyphs are white strokes (drawn over the node's colored disc

@@ -27,6 +27,7 @@ import PrimeVue from 'primevue/config'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import TopologyInspector from '@/components/Topology/TopologyInspector.vue'
 import { powerStateColor } from '@/components/Topology/deviceIcons'
+import { getInterfaceState } from '@/services/topologyService'
 import { useTopologyStore } from '@/stores/topologyStore'
 
 import { getNodeById } from '@/services/nodeService'
@@ -42,6 +43,7 @@ vi.mock('@/services/topologyService', () => ({
   uploadAsset: vi.fn(),
   getNodeInfoPanel: vi.fn().mockResolvedValue([]),
   getEdgeInfoPanel: vi.fn().mockResolvedValue([]),
+  getInterfaceState: vi.fn().mockResolvedValue(null),
   getDiscoveredNeighbors: vi.fn().mockResolvedValue([]),
   getNodeSeverities: vi.fn().mockResolvedValue({}),
   getNodeIconIds: vi.fn().mockResolvedValue({}),
@@ -382,5 +384,73 @@ describe('TopologyInspector geographic location', () => {
     })
     expect(wrapper.text()).toContain('Default')
     expect(wrapper.text()).not.toContain('Geographic Location')
+  })
+})
+
+// The link's interface state, from /nodes/{id}/snmpinterfaces. Named rather than
+// mapped to up/down, and shown with how it got there: the same two numbers are
+// seconds old where the SNMP Interface Poller runs and a day old where only the
+// node scan writes them.
+describe('TopologyInspector link interface state', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const mountWithLink = async (iface: Record<string, unknown> | null) => {
+    vi.mocked(getInterfaceState).mockResolvedValue(iface as never)
+    const canvas = {
+      getLink: vi.fn(() => ({
+        id: 'e1',
+        sourceId: 'placed-1',
+        targetId: 'placed-2',
+        sourceLabel: 'core-01',
+        targetLabel: 'dist-02',
+        origin: 'discovered',
+        binding: { protocol: 'lldp', sourcePort: 'Gi0/2', targetPort: 'Gi0/1', sourceIfIndex: 2 }
+      })),
+      setLinkLabel: vi.fn(),
+      getNodeIconOverride: vi.fn(),
+      setNodeIconOverride: vi.fn()
+    }
+    const wrapper = mount(TopologyInspector, {
+      props: { canvas: canvas as never, variant: 'full' },
+      global: { plugins: [PrimeVue, createTestingPinia({ stubActions: false })] }
+    })
+    const store = useTopologyStore()
+    store.selectedIds = ['e1'] as never
+    await flushPromises()
+    return { wrapper }
+  }
+
+  it('names the raw oper status and says when it was polled', async () => {
+    const { wrapper } = await mountWithLink({
+      ifIndex: 2, ifName: 'Gi0/2', ifAdminStatus: 1, ifOperStatus: 7,
+      lastSnmpPoll: Date.now() - 90_000, lastCapsdPoll: Date.now() - 6 * 3600_000
+    })
+    const text = wrapper.text()
+    expect(text).toContain('lowerLayerDown')
+    expect(text).toContain('polled')
+    // The interface's name rides along with its index.
+    expect(text).toContain('Gi0/2')
+  })
+
+  it('says the state came from the node scan when the poller has not run', async () => {
+    const { wrapper } = await mountWithLink({
+      ifIndex: 2, ifOperStatus: 1, lastSnmpPoll: null, lastCapsdPoll: Date.now() - 6 * 3600_000
+    })
+    expect(wrapper.text()).toContain('from the last node scan')
+    expect(wrapper.text()).not.toContain('polled ')
+  })
+
+  it('shows no state rows when the interface cannot be read', async () => {
+    const { wrapper } = await mountWithLink(null)
+    expect(wrapper.text()).toContain('Source ifIndex')
+    expect(wrapper.text()).not.toContain('Oper status')
+    expect(wrapper.text()).not.toContain('Admin status')
+  })
+
+  it('asks for the interface enlinkd named, on the link\'s source node', async () => {
+    await mountWithLink({ ifIndex: 2, ifOperStatus: 1 })
+    expect(vi.mocked(getInterfaceState)).toHaveBeenCalledWith(1, 2)
   })
 })

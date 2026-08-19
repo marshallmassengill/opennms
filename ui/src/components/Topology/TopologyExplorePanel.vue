@@ -353,7 +353,18 @@ const fetchAlarmsFor = async (ids: number[]): Promise<AlarmRow[]> => {
   })))
 }
 
+/**
+ * Guards against overlapping fetches. The watch below fires on the selection's
+ * node set, the source, and every status poll, so a zoom step or a "Render all"
+ * click used to overlap the poll's own fetch -- two full chunk sweeps in flight,
+ * with whichever finished last winning, which could leave a stale subgraph's rows
+ * on screen. A generation counter also means a superseded sweep discards its
+ * results instead of assigning them.
+ */
+let fetchGeneration = 0
+
 const fetchData = async (): Promise<void> => {
+  const generation = ++fetchGeneration
   const ids = placedRealIds.value
   if (ids.length === 0) {
     nodeRows.value = []
@@ -370,12 +381,19 @@ const fetchData = async (): Promise<void> => {
       isApplicationGraph.value ? getApplications() : Promise.resolve([]),
       isApplicationGraph.value ? getPerspectiveOutages(ids) : Promise.resolve([])
     ])
+    if (generation !== fetchGeneration) {
+      return // a newer sweep started while this one was in flight
+    }
     applicationRows.value = applications
     perspectiveRows.value = perspectives
     nodeRows.value = nodes
     alarmRows.value = alarms
   } finally {
-    loading.value = false
+    // Only the newest sweep may clear the flag, or an older one finishing makes
+    // a still-loading panel look settled.
+    if (generation === fetchGeneration) {
+      loading.value = false
+    }
   }
 }
 
@@ -420,7 +438,7 @@ watch(tabs, (available) => {
   align-items: center;
   gap: 1rem;
   padding: 0.35rem 0.6rem;
-  background: rgba(31, 95, 176, 0.10);
+  background: color-mix(in srgb, var(--onms-topology-accent) 10%, transparent);
   border-bottom: 1px solid var(--onms-border-on-surface);
 }
 .topology-explore.collapsed .te-header {
@@ -452,9 +470,9 @@ watch(tabs, (available) => {
   color: var(--onms-primary-text-on-surface);
 }
 .te-tabs button.active {
-  background: rgba(31, 95, 176, 0.10);
+  background: color-mix(in srgb, var(--onms-topology-accent) 10%, transparent);
   border-color: var(--onms-border-on-surface);
-  color: #1f5fb0;
+  color: var(--onms-topology-accent);
   font-weight: 600;
 }
 .te-filter {

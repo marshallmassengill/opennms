@@ -110,7 +110,7 @@ License.
             :complete-on-focus="true"
             placeholder="Search nodes, IPs, categories"
             class="topology-search"
-            aria-label="Search nodes"
+            :aria-label="store.focusNodeId ? 'Focused node; type to search' : 'Search nodes'"
             @complete="onSearchComplete"
             @option-select="onSearchSelect"
           >
@@ -716,16 +716,40 @@ const onSearchSelect = (selected: unknown) => {
   const id = match?.node.id
   if (id) {
     if (isDiscovered.value) {
+      // The field is left alone: the focus watcher below fills it with the
+      // focused node, which is what makes the hop count mean something.
       navFocus(id, store.semanticZoomLevel)
-    } else {
-      // No focus/SZL on a custom view: every node is already placed, so finding
-      // one means selecting it and bringing the camera to it.
-      store.selectOnly(id)
-      canvasRef.value?.centerOnNode(id)
+      return
     }
+    // No focus/SZL on a custom view: every node is already placed, so finding
+    // one means selecting it and bringing the camera to it.
+    store.selectOnly(id)
+    canvasRef.value?.centerOnNode(id)
   }
-  searchModel.value = '' // clear the field; the focus chip/SZL control reflects the state
+  searchModel.value = ''
 }
+
+/**
+ * Keep the search box showing whatever the view is focused on, so the hop
+ * stepper beside it reads as "2 hops from this node" rather than "2 hops" from
+ * nothing in particular. Driven from the focus rather than from the select
+ * handler, so it is right however the focus was set: the large-graph gate's
+ * suggested anchor, the Focus button, a search result, a deep link, or the
+ * browser's back button.
+ */
+watch(
+  [() => store.focusNodeId, () => store.discoveredGraph],
+  ([focusId]) => {
+    if (!isDiscovered.value || !focusId) {
+      searchModel.value = ''
+      return
+    }
+    const node = searchableNodes().find(n => n.id === focusId)
+    // Fall back to the id: better than an empty box implying no focus at all.
+    searchModel.value = node?.label ?? focusId
+  },
+  { immediate: true }
+)
 
 // URL focus/SZL changed (a control click, a deep link, or back/forward) -> store.
 watch([routeFocus, routeSzl], () => {

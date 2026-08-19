@@ -285,9 +285,19 @@ const parseIfIndex = (link: Record<string, unknown>): number | undefined => {
       return Number(match[1])
     }
   }
+  // IS-IS has no local port string at all: it reports isisCircIfIndex as a
+  // number. Remote-side indices are excluded, since they name an interface on
+  // the other node.
+  for (const [key, value] of Object.entries(link)) {
+    const lower = key.toLowerCase()
+    if (typeof value === 'number' && lower.includes('ifindex') && !lower.includes('rem')) {
+      return value
+    }
+  }
   return undefined
 }
-const REMOTE_PORT_HINT = 'remport'
+// LLDP and OSPF name it *RemPort, bridge *RemotePort, CDP *CacheDevicePort.
+const REMOTE_PORT_HINTS = ['remport', 'remoteport', 'deviceport']
 
 const firstStringField = (
   link: Record<string, unknown>,
@@ -329,6 +339,18 @@ const parseNeighborNodeId = (
  * Pure transform of an enlinkd response into normalized neighbors. Exported
  * so it can be unit-tested against captured payloads without HTTP.
  */
+const linkFarEnds = (link: Record<string, unknown>): Array<Record<string, unknown>> => {
+  const nested = Object.values(link).find(
+    v => Array.isArray(v) && v.length > 0 && typeof v[0] === 'object' && v[0] !== null
+  )
+  if (!nested) {
+    return [link]
+  }
+  // The remote entry's fields win, so the far end's url and port are found while
+  // the parent's local port and ifIndex survive.
+  return (nested as Array<Record<string, unknown>>).map(remote => ({ ...link, ...remote }))
+}
+
 const parseEnlinkdNeighbors = (
   data: Record<string, unknown> | null | undefined,
   nodeId: number
@@ -351,24 +373,25 @@ const parseEnlinkdNeighbors = (
       if (!raw || typeof raw !== 'object') {
         continue
       }
-      const link = raw as Record<string, unknown>
-      const neighborNodeId = parseNeighborNodeId(link, nodeId)
-      const key = `${type}|${neighborNodeId}`
-      if (neighborNodeId == null || neighborNodeId === nodeId || seen.has(key)) {
-        continue
+      for (const link of linkFarEnds(raw as Record<string, unknown>)) {
+        const neighborNodeId = parseNeighborNodeId(link, nodeId)
+        const key = `${type}|${neighborNodeId}`
+        if (neighborNodeId == null || neighborNodeId === nodeId || seen.has(key)) {
+          continue
+        }
+        seen.add(key)
+        neighbors.push({
+          neighborNodeId,
+          neighborLabel:
+            firstStringField(link, k => REMOTE_LABEL_HINTS.some(h => k.includes(h))) ??
+            `Node ${neighborNodeId}`,
+          linkType: type,
+          localPort: firstStringField(link, k => k.includes(LOCAL_PORT_HINT)),
+          remotePort: firstStringField(link, k => REMOTE_PORT_HINTS.some(h => k.includes(h))),
+          localIfIndex: parseIfIndex(link),
+          lastPollTime: firstStringField(link, k => k.includes('lastpolltime'))
+        })
       }
-      seen.add(key)
-      neighbors.push({
-        neighborNodeId,
-        neighborLabel:
-          firstStringField(link, k => REMOTE_LABEL_HINTS.some(h => k.includes(h))) ??
-          `Node ${neighborNodeId}`,
-        linkType: type,
-        localPort: firstStringField(link, k => k.includes(LOCAL_PORT_HINT)),
-        remotePort: firstStringField(link, k => k.includes(REMOTE_PORT_HINT)),
-        localIfIndex: parseIfIndex(link),
-        lastPollTime: firstStringField(link, k => k.includes('lastpolltime'))
-      })
     }
   }
   return neighbors
@@ -802,6 +825,39 @@ const getNodeCategories = async (nodeIds: number[]): Promise<Record<number, stri
   return out
 }
 
+/** One interface's state, for a link whose local ifIndex enlinkd reported. */
+export interface InterfaceState {
+  ifIndex: number
+  ifName?: string
+  ifAdminStatus?: number
+  ifOperStatus?: number
+  lastSnmpPoll?: number | null
+  lastCapsdPoll?: number | null
+}
+
+/**
+ * The SNMP interface behind one end of a link. Filtered server-side to the one
+ * ifIndex rather than fetching the node's whole interface table, which on a
+ * switch is dozens of rows to use one of.
+ */
+const getInterfaceState = async (
+  nodeId: number,
+  ifIndex: number
+): Promise<InterfaceState | null> => {
+  try {
+    const resp = await v2.get<{ snmpInterface?: InterfaceState[] }>(
+      `nodes/${nodeId}/snmpinterfaces`,
+      { params: { _s: `ifIndex==${ifIndex}` }}
+    )
+    if (resp.status === 204 || !resp.data) {
+      return null
+    }
+    return resp.data.snmpInterface?.[0] ?? null
+  } catch {
+    return null
+  }
+}
+
 const getEdgeInfoPanel = async (
   sourceNodeId: number,
   targetNodeId: number,
@@ -922,6 +978,7 @@ export {
   getNodeInfoPanel,
   getNodeIconIds,
   getNodeCategories,
+  getInterfaceState,
   assetUrl,
   listAssets,
   uploadAsset,

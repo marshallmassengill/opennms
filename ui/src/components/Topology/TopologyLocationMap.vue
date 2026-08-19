@@ -22,8 +22,9 @@ License.
 
 -->
 <template>
-  <div v-if="tileUrl" class="tlm" :class="{ 'tlm-dark': isDark }">
+  <div v-if="tileUrl" ref="frame" class="tlm" :class="{ 'tlm-dark': isDark }">
     <LMap
+      ref="mapRef"
       :zoom="ZOOM"
       :center="center"
       :use-global-leaflet="false"
@@ -58,7 +59,7 @@ License.
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import 'leaflet/dist/leaflet.css'
 import { LIcon, LMap, LMarker, LTileLayer } from '@vue-leaflet/vue-leaflet'
 import markerIconUrl from 'leaflet/dist/images/marker-icon.png'
@@ -97,6 +98,37 @@ const center = computed<[number, number]>(() => [props.lat, props.lon])
 const status = computed<string>(() =>
   failed.value ? 'No tile server is configured, so the map cannot be drawn.' : 'Loading map\u2026')
 
+
+// Leaflet caches its container's pixel size and only re-reads it on
+// invalidateSize(). This panel is user-resizable, so dragging it wider left grey
+// tiles and the marker off centre until the component remounted. LeafletMap.vue
+// carries the same observer for the same reason.
+const frame = ref<HTMLElement | null>(null)
+const mapRef = ref<{ leafletObject?: { invalidateSize?: () => void }} | null>(null)
+let observer: ResizeObserver | null = null
+
+const revalidateSize = () => {
+  const map = mapRef.value?.leafletObject
+  if (typeof map?.invalidateSize === 'function') {
+    map.invalidateSize()
+  }
+}
+
+// The frame only exists once a tile server resolved, so observe it when it appears.
+watch(frame, (el) => {
+  observer?.disconnect()
+  observer = null
+  if (!el) {
+    return
+  }
+  observer = new ResizeObserver(() => revalidateSize())
+  observer.observe(el)
+})
+
+onBeforeUnmount(() => {
+  observer?.disconnect()
+  observer = null
+})
 
 onMounted(async () => {
   // getGeolocationConfig caches per install, so mounting this for every node
