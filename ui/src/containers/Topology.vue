@@ -887,10 +887,12 @@ const confirmDelete = async () => {
   flex-direction: column;
   gap: 1rem;
   padding: 1rem;
-  /* Fill the layout's main area (header + footer overhead ~104px). A residual
-     ~16px page scrollbar comes from the app shell (side-menu rail / footer
-     spacer), independent of this page -- tracked separately. */
-  height: calc(100vh - 104px);
+  /* Fill the layout's main grid row, which App.vue sizes for this route. No
+     viewport arithmetic: the previous calc(100vh - 104px) had to match the
+     footer's rendered height, and pushed the footer off screen once the footer
+     grew past the 44px the constant left it. */
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .topology-toolbar {
