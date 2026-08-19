@@ -774,6 +774,28 @@ const setContentBBox = () => {
 }
 
 /**
+ * Pan to a node without changing the zoom. Used when a search result is picked
+ * in a custom view, where there is no focus/SZL to reduce the graph, so finding
+ * a node means bringing the camera to it.
+ *
+ * getNodeDisplayData returns the node in the camera's own framed coordinates,
+ * which is what animate consumes; deriving that from the graph x/y would mean
+ * duplicating the customBBox mapping. The frame is left alone so the node does
+ * not jump size under the user.
+ */
+const centerOnNode = (id: string) => {
+  if (!sigma || !graph || !graph.hasNode(id)) {
+    return
+  }
+  const pos = sigma.getNodeDisplayData(id)
+  if (!pos) {
+    return
+  }
+  const camera = sigma.getCamera()
+  camera.animate({ x: pos.x, y: pos.y, ratio: camera.getState().ratio, angle: 0 }, { duration: 300 })
+}
+
+/**
  * Frame all placed nodes: narrow the coordinate frame to the content (via
  * setContentBBox) and center the camera on it. Since the customBBox now equals
  * the padded content box, a plain centered camera (0.5/0.5, ratio 1) frames it
@@ -2560,6 +2582,7 @@ defineExpose({
   // each node. The default reset state is { x: 0.5, y: 0.5, ratio: 1 };
   // a ratio above 1 zooms out, leaving margin on all sides.
   fit: fitCamera,
+  centerOnNode,
   serialize,
   loadView,
   loadDiscoveredGraph,

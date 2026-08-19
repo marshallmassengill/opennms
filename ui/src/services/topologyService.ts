@@ -693,6 +693,39 @@ const getNodeIconIds = async (nodeIds: number[]): Promise<Record<number, DeviceI
   return out
 }
 
+/**
+ * Which categories each node belongs to, keyed by OnmsNode id.
+ *
+ * Read off the node payload, which already carries `categories`, rather than
+ * filtering by category: the v2 /nodes endpoint has its `categories` alias join
+ * commented out (NodeRestService, "add this alias via a CriteriaBehavior"), so
+ * any `category`-prefixed filter returns a 500 from Hibernate.
+ *
+ * Chunked because the filter is an id-per-clause FIQL string, which would
+ * otherwise outgrow the URL on a large topology.
+ */
+const getNodeCategories = async (nodeIds: number[]): Promise<Record<number, string[]>> => {
+  const out: Record<number, string[]> = {}
+  for (const chunk of chunkByQueryLength(nodeIds, id => `id==${id}`)) {
+    try {
+      const resp = await getNodes({ _s: chunk.map(id => `id==${id}`).join(','), limit: chunk.length })
+      if (!resp || !resp.node) {
+        continue
+      }
+      for (const n of resp.node) {
+        const id = Number(n.id)
+        const names = (n.categories ?? []).map(c => c.name).filter(Boolean)
+        if (Number.isFinite(id) && names.length) {
+          out[id] = names
+        }
+      }
+    } catch {
+      // A failed chunk costs those nodes' categories, not the whole search.
+    }
+  }
+  return out
+}
+
 const getEdgeInfoPanel = async (
   sourceNodeId: number,
   targetNodeId: number,
@@ -812,6 +845,7 @@ export {
   getEdgeInfoPanel,
   getNodeInfoPanel,
   getNodeIconIds,
+  getNodeCategories,
   assetUrl,
   listAssets,
   uploadAsset,
