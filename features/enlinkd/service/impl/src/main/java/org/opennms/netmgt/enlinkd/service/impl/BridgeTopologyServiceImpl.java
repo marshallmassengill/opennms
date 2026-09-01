@@ -152,8 +152,15 @@ public class BridgeTopologyServiceImpl extends TopologyServiceImpl implements Br
     @Override
     @Transactional
     public void store(BroadcastDomain domain, Date now) {
+        // validate before persisting anything: a segment without a designated
+        // port would produce no links, and the post-store delete sweep would
+        // then erase that segment's previously persisted rows
         for (SharedSegment segment : domain.getSharedSegments()) {
-            segment.getDesignatedPort();
+            if (!segment.isEmpty() && segment.getDesignatedPort() == null) {
+                LOG.error("store: segment without designated port, skipping domain store:\n{}",
+                          domain.printTopology());
+                return;
+            }
         }
         for (SharedSegment segment : domain.getSharedSegments()) {
             for (BridgeBridgeLink link : segment.getBridgeBridgeLinks()) {
