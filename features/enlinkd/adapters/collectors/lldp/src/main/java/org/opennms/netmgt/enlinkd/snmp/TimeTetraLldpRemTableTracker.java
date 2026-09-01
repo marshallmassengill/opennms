@@ -115,7 +115,8 @@ public class TimeTetraLldpRemTableTracker extends TableTracker {
         }
 
 	    public Integer getLldpRemChassisidSubtype() {
-	    	return getValue(TIMETETRA_LLDP_REM_CHASSIS_ID_SUBTYPE_OID).toInt();
+            SnmpValue value = getValue(TIMETETRA_LLDP_REM_CHASSIS_ID_SUBTYPE_OID);
+            return value == null ? null : value.toInt();
 	    }
 
 	    public SnmpValue getLldpRemChassisId() {
@@ -123,11 +124,14 @@ public class TimeTetraLldpRemTableTracker extends TableTracker {
 	    }
 
 	    public Integer getLldpRemPortidSubtype() {
-	    	return getValue(TIMETETRA_LLDP_REM_PORT_ID_SUBTYPE_OID).toInt();
+            SnmpValue value = getValue(TIMETETRA_LLDP_REM_PORT_ID_SUBTYPE_OID);
+            return value == null ? null : value.toInt();
 	    }
 
 	    public String getLldpRemPortid() {
-	    	return LldpSnmpUtils.decodeLldpPortId(LldpPortIdSubType.get(getLldpRemPortidSubtype()), getValue(TIMETETRA_LLDP_REM_PORT_ID_OID));
+	    	return LldpSnmpUtils.decodeLldpPortId(
+	    	        LldpSnmpUtils.decodeLldpPortSubType(getLldpRemPortidSubtype(), getValue(TIMETETRA_LLDP_REM_PORT_ID_OID)),
+	    	        getValue(TIMETETRA_LLDP_REM_PORT_ID_OID));
 	    }
 
 	    public String getLldpRemPortDescr() {
@@ -137,7 +141,9 @@ public class TimeTetraLldpRemTableTracker extends TableTracker {
 	    }
 
 	    public String getLldpRemSysname() {
-	        return getValue(TIMETETRA_LLDP_REM_SYSNAME_OID).toDisplayString();
+            // optional TLV; the persisted column is NOT NULL
+            SnmpValue value = getValue(TIMETETRA_LLDP_REM_SYSNAME_OID);
+            return value == null ? "" : value.toDisplayString();
 	    }
 
 
@@ -147,12 +153,12 @@ public class TimeTetraLldpRemTableTracker extends TableTracker {
             lldpLink.setLldpRemLocalPortNum(getIfindex()*31+getTmnxLldpRemLocalDestMACAddress());
             lldpLink.setLldpRemIndex(getLldpRemIndex());
             lldpLink.setLldpPortIfindex(getIfindex());
-            lldpLink.setLldpRemChassisIdSubType(LldpChassisIdSubType.get(getLldpRemChassisidSubtype()));
+            lldpLink.setLldpRemChassisIdSubType(LldpSnmpUtils.decodeLldpChassisSubType(getLldpRemChassisidSubtype()));
             lldpLink.setLldpRemChassisId(LldpSnmpUtils.decodeLldpChassisId(lldpLink.getLldpRemChassisIdSubType(),
                     getLldpRemChassisId()));
             lldpLink.setLldpRemSysname(getLldpRemSysname());
             lldpLink.setLldpRemPortId(getLldpRemPortid());
-            lldpLink.setLldpRemPortIdSubType(LldpPortIdSubType.get(getLldpRemPortidSubtype()));
+            lldpLink.setLldpRemPortIdSubType(LldpSnmpUtils.decodeLldpPortSubType(getLldpRemPortidSubtype(), getValue(TIMETETRA_LLDP_REM_PORT_ID_OID)));
             lldpLink.setLldpRemPortDescr(getLldpRemPortDescr());
 
             LOG.debug( "getLldpLink: Rem Index: {}, ifindex: {}, TmnxLldpRemLocalDestMACAddress: {}, identifier: {}, chassis subtype: {}, \n rem sysname: {}, rem port: {}, rem port subtype: {}",

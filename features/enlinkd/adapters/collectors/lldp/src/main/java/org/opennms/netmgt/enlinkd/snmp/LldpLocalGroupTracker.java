@@ -125,9 +125,11 @@ public class LldpLocalGroupTracker extends AggregateTracker {
 
     public LldpElement getLldpElement() {
 		LldpElement lldpElement = new LldpElement();
-        lldpElement.setLldpChassisIdSubType(LldpChassisIdSubType.get(getLldpLocChassisidSubType()));
+        // tolerant decode: LldpChassisIdSubType.get() throws on a missing or
+        // out-of-range subtype, aborting the node's whole LLDP collection
+        lldpElement.setLldpChassisIdSubType(LldpSnmpUtils.decodeLldpChassisSubType(getLldpLocChassisidSubType()));
 		lldpElement.setLldpChassisId(LldpSnmpUtils.decodeLldpChassisId(lldpElement.getLldpChassisIdSubType(),getLldpLocChassisid()));
-		lldpElement.setLldpSysname(getLldpLocSysname());
+		lldpElement.setLldpSysname(getLldpLocSysname() == null ? "" : getLldpLocSysname());
 		return lldpElement;
     }
 

@@ -150,8 +150,6 @@ public class IpNetToMediaTableTracker extends TableTracker
 		        LOG.warn("getIpNetToMediaPhysAddress: IllegalArgument mac on ipnettomediatable:  return null", e);
 		        return null;
 		    }
-	            if (hexString != null && !hexString.trim().isEmpty() && isValidBridgeAddress(hexString))
-	                return hexString;
                     LOG.warn("getIpNetToMediaPhysAddress: not valid mac {}, return null", hexString);
 	            return null;
 		}

@@ -30,6 +30,7 @@ import org.opennms.netmgt.snmp.RowCallback;
 import org.opennms.netmgt.snmp.SnmpInstId;
 import org.opennms.netmgt.snmp.SnmpObjId;
 import org.opennms.netmgt.snmp.SnmpRowResult;
+import org.opennms.netmgt.snmp.SnmpValue;
 import org.opennms.netmgt.snmp.TableTracker;
 
 
@@ -107,23 +108,29 @@ public class OspfAreaTableTracker extends TableTracker {
         }
 
         public Integer getOspfAuthType() {
-            return getValue(OSPF_AUTH_TYPE_OID).toInt();
+            // ospfAuthType is obsolete in RFC 4750; conformant agents may not implement it
+            final SnmpValue value = getValue(OSPF_AUTH_TYPE_OID);
+            return value == null ? null : value.toInt();
         }
 
         public Integer getOspfImportAsExtern() {
-            return getValue(OSPF_IMPORT_AS_EXTERN_OID).isNull() ? null : getValue(OSPF_IMPORT_AS_EXTERN_OID).toInt();
+            final SnmpValue value = getValue(OSPF_IMPORT_AS_EXTERN_OID);
+            return value == null || value.isNull() ? null : value.toInt();
         }
 
         public Integer getOspfAreaBdrRtrCount() {
-            return getValue(OSPF_AREA_BDR_RTR_COUNT_OID).toInt();
+            final SnmpValue value = getValue(OSPF_AREA_BDR_RTR_COUNT_OID);
+            return value == null ? null : value.toInt();
         }
 
         public Integer getOspfAsBdrRtrCount() {
-            return getValue(OSPF_AS_BDR_RTR_COUNT_OID).toInt();
+            final SnmpValue value = getValue(OSPF_AS_BDR_RTR_COUNT_OID);
+            return value == null ? null : value.toInt();
         }
 
         public Integer getOspfAreaLsaCount() {
-            return getValue(OSPF_AREA_LSA_COUNT_OID).toInt();
+            final SnmpValue value = getValue(OSPF_AREA_LSA_COUNT_OID);
+            return value == null ? null : value.toInt();
         }
 
         public OspfArea getOspfArea() {

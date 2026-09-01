@@ -114,7 +114,8 @@ public class LldpRemTableTracker extends TableTracker {
         }
 
         public Integer getLldpRemChassisidSubtype() {
-	    	return getValue(LLDP_REM_CHASSIS_ID_SUBTYPE_OID).toInt();
+            SnmpValue value = getValue(LLDP_REM_CHASSIS_ID_SUBTYPE_OID);
+            return value == null ? null : value.toInt();
 	    }
 	    
 	    public SnmpValue getLldpRemChassisId() {
@@ -122,7 +123,8 @@ public class LldpRemTableTracker extends TableTracker {
 	    }
 
 	    public Integer getLldpRemPortidSubtype() {
-	    	return getValue(LLDP_REM_PORT_ID_SUBTYPE_OID).toInt();
+            SnmpValue value = getValue(LLDP_REM_PORT_ID_SUBTYPE_OID);
+            return value == null ? null : value.toInt();
 	    }
 
 	    public String getLldpRemPortid(LldpPortIdSubType portIdSubType) {
@@ -136,7 +138,9 @@ public class LldpRemTableTracker extends TableTracker {
 	    }
 
 	    public String getLldpRemSysname() {
-	        return getValue(LLDP_REM_SYSNAME_OID).toDisplayString();
+            // lldpRemSysName is an optional TLV; the persisted column is NOT NULL
+            SnmpValue value = getValue(LLDP_REM_SYSNAME_OID);
+            return value == null ? "" : value.toDisplayString();
 	    }
 	    
 	    public LldpLink getLldpLink() {

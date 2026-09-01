@@ -145,6 +145,7 @@ public final class NodeDiscoveryLldp extends NodeCollector {
     private boolean isInactiveDragonWave(LldpLocalGroupTracker lldpLocalGroup) {
         if (getSysoid() == null || getSysoid().equals(DW_SYSOID) ) {
             if (lldpLocalGroup.getLldpLocChassisid().toHexString().equals(DW_NULL_CHASSIS_ID) &&
+                    lldpLocalGroup.getLldpLocChassisidSubType() != null &&
                     lldpLocalGroup.getLldpLocChassisidSubType().intValue() == LldpChassisIdSubType.LLDP_CHASSISID_SUBTYPE_CHASSISCOMPONENT.getValue()) {
                 LOG.info( "run: node[{}]: address {}. lldp identifier : {}. lldp not active for Dragon Wave Device.",
                         getNodeId(),
@@ -153,7 +154,7 @@ public final class NodeDiscoveryLldp extends NodeCollector {
                 return true;
             }
 
-            if (lldpLocalGroup.getLldpLocSysname().equals(DW_NULL_SYSOID_ID) ) {
+            if (DW_NULL_SYSOID_ID.equals(lldpLocalGroup.getLldpLocSysname())) {
                 LOG.info( "run: node[{}]: lldp identifier : {}. lldp not active for Dragon Wave Device.",
                         getNodeId(),
                         lldpLocalGroup.getLldpElement());
@@ -263,13 +264,18 @@ public final class NodeDiscoveryLldp extends NodeCollector {
         m_lldpTopologyService.store(getNodeId(), LldpLocalTableTracker.getLldpElement(sysname, mtxrLldpLocalPortMap.values()));
 
         for (MtxrLldpRemTableTracker.MtxrLldpRemRow mtxrLldpRemRow : mtxrlldprowss) {
-            m_lldpTopologyService.store(getNodeId(),
-                    LldpSnmpUtils.getLldpLink(
-                            mtxrLldpRemRow,
-                            mtxrNeighborMap.get(mtxrLldpRemRow.getMtxrNeighborIndex()),
-                            mtxrLldpLocalPortMap
-                    )
-            );
+            // one pathological row must not abort the remaining links and the reconcile
+            try {
+                m_lldpTopologyService.store(getNodeId(),
+                        LldpSnmpUtils.getLldpLink(
+                                mtxrLldpRemRow,
+                                mtxrNeighborMap.get(mtxrLldpRemRow.getMtxrNeighborIndex()),
+                                mtxrLldpLocalPortMap
+                        )
+                );
+            } catch (RuntimeException e) {
+                LOG.warn("walkMtrx: node [{}]: skipping row {}: {}", getNodeId(), mtxrLldpRemRow, e.getMessage(), e);
+            }
         }
         return true;
     }
@@ -310,7 +316,12 @@ public final class NodeDiscoveryLldp extends NodeCollector {
 
     private void storeTimeTetraLldpLinks(List<TimeTetraLldpRemTableTracker.TimeTetraLldpRemRow> rows, final TimeTetraLldpLocPortGetter timeTetraLldpLocPortGetter) {
         for (TimeTetraLldpRemTableTracker.TimeTetraLldpRemRow row : rows) {
-            m_lldpTopologyService.store(getNodeId(), timeTetraLldpLocPortGetter.getLldpLink(row));
+            // one pathological row must not abort the remaining links and the reconcile
+            try {
+                m_lldpTopologyService.store(getNodeId(), timeTetraLldpLocPortGetter.getLldpLink(row));
+            } catch (RuntimeException e) {
+                LOG.warn("storeTimeTetraLldpLinks: node [{}]: skipping row {}: {}", getNodeId(), row, e.getMessage(), e);
+            }
         }
     }
 
@@ -321,7 +332,12 @@ public final class NodeDiscoveryLldp extends NodeCollector {
                 LOG.warn("storeLldpLinks: skipping row {}", row);
                 continue;
             }
-            m_lldpTopologyService.store(getNodeId(), lldpLocPortGetter.getLldpLink(row));
+            // one pathological row must not abort the remaining links and the reconcile
+            try {
+                m_lldpTopologyService.store(getNodeId(), lldpLocPortGetter.getLldpLink(row));
+            } catch (RuntimeException e) {
+                LOG.warn("storeLldpLinks: node [{}]: skipping row {}: {}", getNodeId(), row, e.getMessage(), e);
+            }
         }
     }
 	@Override

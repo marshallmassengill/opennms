@@ -28,6 +28,7 @@ import org.opennms.netmgt.enlinkd.model.IsIsLink.IsisISAdjState;
 import org.opennms.netmgt.snmp.SnmpInstId;
 import org.opennms.netmgt.snmp.SnmpObjId;
 import org.opennms.netmgt.snmp.SnmpRowResult;
+import org.opennms.netmgt.snmp.SnmpValue;
 import org.opennms.netmgt.snmp.TableTracker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -155,7 +156,10 @@ public class IsisISAdjTableTracker extends TableTracker {
 	    }
 	    
 	    public Integer getIsisISAdjNbrExtendedCircID() {
-	        return getValue(ISIS_IS_ADJ_NBR_EXTENDED_CIRCID_OID).toInt();
+	        // "the value of the extended circuit ID ... or 0" (RFC 4444);
+	        // some agents omit the instance on LAN adjacencies
+	        final SnmpValue value = getValue(ISIS_IS_ADJ_NBR_EXTENDED_CIRCID_OID);
+	        return value == null ? 0 : value.toInt();
 	    }
 
 	    public IsIsLink getIsisLink() {

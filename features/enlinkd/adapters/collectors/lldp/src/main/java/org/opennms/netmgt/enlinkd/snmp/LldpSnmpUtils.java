@@ -50,6 +50,9 @@ public class LldpSnmpUtils {
     }
 
     public static String getMacAddress(SnmpValue snmpValue) {
+        if (snmpValue == null) {
+            return "Null";
+        }
         if (InetAddressUtils.isValidBridgeAddress(formatMacAddress(getDisplayable(snmpValue)))) {
             return formatMacAddress(getDisplayable(snmpValue));
         }
@@ -128,6 +131,9 @@ public class LldpSnmpUtils {
     }
 
     public static String decodeLldpChassisId(final LldpUtils.LldpChassisIdSubType lldpChassisIdSubType, final SnmpValue snmpValue) {
+        if (snmpValue == null) {
+            return "Null";
+        }
         switch (lldpChassisIdSubType) {
             case LLDP_CHASSISID_SUBTYPE_MACADDRESS:
                 return getMacAddress(snmpValue);
@@ -143,6 +149,9 @@ public class LldpSnmpUtils {
     }
 
     public static String decodeLldpPortId(LldpUtils.LldpPortIdSubType type, SnmpValue snmpValue) {
+        if (snmpValue == null) {
+            return "";
+        }
         switch (type) {
             case LLDP_PORTID_SUBTYPE_LOCAL:
                 if (isNumber(snmpValue.toDisplayString())) {
@@ -165,6 +174,9 @@ public class LldpSnmpUtils {
 
     public static LldpUtils.LldpPortIdSubType decodeLldpPortSubType(Integer lldpPortIdSubType, SnmpValue lldpportid) {
         if (lldpPortIdSubType == null || lldpPortIdSubType == 0 || lldpPortIdSubType > 7) {
+            if (lldpportid == null) {
+                return LldpUtils.LldpPortIdSubType.LLDP_PORTID_SUBTYPE_PORTCOMPONENT;
+            }
             try {
                 String macAddress = getMacAddress(lldpportid);
                 if (InetAddressUtils.isValidBridgeAddress(macAddress)) {
