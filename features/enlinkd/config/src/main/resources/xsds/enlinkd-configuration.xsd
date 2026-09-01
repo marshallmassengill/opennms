@@ -181,7 +181,7 @@
 				</annotation>
 			</attribute>
 
-			<attribute name="isis-priority" type="int" default="3000">
+			<attribute name="isis-priority" type="int" default="4000">
 				<annotation>
 					<documentation>
 						The priority used for executing IS-IS links discovery
