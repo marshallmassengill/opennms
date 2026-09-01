@@ -161,9 +161,16 @@ public class CdpTopologyServiceImpl extends TopologyServiceImpl implements CdpTo
         }
         Map<CompositeKey, CdpLinkTopologyEntity> targetLinkMap = new HashMap<>();
         for (CdpLinkTopologyEntity targetLink : allLinks) {
+            CdpElementTopologyEntity targetCdpElement = cdpelementmap.get(targetLink.getNodeId());
+            if (targetCdpElement == null) {
+                // link and element caches refresh independently, so a link can
+                // transiently have no element row; skip it instead of aborting
+                LOG.warn("match: cdp link with no cdp element on node [{}], skipping", targetLink.getNodeId());
+                continue;
+            }
             CompositeKey key = new CompositeKey(targetLink.getCdpCacheDevicePort(),
                     targetLink.getCdpInterfaceName(),
-                    cdpelementmap.get(targetLink.getNodeId()).getCdpGlobalDeviceId(),
+                    targetCdpElement.getCdpGlobalDeviceId(),
                     targetLink.getCdpCacheDeviceId());
             targetLinkMap.put(key, targetLink);
         }
@@ -179,6 +186,10 @@ public class CdpTopologyServiceImpl extends TopologyServiceImpl implements CdpTo
                 LOG.debug("getCdpLinks: source: {} ", sourceLink);
             }
             CdpElementTopologyEntity sourceCdpElement = cdpelementmap.get(sourceLink.getNodeId());
+            if (sourceCdpElement == null) {
+                LOG.warn("match: cdp link with no cdp element on node [{}], skipping", sourceLink.getNodeId());
+                continue;
+            }
 
             CdpLinkTopologyEntity targetLink = targetLinkMap.get(new CompositeKey(sourceLink.getCdpInterfaceName(),
                     sourceLink.getCdpCacheDevicePort(),

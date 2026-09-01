@@ -184,6 +184,12 @@ public class IsisTopologyServiceImpl extends TopologyServiceImpl implements Isis
         Map<CompositeKey, IsIsLinkTopologyEntity> targetLinkMap = new HashMap<>();
         for (IsIsLinkTopologyEntity targetLink : allLinks) {
             IsIsElementTopologyEntity targetElement = elementmap.get(targetLink.getNodeId());
+            if (targetElement == null) {
+                // link and element caches refresh independently, so a link can
+                // transiently have no element row; skip it instead of aborting
+                LOG.warn("match: isis link with no isis element on node [{}], skipping", targetLink.getNodeId());
+                continue;
+            }
             targetLinkMap.put(new CompositeKey(targetLink.getIsisISAdjIndex(),
                       targetElement.getIsisSysID(),
                       targetLink.getIsisISAdjNeighSysID()), targetLink);
@@ -201,6 +207,10 @@ public class IsisTopologyServiceImpl extends TopologyServiceImpl implements Isis
                 LOG.debug("getIsIsLinks: source: {}", sourceLink);
             }
             IsIsElementTopologyEntity sourceElement = elementmap.get(sourceLink.getNodeId());
+            if (sourceElement == null) {
+                LOG.warn("match: isis link with no isis element on node [{}], skipping", sourceLink.getNodeId());
+                continue;
+            }
             IsIsLinkTopologyEntity targetLink = targetLinkMap.get(new CompositeKey(sourceLink.getIsisISAdjIndex(),
                     sourceLink.getIsisISAdjNeighSysID(),
                     sourceElement.getIsisSysID()));

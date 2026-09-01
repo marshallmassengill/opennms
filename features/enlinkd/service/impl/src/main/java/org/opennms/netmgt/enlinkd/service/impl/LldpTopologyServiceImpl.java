@@ -177,7 +177,17 @@ public class LldpTopologyServiceImpl extends TopologyServiceImpl implements Lldp
 
             Map<Integer, LldpElementTopologyEntity> nodelldpelementidMap = getTopologyEntityCache().getLldpElementTopologyEntities().stream()
                     .collect(Collectors.toMap(LldpElementTopologyEntity::getNodeId, lldpelem -> lldpelem));
-            List<LldpLinkTopologyEntity> lldpLinks = getTopologyEntityCache().getLldpLinkTopologyEntities();
+            // link and element caches refresh independently, so a link can
+            // transiently have no element row; drop those up front since every
+            // matching pass keys on the element
+            List<LldpLinkTopologyEntity> lldpLinks = new ArrayList<>();
+            for (LldpLinkTopologyEntity link : getTopologyEntityCache().getLldpLinkTopologyEntities()) {
+                if (nodelldpelementidMap.get(link.getNodeId()) == null) {
+                    LOG.warn("match: lldp link with no lldp element on node [{}], skipping", link.getNodeId());
+                    continue;
+                }
+                lldpLinks.add(link);
+            }
             // 1.) create mapping
             Map<CompositeKey, LldpLinkTopologyEntity> lldpLinkCompositeKeyMap = new HashMap<>();
             for(LldpLinkTopologyEntity lldpLink : lldpLinks){
