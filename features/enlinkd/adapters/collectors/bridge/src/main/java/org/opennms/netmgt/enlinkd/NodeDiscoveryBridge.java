@@ -109,6 +109,7 @@ public final class NodeDiscoveryBridge extends NodeCollector {
         
         List<BridgeForwardingTableEntry> bft = new ArrayList<>();
         Map<Integer, Integer> bridgeifindex = new HashMap<>();
+        boolean fdbWalkFailed = false;
 
         for (Entry<Integer, SnmpAgentConfig> entry : vlanSnmpAgentConfigMap.entrySet()) {
             Map<Integer,Integer> vlanbridgetoifindex = walkDot1dBasePortTable(entry.getValue());
@@ -146,19 +147,32 @@ public final class NodeDiscoveryBridge extends NodeCollector {
                     m_bridgeTopologyService.store(getNodeId(), stplink);
                 }
             }
-            bft = walkDot1dTpFdp(entry.getValue(),entry.getKey(), bridgeifindex, bft, vlanSnmpAgentConfigMap.get(entry.getKey()));
+            if (!walkDot1dTpFdp(entry.getValue(),entry.getKey(), bridgeifindex, bft, vlanSnmpAgentConfigMap.get(entry.getKey()))) {
+                fdbWalkFailed = true;
+            }
         }
         LOG.debug("run: node [{}]: deleting older the time {}", getNodeId(), now);
         m_bridgeTopologyService.reconcile(getNodeId(), now);
-		
-        bft = walkDot1qTpFdb(peer,bridgeifindex, bft);
+
+        if (!walkDot1qTpFdb(peer,bridgeifindex, bft)) {
+            fdbWalkFailed = true;
+        }
         LOG.debug("run: node [{}]: bft size:{}", getNodeId(), bft.size());
 
-        if (bft.size() > 0) {
-            LOG.debug("run: node [{}]: updating topology", getNodeId());
-        	m_bridgeTopologyService.store(getNodeId(), bft);
+        try {
+            if (fdbWalkFailed) {
+                // a truncated forwarding table must not replace the previous one:
+                // the domain algorithm would compute topology from partial data
+                LOG.warn("run: node [{}]: FDB walk failed, keeping the previously collected forwarding table", getNodeId());
+            } else if (bft.size() > 0) {
+                LOG.debug("run: node [{}]: updating topology", getNodeId());
+                m_bridgeTopologyService.store(getNodeId(), bft);
+            }
+        } finally {
+            // always release the collection slot, or collectBft() leaks the
+            // nodeid and bridge collection halts once max_bft slots leak
+            m_bridgeTopologyService.collectedBft(getNodeId());
         }
-        m_bridgeTopologyService.collectedBft(getNodeId());
     }
 
     private BridgeElement getDot1dBridgeBase(SnmpAgentConfig peer) {
@@ -171,6 +185,7 @@ public final class NodeDiscoveryBridge extends NodeCollector {
                      getNodeId(), e.getMessage());
             return null; 
         } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
             LOG.info("run: node [{}]: InterruptedException: BRIDGE_MIB not supported: {}", 
                      getNodeId(), e.getMessage());
             return null;
@@ -229,6 +244,7 @@ public final class NodeDiscoveryBridge extends NodeCollector {
                     getNodeId(), e.getMessage());
            return vlanmap;
        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
            LOG.debug("run: node [{}]: InterruptedException: vtpVersion: {}", 
                     getNodeId(), e.getMessage());
            return vlanmap;
@@ -259,6 +275,7 @@ public final class NodeDiscoveryBridge extends NodeCollector {
             LOG.debug("run: node [{}]: ExecutionException: {}", 
                      getNodeId(), e.getMessage());
         } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
             LOG.debug("run: node [{}]: InterruptedException: {}", 
                      getNodeId(), e.getMessage());
         }
@@ -285,13 +302,14 @@ public final class NodeDiscoveryBridge extends NodeCollector {
             LOG.debug("run: node [{}]: ExecutionException: {}", 
                      getNodeId(), e.getMessage());
         } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
             LOG.debug("run: node [{}]: InterruptedException: {}", 
                      getNodeId(), e.getMessage());
         }
         return bridgetoifindex;
     }
 
-    private List<BridgeForwardingTableEntry> walkDot1dTpFdp(final String vlan,final Integer vlanId,
+    private boolean walkDot1dTpFdp(final String vlan,final Integer vlanId,
             final Map<Integer, Integer> bridgeifindex,
             List<BridgeForwardingTableEntry> bft, SnmpAgentConfig peer) {
 
@@ -351,13 +369,16 @@ public final class NodeDiscoveryBridge extends NodeCollector {
             getLocationAwareSnmpClient().walk(peer,
                                                       dot1dTpFdbTableTracker).withDescription("dot1dTbFdbPortTable").withLocation(getLocation()).execute().get();
         } catch (ExecutionException e) {
-            LOG.debug("run: node [{}]: ExecutionException: {}", 
+            LOG.warn("run: node [{}]: dot1dTpFdbTable walk failed: {}",
                      getNodeId(), e.getMessage());
+            return false;
         } catch (final InterruptedException e) {
-            LOG.debug("run: node [{}]: InterruptedException: {}", 
+            Thread.currentThread().interrupt();
+            LOG.warn("run: node [{}]: dot1dTpFdbTable walk interrupted: {}",
                      getNodeId(), e.getMessage());
+            return false;
         }
-        return bft;
+        return true;
     }
 
     private void fixCiscoBridgeMibPort(Integer bridgeport,Map<Integer,Integer> bridgeifindex) {
@@ -414,7 +435,7 @@ public final class NodeDiscoveryBridge extends NodeCollector {
     		bridgeifindex.get(bridgeport));
     }
     
-    private List<BridgeForwardingTableEntry> walkDot1qTpFdb(SnmpAgentConfig peer,
+    private boolean walkDot1qTpFdb(SnmpAgentConfig peer,
             final Map<Integer, Integer> bridgeifindex,
             final List<BridgeForwardingTableEntry> bft) {
 
@@ -500,13 +521,16 @@ public final class NodeDiscoveryBridge extends NodeCollector {
             getLocationAwareSnmpClient().walk(peer,
                                                       dot1qTpFdbTableTracker).withDescription("dot1qTbFdbPortTable").withLocation(getLocation()).execute().get();
         } catch (ExecutionException e) {
-            LOG.debug("run: node [{}]: ExecutionException: {}", 
+            LOG.warn("run: node [{}]: dot1qTpFdbTable walk failed: {}",
                      getNodeId(), e.getMessage());
+            return false;
         } catch (final InterruptedException e) {
-            LOG.debug("run: node [{}]: InterruptedException: {}", 
+            Thread.currentThread().interrupt();
+            LOG.warn("run: node [{}]: dot1qTpFdbTable walk interrupted: {}",
                      getNodeId(), e.getMessage());
+            return false;
         }
-        return bft;
+        return true;
     }
 
     private List<BridgeStpLink> walkSpanningTree(SnmpAgentConfig peer,
@@ -547,6 +571,7 @@ public final class NodeDiscoveryBridge extends NodeCollector {
             LOG.info("run: node [{}]: ExecutionException: {}", 
                      getNodeId(), e.getMessage());
         } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
             LOG.info("run: node [{}]: InterruptedException: {}", 
                      getNodeId(), e.getMessage());
         }
