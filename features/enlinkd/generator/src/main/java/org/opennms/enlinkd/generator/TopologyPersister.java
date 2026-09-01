@@ -32,6 +32,7 @@ import org.opennms.netmgt.enlinkd.model.BridgeMacLink;
 import org.opennms.netmgt.enlinkd.model.CdpElement;
 import org.opennms.netmgt.enlinkd.model.CdpLink;
 import org.opennms.netmgt.enlinkd.model.IpNetToMedia;
+import org.opennms.netmgt.enlinkd.model.UserDefinedLink;
 import org.opennms.netmgt.enlinkd.model.IsIsElement;
 import org.opennms.netmgt.enlinkd.model.IsIsLink;
 import org.opennms.netmgt.enlinkd.model.LldpElement;
@@ -113,7 +114,7 @@ public class TopologyPersister {
 
     private void deleteUserDefinedLinks() {
         deleteEntities(
-                OnmsNode.class,
+                UserDefinedLink.class,
                 String.format("SELECT l FROM UserDefinedLink l WHERE l.owner = '%s'", UserDefinedProtocol.OWNER));
     }
 

@@ -46,7 +46,10 @@ public class TopologySettings {
             TopologyGenerator.Protocol protocol) {
         this.amountNodes = setToDefaultIfNotSet(amountNodes, 10);
         this.amountElements = setToDefaultIfNotSet(amountElements, this.amountNodes);
-        this.amountLinks = setToDefaultIfNotSet(amountLinks, this.amountElements);
+        // links are created in pairs, so an odd amount would silently lose one
+        // (and --links 1 would create none); round up
+        final int links = setToDefaultIfNotSet(amountLinks, this.amountElements);
+        this.amountLinks = (links % 2 == 0) ? links : links + 1;
         this.amountSnmpInterfaces = setToDefaultIfNotSet(amountSnmpInterfaces, this.amountNodes * 18);
         this.amountIpInterfaces = setToDefaultIfNotSet(amountIpInterfaces, this.amountNodes * 2);
         this.topology = setToDefaultIfNotSet(topology, TopologyGenerator.Topology.random);
@@ -65,6 +68,10 @@ public class TopologySettings {
         assertMoreOrEqualsThan("we need at least 1 link", 1, this.amountLinks);
         assertMoreOrEqualsThan("links must be less than or equal to number of snmp interfaces",
                 this.amountLinks, this.amountSnmpInterfaces);
+        // every node needs at least one snmp interface: the protocol link
+        // creators look the interface up by node id
+        assertMoreOrEqualsThan("we need at least as many snmp interfaces as nodes",
+                this.amountNodes, this.amountSnmpInterfaces);
     }
 
     private static void assertMoreOrEqualsThan(String message, int expected, int actual) {

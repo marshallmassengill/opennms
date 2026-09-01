@@ -90,7 +90,7 @@ public class LldpProtocol extends Protocol {
             int sourceIfIndex = nodeIfIndexes.get(sourceElement.getNode().getId());
             int targetIfIndex = nodeIfIndexes.get(targetElement.getNode().getId());
             String portId = sourceElement.getNode().getId() + "-" + sourceIfIndex;
-            String portIdRemote = sourceElement.getNode().getId() + "-" + sourceIfIndex;
+            String portIdRemote = targetElement.getNode().getId() + "-" + targetIfIndex;
 
             LldpLink sourceLink = createLink(sourceElement.getNode(), portId, portIdSubType, portIdRemote,
                     portIdSubTypeRemote, targetElement.getLldpChassisId(), sourceIfIndex);
@@ -124,7 +124,6 @@ public class LldpProtocol extends Protocol {
         link.setLldpRemLocalPortNum(ifindexRandomGenerator.nextInt(100000));
         link.setLldpRemIndex(ifindexRandomGenerator.nextInt(100000));
         link.setLldpLinkLastPollTime(new Date());
-        link.setLldpPortDescr("lldpportdescr");
         link.setLldpRemSysname("lldpRemSysname");
         link.setLldpPortDescr("lldpPortDescr");
         link.setLldpRemPortDescr("lldpRemPortDescr");

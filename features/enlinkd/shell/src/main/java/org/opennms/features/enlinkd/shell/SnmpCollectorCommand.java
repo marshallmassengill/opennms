@@ -215,8 +215,13 @@ public class SnmpCollectorCommand implements Action, Completer {
                     .withLocation(location)
                     .execute()
                     .get();
-        } catch (final InterruptedException | ExecutionException e) {
-            System.out.println("(Empty collection set)");
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            System.out.println("walk interrupted");
+            return null;
+        } catch (final ExecutionException e) {
+            System.out.printf("walk failed: %s%n", e.getCause() == null ? e.getMessage() : e.getCause().getMessage());
+            return null;
         }
 
         if (tracker instanceof AggregateTracker) {

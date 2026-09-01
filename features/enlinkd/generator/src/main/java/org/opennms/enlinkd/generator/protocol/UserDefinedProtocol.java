@@ -58,7 +58,7 @@ public class UserDefinedProtocol extends Protocol {
             udl.setNodeIdA(sourceNode.getId());
             udl.setComponentLabelA(Integer.toString(nodeIfIndexes.get(sourceNode.getId())));
             udl.setNodeIdZ(targetNode.getId());
-            udl.setComponentLabelZ(Integer.toString(nodeIfIndexes.get(sourceNode.getId())));
+            udl.setComponentLabelZ(Integer.toString(nodeIfIndexes.get(targetNode.getId())));
             udl.setOwner(OWNER);
             udl.setLinkId(Integer.toString(i));
 

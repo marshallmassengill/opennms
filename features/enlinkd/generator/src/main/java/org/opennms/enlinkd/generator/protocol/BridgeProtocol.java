@@ -163,8 +163,8 @@ public class BridgeProtocol extends Protocol {
         //bridge3:port31 connected to up bridge0:port2
         root.connectToNewBridge(bridge10, 10);
 
-        // create sub tree on bridge5:
-        if (nodes.size() >= offset + 20) {
+        // create sub tree on bridge5: the recursion indexes up to offset + 20
+        if (nodes.size() >= offset + 21) {
             createAndPersistProtocolSpecificEntities(nodes, bridge5B, gateway, iteration + 1);
         }
     }

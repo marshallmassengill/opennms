@@ -51,10 +51,10 @@ public class GenerateTopologyCommand implements Action {
     @Option(name = "--links", description = "generate <N> (Cdp | IsIs | Lldp | Ospf ) Links, depending on protocol. Default: amount elements.")
     private Integer amountLinks;
 
-    @Option(name = "--snmpinterfaces", description = "generate <N> SnmpInterfaces but not more than amount nodes. Default: amount nodes * 18.")
+    @Option(name = "--snmpinterfaces", description = "generate <N> SnmpInterfaces, at least amount nodes. Default: amount nodes * 18.")
     private Integer amountSnmpInterfaces;
 
-    @Option(name = "--ipinterfaces", description = "generate <N> IpInterfaces but not more than amount snmp interfaces. Default: amount nodes * 2.")
+    @Option(name = "--ipinterfaces", description = "generate <N> IpInterfaces. Default: amount nodes * 2.")
     private Integer amountIpInterfaces;
 
     @Option(name = "--topology", description = "type of topology (complete | ring | random). Default: random.")
@@ -72,6 +72,23 @@ public class GenerateTopologyCommand implements Action {
     @Override
     public Object execute() {
 
+        final TopologyGenerator.Protocol parsedProtocol;
+        final TopologyGenerator.Topology parsedTopology;
+        try {
+            parsedProtocol = toEnumOrNull(TopologyGenerator.Protocol.class, this.protocol);
+        } catch (IllegalArgumentException e) {
+            System.out.printf("invalid --protocol '%s', valid values: %s%n", this.protocol,
+                    java.util.Arrays.toString(TopologyGenerator.Protocol.values()));
+            return null;
+        }
+        try {
+            parsedTopology = toEnumOrNull(TopologyGenerator.Topology.class, this.topology);
+        } catch (IllegalArgumentException e) {
+            System.out.printf("invalid --topology '%s', valid values: %s%n", this.topology,
+                    java.util.Arrays.toString(TopologyGenerator.Topology.values()));
+            return null;
+        }
+
         // We print directly to System.out so it will appear in the console
         TopologyGenerator.ProgressCallback progressCallback = new TopologyGenerator.ProgressCallback(System.out::println);
 
@@ -85,8 +102,8 @@ public class GenerateTopologyCommand implements Action {
                 .amountLinks(this.amountLinks)
                 .amountNodes(this.amountNodes)
                 .amountSnmpInterfaces(amountSnmpInterfaces)
-                .protocol(toEnumOrNull(TopologyGenerator.Protocol.class, this.protocol))
-                .topology(toEnumOrNull(TopologyGenerator.Topology.class, this.topology))
+                .protocol(parsedProtocol)
+                .topology(parsedTopology)
                 .build();
         generator.generateTopology(settings);
         reloadableTopologyDaemon.reloadTopology();

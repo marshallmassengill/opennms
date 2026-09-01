@@ -77,7 +77,7 @@ public abstract class Protocol {
                 this.getProtocol(),
                 topologySettings.getAmountNodes(),
                 topologySettings.getAmountElements(),
-                topologySettings.getAmountElements(),
+                topologySettings.getAmountLinks(),
                 topologySettings.getAmountSnmpInterfaces(),
                 topologySettings.getAmountIpInterfaces());
     }
@@ -115,7 +115,6 @@ public abstract class Protocol {
 
     protected OnmsNode createNode(int count, OnmsMonitoringLocation location, OnmsCategory category) {
         OnmsNode node = new OnmsNode();
-        node.setId(count);
         node.setLabel("Node" + count);
         node.setLocation(location);
         node.addCategory(category);
@@ -128,14 +127,16 @@ public abstract class Protocol {
     protected List<OnmsSnmpInterface> createSnmpInterfaces(List<OnmsNode> nodes) {
         ArrayList<OnmsSnmpInterface> interfaces = new ArrayList<>();
         for (int i = 0; i < topologySettings.getAmountSnmpInterfaces(); i++) {
-            interfaces.add(createSnmpInterface(i, random.getRandom(nodes)));
+            // give every node one interface before assigning randomly: the
+            // link creators unbox nodeIfIndexes.get(node.getId())
+            OnmsNode node = i < nodes.size() ? nodes.get(i) : random.getRandom(nodes);
+            interfaces.add(createSnmpInterface(i, node));
         }
         return interfaces;
     }
 
     protected OnmsSnmpInterface createSnmpInterface(int ifIndex, OnmsNode node) {
         OnmsSnmpInterface onmsSnmpInterface = new OnmsSnmpInterface();
-        onmsSnmpInterface.setId((node.getId() * topologySettings.getAmountSnmpInterfaces()) + ifIndex);
         onmsSnmpInterface.setNode(node);
         onmsSnmpInterface.setIfIndex(ifIndex);
         onmsSnmpInterface.setIfType(4);
@@ -160,7 +161,6 @@ public abstract class Protocol {
 
     protected OnmsIpInterface createIpInterface(OnmsSnmpInterface snmp, InetAddress inetAddress) {
         OnmsIpInterface ip = new OnmsIpInterface();
-        ip.setId(snmp.getId());
         ip.setSnmpInterface(snmp);
         ip.setIpLastCapsdPoll(new Date());
         ip.setNode(Optional.of(snmp).map(OnmsSnmpInterface::getNode).orElse(null));
