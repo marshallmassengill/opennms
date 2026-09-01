@@ -60,7 +60,10 @@ public class DiscoveryBridgeTopology {
                     + yBridge.getNodeId() + "]", simple.getSecondPort());
         }
 
-        Set<String> macsOnSegment = xBridge.getBridgePortWithMacs(simple.getFirstPort()).getMacs();
+        // intersect on a copy: the live per-port set is the forwarding table
+        // that later bridges' calculations (and condition 4 of
+        // findSimpleConnection) still read
+        Set<String> macsOnSegment = new HashSet<>(xBridge.getBridgePortWithMacs(simple.getFirstPort()).getMacs());
         macsOnSegment.retainAll(yBridge.getBridgePortWithMacs(simple.getSecondPort()).getMacs());
 
         return macsOnSegment;
@@ -543,7 +546,11 @@ public class DiscoveryBridgeTopology {
                              bridge.getNodeId(), e.getMessage(),
                              e.printTopology());
                     m_domain.clearTopology();
+                    // the recursion recomputes the whole domain (and sets
+                    // m_parsed/m_failed); falling through would re-merge the
+                    // root and per-bridge state on top of it
                     calculate();
+                    return;
                 }
             }
         }
