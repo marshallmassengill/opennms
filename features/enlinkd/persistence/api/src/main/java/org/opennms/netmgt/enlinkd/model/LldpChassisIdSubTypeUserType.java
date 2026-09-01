@@ -59,7 +59,7 @@ public class LldpChassisIdSubTypeUserType extends EnumType {
                 return type;
             }
         }
-        throw new HibernateException("Invalid value for NodeUserType: " + c);
+        throw new HibernateException("Invalid value for LldpChassisIdSubType: " + c);
     }
 
     @Override

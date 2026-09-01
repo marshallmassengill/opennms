@@ -196,7 +196,7 @@ public class OspfLink implements Serializable {
 	 */
 	public String toString() {
 		return "ospflink: nodeid:[" +
-				getNode().getId() +
+				(getNode() == null ? null : getNode().getId()) +
 				"]: id/mask/ifindex/addressless/ifAreaId:[" +
 				str(getOspfIpAddr()) +
 				"/" +

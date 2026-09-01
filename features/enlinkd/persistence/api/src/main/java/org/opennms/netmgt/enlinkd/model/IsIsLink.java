@@ -322,19 +322,19 @@ public class IsIsLink implements Serializable {
 	public String toString() {
 
 		return "isislink: nodeid:[" +
-				getNode().getId() +
+				(getNode() == null ? null : getNode().getId()) +
 				"]. circIndex:[ " +
 				getIsisCircIndex() +
 				"], ifindex:[" +
 				getIsisCircIfIndex() +
 				"], AdminState:[" +
-				IsisAdminState.getTypeString(getIsisCircAdminState().getValue()) +
+				(getIsisCircAdminState() == null ? null : IsisAdminState.getTypeString(getIsisCircAdminState().getValue())) +
 				"], ISAdjNeighSysID:[" +
 				getIsisISAdjNeighSysID() +
 				"], ISAdjNeighSNPAAddress:[" +
 				getIsisISAdjNeighSNPAAddress() +
 				"], ISAdjState:[" +
-				IsisISAdjState.getTypeString(getIsisISAdjState().getValue()) +
+				(getIsisISAdjState() == null ? null : IsisISAdjState.getTypeString(getIsisISAdjState().getValue())) +
 				"]";
         }
 }

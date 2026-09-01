@@ -148,7 +148,7 @@ public class VlanType implements Comparable<VlanType>, Serializable {
     @Override
     public boolean equals(Object o) {
         if (o instanceof VlanType) {
-            return m_vlanType.intValue() == ((VlanType) o).m_vlanType.intValue();
+            return java.util.Objects.equals(m_vlanType, ((VlanType) o).m_vlanType);
         }
         return false;
     }

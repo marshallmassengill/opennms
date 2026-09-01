@@ -371,7 +371,7 @@ public class CdpLink implements Serializable {
     public String toString() {
 
         return "cdplink: nodeid:[" +
-                getNode().getId() +
+                (getNode() == null ? null : getNode().getId()) +
                 "]. ifindex:[ " +
                 getCdpCacheIfIndex() +
                 "], deviceindex:[" +
@@ -381,7 +381,7 @@ public class CdpLink implements Serializable {
                 "], address/type:[" +
                 getCdpCacheAddress() +
                 "/" +
-                CiscoNetworkProtocolType.getTypeString(getCdpCacheAddressType().getValue()) +
+                (getCdpCacheAddressType() == null ? null : CiscoNetworkProtocolType.getTypeString(getCdpCacheAddressType().getValue())) +
                 "], deviceid:[" +
                 getCdpCacheDeviceId() +
                 "], deviceport:[" +

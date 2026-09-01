@@ -299,7 +299,7 @@ public class LldpLink implements Serializable {
 	public String toString() {
 
 		return "lldplink: nodeid:[" +
-				getNode().getId() +
+				(getNode() == null ? null : getNode().getId()) +
 				"]. remLocalPortNum:[ " +
 				getLldpRemLocalPortNum() +
 				"]. remIndex:[ " +
@@ -307,19 +307,19 @@ public class LldpLink implements Serializable {
 				"], ifindex:[" +
 				getLldpPortIfindex() +
 				"], port type/id:[" +
-				LldpPortIdSubType.getTypeString(getLldpPortIdSubType().getValue()) +
+				(getLldpPortIdSubType() == null ? null : LldpPortIdSubType.getTypeString(getLldpPortIdSubType().getValue())) +
 				"/" +
 				getLldpPortId() +
 				"], port descr:[" +
 				getLldpPortDescr() +
 				"], rem chassis type/id:[" +
-				LldpChassisIdSubType.getTypeString(getLldpRemChassisIdSubType().getValue()) +
+				(getLldpRemChassisIdSubType() == null ? null : LldpChassisIdSubType.getTypeString(getLldpRemChassisIdSubType().getValue())) +
 				"/" +
 				getLldpRemChassisId() +
 				"], rem sysname:[" +
 				getLldpRemSysname() +
 				"], rem port type/id:[" +
-				LldpPortIdSubType.getTypeString(getLldpRemPortIdSubType().getValue()) +
+				(getLldpRemPortIdSubType() == null ? null : LldpPortIdSubType.getTypeString(getLldpRemPortIdSubType().getValue())) +
 				"/" +
 				getLldpRemPortId() +
 				"], rem port descr: [" +

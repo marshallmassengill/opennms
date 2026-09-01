@@ -198,7 +198,7 @@ public class BridgeBridgeLink implements Serializable {
     public String toString() {
 
         return "bridge link: nodeid:[" +
-                getNode().getId() +
+                (getNode() == null ? null : getNode().getId()) +
                 "], bridgeport:[" +
                 getBridgePort() +
                 "], ifindex:[" +
@@ -206,7 +206,7 @@ public class BridgeBridgeLink implements Serializable {
                 "], vlan:[" +
                 getVlan() +
                 "], designatednodeid:[" +
-                getDesignatedNode().getId() +
+                (getDesignatedNode() == null ? null : getDesignatedNode().getId()) +
                 "],designatedbridgeport:[" +
                 getDesignatedPort() +
                 "],designatedifindex:[" +

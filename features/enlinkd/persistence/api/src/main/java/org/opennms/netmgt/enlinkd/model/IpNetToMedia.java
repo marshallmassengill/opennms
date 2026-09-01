@@ -330,7 +330,7 @@ public class IpNetToMedia implements Serializable {
         strb.append("ipnettomedia: ");
         strb.append("nodeid:["); 
         if (getNode() != null) {
-            strb.append(getNode().getId());
+            strb.append(getNode() == null ? null : getNode().getId());
         } else {
             strb.append("null");
         }
@@ -341,7 +341,7 @@ public class IpNetToMedia implements Serializable {
         strb.append("]. physaddr:[");
         strb.append(getPhysAddress());
         strb.append(" source nodeid:["); 
-        strb.append(getSourceNode().getId());
+        strb.append(getSourceNode() == null ? null : getSourceNode().getId());
         strb.append("]. source ifindex:[");
         strb.append(getSourceIfIndex());
         strb.append("]");

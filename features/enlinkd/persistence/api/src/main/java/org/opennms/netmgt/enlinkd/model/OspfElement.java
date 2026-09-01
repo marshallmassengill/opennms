@@ -289,11 +289,11 @@ public final class OspfElement implements Serializable {
 	 */
 	public String toString() {
 		return "ospfelement: nodeid:[" +
-				getNode().getId() +
+				(getNode() == null ? null : getNode().getId()) +
 				"]: version:[" +
 				getOspfVersionNumber() +
 				"]: status:[" +
-				Status.getTypeString(getOspfAdminStat().getValue()) +
+				(getOspfAdminStat() == null ? null : Status.getTypeString(getOspfAdminStat().getValue())) +
 				"]: id/mask/ifindex:[" +
 				str(getOspfRouterId()) +
 				"/" +
@@ -301,9 +301,9 @@ public final class OspfElement implements Serializable {
 				"/" +
 				getOspfRouterIdIfindex() +
 				"]: Border Router Status:[" +
-				TruthValue.getTypeString(getOspfBdrRtrStatus().getValue()) +
+				(getOspfBdrRtrStatus() == null ? null : TruthValue.getTypeString(getOspfBdrRtrStatus().getValue())) +
 				"]: AS Border Router Status:[" +
-				TruthValue.getTypeString(getOspfASBdrRtrStatus().getValue()) +
+				(getOspfASBdrRtrStatus() == null ? null : TruthValue.getTypeString(getOspfASBdrRtrStatus().getValue())) +
 				"]";
 	    }
 

@@ -231,11 +231,11 @@ public final class CdpElement implements Serializable {
 	 */
 	public String toString() {
         return "cdpelement: nodeid:[" +
-                getNode().getId() +
+                (getNode() == null ? null : getNode().getId()) +
                 "], Global Device Id:[" +
                 getCdpGlobalDeviceId() +
                 "], Global Run:[" +
-                TruthValue.getTypeString(getCdpGlobalRun().getValue()) +
+                (getCdpGlobalRun() == null ? null : TruthValue.getTypeString(getCdpGlobalRun().getValue())) +
                 "]";
         }
 

@@ -59,7 +59,7 @@ public class IsIsISAdjNeighSysTypeUserType extends EnumType {
                 return type;
             }
         }
-        throw new HibernateException("Invalid value for IsisAdminState: " + c);
+        throw new HibernateException("Invalid value for IsisISAdjNeighSysType: " + c);
     }
 
     @Override

@@ -224,7 +224,7 @@ public class BridgeMacLink implements Serializable{
 	public String toString() {
 
         return "maclink: nodeid:[" +
-                getNode().getId() +
+                (getNode() == null ? null : getNode().getId()) +
                 "], bridgeport:[" +
                 getBridgePort() +
                 "], ifindex:[" +
@@ -234,10 +234,7 @@ public class BridgeMacLink implements Serializable{
                 "]," +
                 getMacAddress() +
                 "," +
-                BridgeMacLinkType.
-                        getTypeString(
-                                getLinkType().
-                                        getValue()) +
+                (getLinkType() == null ? null : BridgeMacLinkType.getTypeString(getLinkType().getValue())) +
                 "]";
         }
 

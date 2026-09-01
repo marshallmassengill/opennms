@@ -93,7 +93,7 @@ public class VlanStatus implements Comparable<VlanStatus>, Serializable {
     @Override
     public boolean equals(Object o) {
         if (o instanceof VlanStatus) {
-            return m_vlanStatus.intValue() == ((VlanStatus) o).m_vlanStatus.intValue();
+            return java.util.Objects.equals(m_vlanStatus, ((VlanStatus) o).m_vlanStatus);
         }
         return false;
     }

@@ -59,7 +59,7 @@ public class LldpPortIdSubTypeUserType extends EnumType {
                 return type;
             }
         }
-        throw new HibernateException("Invalid value for NodeUserType: " + c);
+        throw new HibernateException("Invalid value for LldpPortIdSubType: " + c);
     }
 
     @Override

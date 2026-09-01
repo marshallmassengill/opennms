@@ -170,7 +170,7 @@ public final class LldpElement implements Serializable {
         return "lldpelement: nodeid:[" +
                 (getNode() == null ? null : getNode().getId()) +
                 "], chassis type/id:[" +
-                LldpChassisIdSubType.getTypeString(getLldpChassisIdSubType().getValue()) +
+                (getLldpChassisIdSubType() == null ? null : LldpChassisIdSubType.getTypeString(getLldpChassisIdSubType().getValue())) +
                 "/" +
                 getLldpChassisId() +
                 "], sysname: " +

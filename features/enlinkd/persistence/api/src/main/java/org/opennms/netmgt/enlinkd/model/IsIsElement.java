@@ -202,9 +202,9 @@ public final class IsIsElement implements Serializable {
 	public String toString() {
 
         return "isiselement: nodeid:[" +
-                getNode().getId() +
+                (getNode() == null ? null : getNode().getId()) +
                 "], AdminState:[" +
-                IsisAdminState.getTypeString(getIsisSysAdminState().getValue()) +
+                (getIsisSysAdminState() == null ? null : IsisAdminState.getTypeString(getIsisSysAdminState().getValue())) +
                 "], SysID:[" +
                 getIsisSysID() +
                 "]";

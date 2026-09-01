@@ -59,7 +59,7 @@ public class IsIsISAdjStateUserType extends EnumType {
                 return type;
             }
         }
-        throw new HibernateException("Invalid value for IsisAdminState: " + c);
+        throw new HibernateException("Invalid value for IsisISAdjState: " + c);
     }
 
     @Override
