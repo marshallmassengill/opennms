@@ -79,7 +79,10 @@ public class BridgeTopologyServiceImpl extends TopologyServiceImpl implements Br
 
     private final Map<Integer, Set<BridgeForwardingTableEntry>> m_nodetoBroadcastDomainMap = new HashMap<>();
     private final Set<Integer> m_bridgecollectionsscheduled = new HashSet<>();
-    volatile Set<BroadcastDomain> m_domains;
+    // locking convention: a BroadcastDomain's internals are guarded by the
+    // domain's own monitor; `lock` guards only m_domains membership and is a
+    // leaf lock (acquirable while holding a domain monitor, never the reverse)
+    volatile Set<BroadcastDomain> m_domains = new CopyOnWriteArraySet<>();
 
     private MacPort acreate(IpNetToMedia media) {
 
@@ -292,10 +295,9 @@ public class BridgeTopologyServiceImpl extends TopologyServiceImpl implements Br
     
     @Override
     public BroadcastDomain getBroadcastDomain(int nodeId) {
-        synchronized (lock) {
-            for (BroadcastDomain domain : m_domains) {
-                Bridge bridge = domain.getBridge(nodeId);
-                if (bridge != null) {
+        for (BroadcastDomain domain : m_domains) {
+            synchronized (domain) {
+                if (domain.getBridge(nodeId) != null) {
                     return domain;
                 }
             }
@@ -308,37 +310,45 @@ public class BridgeTopologyServiceImpl extends TopologyServiceImpl implements Br
     public BroadcastDomain reconcile(BroadcastDomain domain, int nodeId) {
 
         Date now = new Date();
-        if (domain == null || domain.isEmpty()) {
-            LOG.warn("reconcileTopologyForDeleteNode: node: {}, start: null domain or empty",nodeId);
+        if (domain == null) {
+            LOG.warn("reconcileTopologyForDeleteNode: node: {}, start: null domain",nodeId);
+            return null;
+        }
+        // hold the domain monitor across mutate-and-store, the same
+        // serialization the discovery calculate tasks use
+        synchronized (domain) {
+            if (domain.isEmpty()) {
+                LOG.warn("reconcileTopologyForDeleteNode: node: {}, start: empty domain",nodeId);
+                return domain;
+            }
+            if (domain.getBridge(nodeId) == null) {
+                LOG.info("reconcileTopologyForDeleteNode: node: {}, not on domain",nodeId);
+                return domain;
+            }
+
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("reconcileTopologyForDeleteNode: node:[{}], domain:\n{}", nodeId, domain.printTopology());
+            }
+
+            LOG.info("reconcileTopologyForDeleteNode: node:[{}], start: save topology for domain",nodeId);
+            domain.removeBridge(nodeId);
+            store(domain,now);
+            LOG.info("reconcileTopologyForDeleteNode: node:[{}], end: save topology for domain",nodeId);
+
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("reconcileTopologyForDeleteNode: node:[{}], resulting domain: {}", nodeId, domain.printTopology());
+            }
+
+            if (domain.getRootBridge() == null) {
+                LOG.info("reconcileTopologyForDeleteNode: node:[{}], domain without root", nodeId);
+            }
+
+            if (domain.isEmpty()) {
+                cleanBroadcastDomains();
+                LOG.info("reconcileTopologyForDeleteNode: node:[{}], empty domain",nodeId);
+            }
             return domain;
         }
-        if (domain.getBridge(nodeId) == null) {
-            LOG.info("reconcileTopologyForDeleteNode: node: {}, not on domain",nodeId);
-            return domain;
-        }
-        
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("reconcileTopologyForDeleteNode: node:[{}], domain:\n{}", nodeId, domain.printTopology());
-        }
-        
-        LOG.info("reconcileTopologyForDeleteNode: node:[{}], start: save topology for domain",nodeId);
-        domain.removeBridge(nodeId);
-        store(domain,now);
-        LOG.info("reconcileTopologyForDeleteNode: node:[{}], end: save topology for domain",nodeId);
-        
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("reconcileTopologyForDeleteNode: node:[{}], resulting domain: {}", nodeId, domain.printTopology());
-        }
-
-        if (domain.getRootBridge() == null) {
-            LOG.info("reconcileTopologyForDeleteNode: {}, domain without root", domain);
-        }
-
-        if (domain.isEmpty()) {
-            cleanBroadcastDomains();
-            LOG.info("reconcileTopologyForDeleteNode: node:[{}], empty domain",nodeId);
-        }
-        return domain;
     }
 
     public void cleanBroadcastDomains() {
@@ -348,10 +358,16 @@ public class BridgeTopologyServiceImpl extends TopologyServiceImpl implements Br
     }
 
     @Override
-    public synchronized void updateBridgeOnDomain(BroadcastDomain domain, Integer nodeId) {
+    public void updateBridgeOnDomain(BroadcastDomain domain, Integer nodeId) {
         if (domain == null) {
             return;
         }
+        synchronized (domain) {
+            updateBridgeOnDomainLocked(domain, nodeId);
+        }
+    }
+
+    private void updateBridgeOnDomainLocked(BroadcastDomain domain, Integer nodeId) {
         for (Bridge bridge: domain.getBridges()) {
             if (bridge.getNodeId().intValue() == nodeId.intValue()) {
                 bridge.clear();
@@ -459,8 +475,9 @@ public class BridgeTopologyServiceImpl extends TopologyServiceImpl implements Br
     }
 
     public Map<Integer,Set<BridgeForwardingTableEntry>> getUpdateBftMap() {
+        // snapshot: callers iterate while collector threads keep storing
         synchronized (m_nodetoBroadcastDomainMap) {
-            return m_nodetoBroadcastDomainMap;
+            return new HashMap<>(m_nodetoBroadcastDomainMap);
         }
     }
 
@@ -737,9 +754,7 @@ SEG:        for (SharedSegment segment : bmlsegments) {
         synchronized (m_bridgecollectionsscheduled) {
             if (getUpdateBftMap().size() + m_bridgecollectionsscheduled.size() >= maxsize)
                 return false;
-            synchronized (m_bridgecollectionsscheduled) {
-                m_bridgecollectionsscheduled.add(nodeid);
-            }
+            m_bridgecollectionsscheduled.add(nodeid);
             return true;
         }
     }
@@ -826,15 +841,15 @@ SEG:        for (SharedSegment segment : bmlsegments) {
     public List<TopologyShared> match() {       
         final List<TopologyShared> links = new ArrayList<>();
         final List<MacPort> macPortMap = getMacPorts();
-        synchronized (lock) {
-            m_domains.forEach(dm -> {
+        for (BroadcastDomain dm : m_domains) {
+            synchronized (dm) {
                 if (LOG.isDebugEnabled()) {
                     LOG.debug("match: \n{}", dm.printTopology());
                 }
                 dm.getSharedSegments().forEach(shs -> links.add(TopologyService.of(shs, macPortMap.stream().filter(mp ->
                                 shs.getMacsOnSegment().containsAll(mp.getMacPortMap().keySet())).
                         collect(Collectors.toList()))));
-            });
+            }
         }
         return links;
     }

@@ -33,11 +33,7 @@ public class TopologyServiceImpl implements TopologyService {
 
     @Override
     public  boolean parseUpdates() {
-        if (m_updates.get()) {
-            m_updates.set(false);
-            return true;
-        }
-        return false;            
+        return m_updates.getAndSet(false);
     }
 
     @Override

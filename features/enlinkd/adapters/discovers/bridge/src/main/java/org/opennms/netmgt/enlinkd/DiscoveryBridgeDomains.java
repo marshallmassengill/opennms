@@ -75,7 +75,11 @@ public class DiscoveryBridgeDomains extends Schedulable {
         BroadcastDomain domain = null;
         
         for (BroadcastDomain curBDomain : m_bridgeTopologyService.findAll()) {
-            if (checkMacSets(setA, curBDomain.getMacsOnSegments())) {
+            final Set<String> macsOnSegments;
+            synchronized (curBDomain) {
+                macsOnSegments = curBDomain.getMacsOnSegments();
+            }
+            if (checkMacSets(setA, macsOnSegments)) {
                 if (LOG.isDebugEnabled()) {
                     LOG.debug("find: node:{}, domain:{}",
                              nodes, 

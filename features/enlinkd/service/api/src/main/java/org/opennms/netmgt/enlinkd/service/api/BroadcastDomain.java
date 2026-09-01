@@ -123,13 +123,6 @@ public class BroadcastDomain implements Topology {
 
         clearTopologyForBridge(bridgeId);
         m_bridges.remove(bridge);
-        Set<Bridge> bridges = new HashSet<>();
-        for (Bridge cur: getBridges()) {
-            if (cur.getNodeId() == bridgeId)
-                continue;
-            bridges.add(cur);
-        }
-        setBridges(bridges);
     }
 
     //   this=topSegment {tmac...} {(tbridge,tport)....}U{bridgeId, bridgeIdPortId}
@@ -485,7 +478,9 @@ public class BroadcastDomain implements Topology {
                 .filter(Objects::nonNull)
                 .forEach(bridge -> {
                     for (SharedSegment segment: getSharedSegments(bridge.getNodeId())) {
-                        if (segment.getDesignatedBridge().intValue() == bridge.getNodeId().intValue()) {
+                        // clearTopologyForBridge leaves segments without a designated bridge
+                        if (segment.getDesignatedBridge() != null
+                                && segment.getDesignatedBridge().intValue() == bridge.getNodeId().intValue()) {
                             strbfr.append("\n");
                             strbfr.append(segment.printTopology());
                             bridgesDownLevel.addAll(segment.getBridgeIdsOnSegment());
