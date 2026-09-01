@@ -138,8 +138,10 @@ public class NetworkRouterTopologyUpdater extends TopologyUpdater {
                         }
                     }
                     if (targetIp == null) {
-                        return;
-                    }    
+                        // this node has no address on the subnet; the
+                        // remaining nodes still get their edges
+                        continue;
+                    }
                     OnmsTopologyPort sourcePort = createNetworkPort(source, targetIp);
                     OnmsTopologyPort targetPort = create(target, targetIp, (targetIp.getSnmpInterfaceId() != null ? snmpMap.get(targetIp.getSnmpInterfaceId()) : null));
                     topology.addEdge(OnmsTopologyEdge.create(targetIp.getId().toString(), sourcePort, targetPort));

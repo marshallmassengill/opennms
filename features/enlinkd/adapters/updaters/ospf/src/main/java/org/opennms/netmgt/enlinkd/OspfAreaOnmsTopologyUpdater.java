@@ -31,12 +31,10 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.opennms.netmgt.enlinkd.common.TopologyUpdater;
-import org.opennms.netmgt.enlinkd.model.IpInterfaceTopologyEntity;
 import org.opennms.netmgt.enlinkd.model.NodeTopologyEntity;
 import org.opennms.netmgt.enlinkd.model.OspfAreaTopologyEntity;
 import org.opennms.netmgt.enlinkd.model.OspfElement;
 import org.opennms.netmgt.enlinkd.model.OspfLinkTopologyEntity;
-import org.opennms.netmgt.enlinkd.model.SnmpInterfaceTopologyEntity;
 import org.opennms.netmgt.enlinkd.service.api.NodeTopologyService;
 import org.opennms.netmgt.enlinkd.service.api.OspfTopologyService;
 import org.opennms.netmgt.enlinkd.service.api.ProtocolSupported;
@@ -49,7 +47,6 @@ import org.opennms.netmgt.topologies.service.api.OnmsTopologyPort;
 import org.opennms.netmgt.topologies.service.api.OnmsTopologyProtocol;
 import org.opennms.netmgt.topologies.service.api.OnmsTopologyVertex;
 
-import com.google.common.collect.Table;
 
 public class OspfAreaOnmsTopologyUpdater extends TopologyUpdater {
 
@@ -122,8 +119,6 @@ public class OspfAreaOnmsTopologyUpdater extends TopologyUpdater {
     @Override
     public OnmsTopology buildTopology() {
         Map<Integer, NodeTopologyEntity> nodeMap = getNodeMap();
-        Map<Integer, IpInterfaceTopologyEntity> ipMap = getIpPrimaryMap();
-        Table<Integer, Integer, SnmpInterfaceTopologyEntity> nodeToOnmsSnmpTable = getSnmpInterfaceTable();
         OnmsTopology topology = new OnmsTopology();
         final Map<Integer, OspfElement> ospfElementMap =
         m_ospfTopologyService.
@@ -133,6 +128,11 @@ public class OspfAreaOnmsTopologyUpdater extends TopologyUpdater {
 
         for (OspfAreaTopologyEntity area : getOspfTopologyService().findAllOspfAreas()) {
 
+            // an area row can outlive its node or ospf element (independent
+            // cache refreshes, or areas left behind while OSPF was disabled)
+            if (nodeMap.get(area.getNodeId()) == null || ospfElementMap.get(area.getNodeId()) == null) {
+                continue;
+            }
             if (topology.getVertex(area.getNodeIdAsString()) == null) {
                 topology.addVertex(createOspfNodeVertex(nodeMap.get(area.getNodeId()), ospfElementMap.get(area.getNodeId())));
             }

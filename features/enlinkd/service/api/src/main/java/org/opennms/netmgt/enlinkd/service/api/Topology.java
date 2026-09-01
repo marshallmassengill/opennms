@@ -41,7 +41,7 @@ public interface Topology {
     static String getPortTextString(SnmpInterfaceTopologyEntity snmpiface) {
         final StringBuilder port = new StringBuilder();
         port.append(snmpiface.getIfName());
-        if (!"".equals(snmpiface.getIfAlias()) ) {
+        if (snmpiface.getIfAlias() != null && !"".equals(snmpiface.getIfAlias()) ) {
             port.append("(");
             port.append(snmpiface.getIfAlias());
             port.append(")");

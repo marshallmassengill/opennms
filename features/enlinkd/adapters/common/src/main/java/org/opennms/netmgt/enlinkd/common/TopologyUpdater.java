@@ -24,6 +24,7 @@ package org.opennms.netmgt.enlinkd.common;
 import java.net.InetAddress;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -77,9 +78,11 @@ public abstract class TopologyUpdater extends Schedulable implements OnmsTopolog
 
     private final Object m_lock = new Object();
     private OnmsTopology m_topology;
-    private boolean m_runned = false;
-    private boolean m_registered = false;
-    private boolean m_forceRun = false;
+    private volatile boolean m_runned = false;
+    private volatile boolean m_registered = false;
+    // set by the event thread (forceTopologyUpdaterRun), consumed by the
+    // scheduler thread; getAndSet keeps a force-run from being lost
+    private final AtomicBoolean m_forceRun = new AtomicBoolean(false);
 
     public TopologyUpdater(
             TopologyService topologyService,
@@ -136,7 +139,10 @@ public abstract class TopologyUpdater extends Schedulable implements OnmsTopolog
     @Override
     public synchronized void runSchedulable() {
         LOG.info("run: start {}", getName());
-        final OnmsTopology oldTopology = m_topology.clone();
+        final OnmsTopology oldTopology;
+        synchronized (m_lock) {
+            oldTopology = m_topology.clone();
+        }
         final OnmsTopology newTopology = runDiscoveryInternally(oldTopology);
         if (oldTopology != newTopology) {
             synchronized (m_lock) {
@@ -179,8 +185,7 @@ public abstract class TopologyUpdater extends Schedulable implements OnmsTopolog
                 LOG.error("run: {} first run: cannot build topology", getName(), e);
                 return oldTopology;
             }
-        } else if (m_topologyService.parseUpdates() || m_forceRun) {
-            m_forceRun = false;
+        } else if (m_topologyService.parseUpdates() || m_forceRun.getAndSet(false)) {
             m_topologyService.refresh();
             LOG.info("run: updates {}, recalculating topology ", getName());
             OnmsTopology newTopology;
@@ -296,7 +301,7 @@ public abstract class TopologyUpdater extends Schedulable implements OnmsTopolog
     }
 
     public void forceRun() {
-        m_forceRun = true;
+        m_forceRun.set(true);
     }
                 
 }

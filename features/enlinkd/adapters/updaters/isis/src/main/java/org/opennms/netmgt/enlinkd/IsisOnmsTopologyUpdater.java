@@ -60,9 +60,10 @@ public class IsisOnmsTopologyUpdater extends TopologyUpdater {
         OnmsTopologyPort port= OnmsTopologyPort.create(sourceLink.getId().toString(),source, targetLink.getIsisISAdjIndex());
         port.setIfindex(sourceLink.getIsisCircIfIndex());
         if (snmpiface != null) {
-            port.setIfname(snmpiface.getIfName());            
+            port.setIfname(snmpiface.getIfName());
+        } else if (sourceLink.getIsisCircIfIndex() != null) {
+            port.setIfname(sourceLink.getIsisCircIfIndex().toString());
         }
-        port.setIfname(sourceLink.getIsisCircIfIndex().toString());
         port.setAddr(Topology.getRemoteAddress(targetLink));
         port.setToolTipText(Topology.getPortTextString(source.getLabel(),port.getIfindex(),port.getAddr(),snmpiface));
         return port;
