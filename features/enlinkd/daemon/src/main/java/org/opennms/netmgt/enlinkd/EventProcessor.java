@@ -106,8 +106,11 @@ public final class EventProcessor {
      * @param e a {@link org.opennms.netmgt.events.api.model.IEvent} object.
      */
     @EventHandler(uei = EventConstants.FORCE_RESCAN_EVENT_UEI)
-    public void handleForceRescan(IEvent e) {
-    	m_linkd.execSingleSnmpCollection(e.getNodeid().intValue());
+    public void handleForceRescan(IEvent e) throws InsufficientInformationException {
+
+        EventUtils.checkNodeId(e);
+
+        m_linkd.execSingleSnmpCollection(e.getNodeid().intValue());
     }
     
 
