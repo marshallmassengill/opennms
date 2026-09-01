@@ -209,7 +209,6 @@ public class OspfArea implements Serializable {
         setOspfAreaBdrRtrCount(area.getOspfAreaBdrRtrCount());
         setOspfAsBdrRtrCount(area.getOspfAsBdrRtrCount());
         setOspfAreaLsaCount(area.getOspfAreaLsaCount());
-        setOspfAreaCreateTime(area.getOspfAreaCreateTime());
         setOspfAreaLastPollTime(area.getOspfAreaCreateTime());
     }
 

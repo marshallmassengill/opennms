@@ -276,5 +276,8 @@ public class OspfTopologyServiceImpl extends TopologyServiceImpl implements Ospf
 
         m_ospfLinkDao.deleteAll();
         m_ospfLinkDao.flush();
+
+        m_ospfAreaDao.deleteAll();
+        m_ospfAreaDao.flush();
     }
 }

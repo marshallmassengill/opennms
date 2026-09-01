@@ -71,4 +71,9 @@ public class OspfAreaDaoHibernate extends AbstractDaoHibernate<OspfArea, Integer
         bulkDelete("delete from OspfArea ospfArea where ospfArea.node.id = ?1 ",
                                  new Object[] {nodeId});
     }
+
+    @Override
+    public void deleteAll() {
+        bulkDelete("delete from OspfArea");
+    }
 }

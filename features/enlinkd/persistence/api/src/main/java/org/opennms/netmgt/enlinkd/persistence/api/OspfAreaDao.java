@@ -40,4 +40,6 @@ public interface OspfAreaDao extends OnmsDao<OspfArea, Integer> {
     void deleteByNodeIdOlderThen(Integer nodeiId, Date now);
     void deleteByNodeId(Integer nodeId);
 
+    void deleteAll();
+
 }
