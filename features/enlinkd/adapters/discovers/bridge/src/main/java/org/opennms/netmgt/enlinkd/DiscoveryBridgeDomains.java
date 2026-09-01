@@ -219,10 +219,16 @@ public class DiscoveryBridgeDomains extends Schedulable {
 
             try {
                 for (Future<String> future : executorService.invokeAll(taskList)) {
-                    LOG.info("run: {}", future.get());
+                    try {
+                        LOG.info("run: {}", future.get());
+                    } catch (ExecutionException e) {
+                        // contain one domain's failure so the others still report
+                        LOG.error("run: executing task {}", e.getMessage(), e);
+                    }
                 }
-            } catch (InterruptedException | ExecutionException e) {
-                LOG.error("run: executing task {}", e.getMessage(), e);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                LOG.error("run: interrupted executing tasks {}", e.getMessage(), e);
             }
             executorService.shutdown();
         } else {

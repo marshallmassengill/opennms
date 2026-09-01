@@ -734,6 +734,12 @@ public class DiscoveryBridgeTopology {
             }
             
             if (!parsedBridgeFT.getBridge().isRootBridge()
+                    && parsedBridgeFT.getRootPort() == null) {
+                LOG.warn("postprocess: bridge:[{}] <--> bridge:[{}] skipped, no root port with learned macs on bridge:[{}]",
+                         postbridgeid, parsedbridgeid, parsedbridgeid);
+                continue;
+            }
+            if (!parsedBridgeFT.getBridge().isRootBridge()
                     && !parsedBridgeFT.getRootPort().equals(sp.getFirstPort())) {
                 if (postBridgeFT.getBridge().isNewTopology()) {
                     postBridgeFT.setRootPort(sp.getSecondBridgePort());
@@ -774,6 +780,12 @@ public class DiscoveryBridgeTopology {
         if (++level == BroadcastDomain.maxlevel) {
             throw new BridgeTopologyException(
                           "down: level: " + level +", bridge:["+bridgeFT.getNodeId()+"], too many iteration");
+        }
+
+        // a root port without learned macs has no BridgePortWithMacs entry
+        if (bridgeFT.getRootPort() == null) {
+            throw new BridgeTopologyException(
+                          "down: level: " + level +", bridge:["+bridgeFT.getNodeId()+"], no root port with learned macs", bridgeFT);
         }
 
         SharedSegment upSegment = m_domain.getSharedSegment(upsimpleconn.getFirstPort());

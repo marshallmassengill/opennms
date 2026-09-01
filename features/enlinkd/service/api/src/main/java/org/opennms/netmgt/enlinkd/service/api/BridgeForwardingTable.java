@@ -111,11 +111,11 @@ public class BridgeForwardingTable implements Topology {
     }
 
     public BridgePort getPort(Integer bp) {
-        BridgePortWithMacs bpwm = 
-            m_porttomac.stream().filter(bpm -> Objects.equals(bpm.getPort().getBridgePort(), bp)).iterator().next();
-        if (bpwm == null)
-            return null;    
-        return bpwm.getPort();
+        return m_porttomac.stream()
+                .filter(bpm -> Objects.equals(bpm.getPort().getBridgePort(), bp))
+                .findFirst()
+                .map(BridgePortWithMacs::getPort)
+                .orElse(null);
     }
 
     public void setRootPort(Integer rootPort) {
