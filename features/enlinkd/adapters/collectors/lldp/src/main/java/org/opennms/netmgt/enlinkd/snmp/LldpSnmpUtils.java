@@ -214,7 +214,21 @@ public class LldpSnmpUtils {
 
     public static String decodeTimeTetraLldpPortId(LldpUtils.LldpPortIdSubType portSubType, SnmpValue snmpValue) {
         if (portSubType == LldpUtils.LldpPortIdSubType.LLDP_PORTID_SUBTYPE_LOCAL) {
-                return String.valueOf(Integer.parseInt(decodeLldpPortId( LldpUtils.LldpPortIdSubType.LLDP_PORTID_SUBTYPE_LOCAL,snmpValue),16));
+            if (snmpValue == null) {
+                return "";
+            }
+            // a displayable decimal port id is already decoded; only the raw
+            // (hex) representation needs the radix-16 conversion
+            if (isNumber(snmpValue.toDisplayString())) {
+                return snmpValue.toDisplayString();
+            }
+            final String hex = getDisplayable(snmpValue);
+            try {
+                return String.valueOf(Integer.parseInt(hex, 16));
+            } catch (NumberFormatException e) {
+                LOG.warn("decodeTimeTetraLldpPortId: not a hex local port id: {}", hex);
+                return hex;
+            }
         }
         return decodeLldpPortId(portSubType,snmpValue);
     }
