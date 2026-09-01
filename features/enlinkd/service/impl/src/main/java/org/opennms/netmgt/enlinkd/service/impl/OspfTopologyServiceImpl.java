@@ -100,6 +100,7 @@ public class OspfTopologyServiceImpl extends TopologyServiceImpl implements Ospf
             dbelement.merge(element);
             m_ospfElementDao.saveOrUpdate(dbelement);
             m_ospfElementDao.flush();
+            updatesAvailable();
             return;
         }
 

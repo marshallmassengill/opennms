@@ -33,7 +33,6 @@ public interface LldpLinkDao extends LinkDao<LldpLink, Integer> {
 
     LldpLink get(Integer nodeId, Integer lldpRemLocalPortNum, Integer lldpRemIndex);
 
-    List<LldpLink> findLinksForIds(List<Integer> ids);
 
     Integer getIfIndex(Integer nodeid, String portId);
 

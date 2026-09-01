@@ -50,16 +50,14 @@ public class IpNetToMediaDaoHibernate extends AbstractDaoHibernate<IpNetToMedia,
 
 	@Override
 	public void deleteBySourceNodeIdOlderThen(Integer nodeId, Date now) {
-		for (IpNetToMedia elem: find("from IpNetToMedia rec where rec.sourceNode.id = ?1 and rec.lastPollTime < ?2",nodeId,now)) {
-			delete(elem);
-		}
+		bulkDelete("delete from IpNetToMedia rec where rec.sourceNode.id = ?1 and rec.lastPollTime < ?2",
+				nodeId, now);
 	}
 
         @Override
         public void deleteBySourceNodeId(Integer nodeId) {
-                for (IpNetToMedia elem: find("from IpNetToMedia rec where rec.sourceNode.id = ?1 ",nodeId)) {
-                        delete(elem);
-                }
+                bulkDelete("delete from IpNetToMedia rec where rec.sourceNode.id = ?1",
+                                new Object[] {nodeId});
         }
         
 	@Override

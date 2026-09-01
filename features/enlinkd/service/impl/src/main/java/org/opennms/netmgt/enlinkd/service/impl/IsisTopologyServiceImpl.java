@@ -136,6 +136,7 @@ public class IsisTopologyServiceImpl extends TopologyServiceImpl implements Isis
             dbelement.merge(element);
             m_isisElementDao.saveOrUpdate(dbelement);
             m_isisElementDao.flush();
+            updatesAvailable();
             return;
         }
         

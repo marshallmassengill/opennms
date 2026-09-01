@@ -33,7 +33,6 @@ import java.io.StringWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 
-import org.apache.commons.io.IOUtils;
 import org.opennms.core.utils.ConfigFileConstants;
 import org.opennms.core.xml.JaxbUtils;
 import org.opennms.netmgt.config.enlinkd.EnlinkdConfiguration;
@@ -65,10 +64,10 @@ public final class EnhancedLinkdConfigFactory extends EnhancedLinkdConfigManager
             long timestamp = System.currentTimeMillis();
             final File cfgFile = ConfigFileConstants.getFile(ConfigFileConstants.ENLINKD_CONFIG_FILE_NAME);
             LOG.debug("saveXml: saving config file at {}: {}", timestamp, cfgFile.getPath());
-            final Writer fileWriter = new OutputStreamWriter(new FileOutputStream(cfgFile), StandardCharsets.UTF_8);
-            fileWriter.write(xml);
-            fileWriter.flush();
-            fileWriter.close();
+            try (final Writer fileWriter = new OutputStreamWriter(new FileOutputStream(cfgFile), StandardCharsets.UTF_8)) {
+                fileWriter.write(xml);
+                fileWriter.flush();
+            }
             LOG.debug("saveXml: finished saving config file: {}", cfgFile.getPath());
         }
     }
@@ -82,15 +81,12 @@ public final class EnhancedLinkdConfigFactory extends EnhancedLinkdConfigManager
         getWriteLock().lock();
         try {
             final File cfgFile = ConfigFileConstants.getFile(ConfigFileConstants.ENLINKD_CONFIG_FILE_NAME);
-            LOG.debug("init: config file path: {}", cfgFile.getPath());
-            try (final InputStream stream = new FileInputStream(cfgFile)){
-                try(final Reader reader = new InputStreamReader(stream)) {
-                    m_config = JaxbUtils.unmarshal(EnlinkdConfiguration.class, reader);
-                } finally {
-                    IOUtils.close(stream);
-                }
+            LOG.debug("reload: config file path: {}", cfgFile.getPath());
+            try (final InputStream stream = new FileInputStream(cfgFile);
+                 final Reader reader = new InputStreamReader(stream)) {
+                m_config = JaxbUtils.unmarshal(EnlinkdConfiguration.class, reader);
             }
-            LOG.debug("init: finished loading config file: {}", cfgFile.getPath());
+            LOG.debug("reload: finished loading config file: {}", cfgFile.getPath());
         } finally {
             getWriteLock().unlock();
         }

@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+import org.slf4j.LoggerFactory;
 import org.springframework.util.Assert;
 
 public class BroadcastDomain implements Topology {
@@ -272,6 +273,8 @@ public class BroadcastDomain implements Topology {
         }
         level++;
         if (level == maxlevel) {
+            LoggerFactory.getLogger(BroadcastDomain.class)
+                    .warn("hierarchySetUpGo: maximum hierarchy depth {} reached under root [{}], deeper bridges keep stale root ports", maxlevel, rootid);
             return;
         }
         for (Integer bridgeid : segment.getBridgeIdsOnSegment()) {

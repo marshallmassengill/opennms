@@ -94,7 +94,6 @@ public class OspfArea implements Serializable {
         return m_ospfAuthType;
     }
 
-//    @Type(type="org.opennms.netmgt.enlinkd.model.ImportAsExternUserType")
     @Column(name = "ospfImportAsExtern")
     public Integer getOspfImportAsExtern() {
         return m_ospfImportAsExtern;

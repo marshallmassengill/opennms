@@ -95,6 +95,7 @@ public class CdpTopologyServiceImpl extends TopologyServiceImpl implements CdpTo
             dbelement.merge(element);
             m_cdpElementDao.saveOrUpdate(dbelement);
             m_cdpElementDao.flush();
+            updatesAvailable();
             return;
         } 
         

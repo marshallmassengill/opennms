@@ -396,9 +396,9 @@ public class EnlinkdConfiguration implements java.io.Serializable {
 
         EnlinkdConfiguration that = (EnlinkdConfiguration) o;
 
-        if (!m_executorThreads.equals(that.m_executorThreads)) return false;
-        if (!m_executorQueueSize.equals(that.m_executorQueueSize)) return false;
-        if (!m_schedulerThreads.equals(that.m_schedulerThreads)) return false;
+        if (!Objects.equals(m_executorThreads, that.m_executorThreads)) return false;
+        if (!Objects.equals(m_executorQueueSize, that.m_executorQueueSize)) return false;
+        if (!Objects.equals(m_schedulerThreads, that.m_schedulerThreads)) return false;
         if (!Objects.equals(m_discoveryBridgeThreads, that.m_discoveryBridgeThreads))
             return false;
         if (!Objects.equals(m_initialSleepTime, that.m_initialSleepTime))
@@ -444,9 +444,9 @@ public class EnlinkdConfiguration implements java.io.Serializable {
 
     @Override
     public int hashCode() {
-        int result = m_executorThreads.hashCode();
-        result = 31 * result + m_executorQueueSize.hashCode();
-        result = 31 * result + m_schedulerThreads.hashCode();
+        int result = Objects.hashCode(m_executorThreads);
+        result = 31 * result + Objects.hashCode(m_executorQueueSize);
+        result = 31 * result + Objects.hashCode(m_schedulerThreads);
         result = 31 * result + (m_discoveryBridgeThreads != null ? m_discoveryBridgeThreads.hashCode() : 0);
         result = 31 * result + (m_initialSleepTime != null ? m_initialSleepTime.hashCode() : 0);
         result = 31 * result + (m_bridgeTopologyInterval != null ? m_bridgeTopologyInterval.hashCode() : 0);

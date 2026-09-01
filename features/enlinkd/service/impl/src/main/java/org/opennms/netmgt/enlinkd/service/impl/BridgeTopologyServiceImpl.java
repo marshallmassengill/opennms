@@ -84,19 +84,6 @@ public class BridgeTopologyServiceImpl extends TopologyServiceImpl implements Br
     // leaf lock (acquirable while holding a domain monitor, never the reverse)
     volatile Set<BroadcastDomain> m_domains = new CopyOnWriteArraySet<>();
 
-    private MacPort acreate(IpNetToMedia media) {
-
-        Set<InetAddress> ips = new HashSet<>();
-        ips.add(media.getNetAddress());
-
-        MacPort port = new MacPort();
-        port.setNodeId(media.getNodeId());
-        port.setIfIndex(media.getIfIndex());
-        port.setMacPortName(media.getPort());
-        port.getMacPortMap().put(media.getPhysAddress(), ips);
-        return port;
-    }
-
     @Override
     public String getBridgeDesignatedIdentifier(Bridge bridge) {
         for (BridgeElement element : m_bridgeElementDao.findByNodeId(bridge.getNodeId())) {
@@ -571,7 +558,7 @@ public class BridgeTopologyServiceImpl extends TopologyServiceImpl implements Br
     @Override
     public SharedSegment getSharedSegment(String mac) {
 
-        LOG.debug("getHostNodeSharedSegment: founding segment for mac:{}", mac);
+        LOG.debug("getSharedSegment: finding segment for mac:{}", mac);
 
         final List<BridgeMacLink> links =  m_bridgeMacLinkDao.findByMacAddress(mac).
                 stream().
@@ -579,12 +566,12 @@ public class BridgeTopologyServiceImpl extends TopologyServiceImpl implements Br
                 collect(Collectors.toCollection(ArrayList::new));
         
         if (links.size() == 0 ) {
-            LOG.info("getHostNodeSharedSegment: no segment found for mac:{}", mac);
+            LOG.info("getSharedSegment: no segment found for mac:{}", mac);
             return new SharedSegment();
         }
 
         if (links.size() > 1 ) {
-            LOG.error("getHostNodeSharedSegment: more then one segment for mac:{}", mac);
+            LOG.error("getSharedSegment: more than one segment for mac:{}", mac);
             return new SharedSegment();
         }
 
@@ -609,7 +596,7 @@ public class BridgeTopologyServiceImpl extends TopologyServiceImpl implements Br
                 }
             }
         } catch (Exception e) {
-            LOG.error("getHostNodeSharedSegment: cannot create shared segment {} for mac {} ", e.getMessage(), mac,e);
+            LOG.error("getSharedSegment: cannot create shared segment {} for mac {} ", e.getMessage(), mac,e);
             return new SharedSegment();
         }
  

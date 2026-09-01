@@ -86,28 +86,6 @@ public class LldpLinkDaoHibernate extends AbstractDaoHibernate<LldpLink, Integer
         bulkDelete("delete from LldpLink");
     }
 
-    public List<LldpLink> findLinksForIds(List<Integer> linkIds) {
-
-        final StringBuilder sql = new StringBuilder();
-        sql.append("FROM LldpLink lldplink ");
-        if(linkIds.size() == 1){
-            sql.append("WHERE lldplink.id = ").append(linkIds.get(0)).append(" ");
-        } else{
-            sql.append("where lldplink.id in (");
-            int counter = 0;
-            for (Integer id : linkIds) {
-                sql.append(id);
-                if(counter < linkIds.size() - 1 ) {
-                    sql.append(",");
-                }
-                counter++;
-            }
-            sql.append(")");
-        }
-
-        return find(sql.toString());
-    }
-
     @Override
     public Integer getIfIndex(Integer nodeid, String portId) {
         Assert.notNull(nodeid, "nodeId may not be null");

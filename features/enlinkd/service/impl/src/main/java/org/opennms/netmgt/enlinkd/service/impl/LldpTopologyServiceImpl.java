@@ -138,6 +138,7 @@ public class LldpTopologyServiceImpl extends TopologyServiceImpl implements Lldp
             dbelement.merge(element);
             m_lldpElementDao.saveOrUpdate(dbelement);
             m_lldpElementDao.flush();
+            updatesAvailable();
             return;
         }
 

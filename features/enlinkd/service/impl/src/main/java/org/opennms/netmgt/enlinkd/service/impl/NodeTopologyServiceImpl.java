@@ -50,7 +50,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class NodeTopologyServiceImpl extends TopologyServiceImpl implements NodeTopologyService {
-    private final static Logger LOG = LoggerFactory.getLogger(TopologyServiceImpl.class);
+    private final static Logger LOG = LoggerFactory.getLogger(NodeTopologyServiceImpl.class);
 
     private NodeDao m_nodeDao;
     @Override
@@ -145,31 +145,31 @@ public class NodeTopologyServiceImpl extends TopologyServiceImpl implements Node
             Set<Integer> intersection = new HashSet<>(subnet.getNodeIds());
             intersection.retainAll(starting.getNodeIds());
             if (intersection.size() > 0) {
-                LOG.info("getConnected: match: {}, {} {}",intersection, subnet, starting);
+                LOG.debug("getConnected: match: {}, {} {}",intersection, subnet, starting);
                 downlevels.add(subnet);
             }
         }
         downlevels.forEach(subnetworks::remove);
-        LOG.info("getConnected subnetworks.size: {}",  subnetworks.size());
+        LOG.debug("getConnected subnetworks.size: {}",  subnetworks.size());
         for (SubNetwork subnetowrk: downlevels) {
-            LOG.info("getConnected: parsing: {}",  subnetowrk);
-            LOG.info("getConnected: priority: {}",  priority);
+            LOG.debug("getConnected: parsing: {}",  subnetowrk);
+            LOG.debug("getConnected: priority: {}",  priority);
             Set<Integer> addingNodes = new HashSet<>(subnetowrk.getNodeIds());
             addingNodes.removeAll(priorityMap.keySet());
-            LOG.info("getConnected: adding: {}",  addingNodes);
+            LOG.debug("getConnected: adding: {}",  addingNodes);
             if (addingNodes.isEmpty()) {
                 continue;
             }
             for (Integer nodeid: addingNodes) {
                 priorityMap.put(nodeid,priority);
             }
-            LOG.info("getConnected: priorityMap: {}",  priorityMap);
+            LOG.debug("getConnected: priorityMap: {}",  priorityMap);
             priority++;
         }
 
         if (!downlevels.isEmpty() && subnetworks.size() > 0) {
             for (SubNetwork level : downlevels) {
-                LOG.info("getConnected: iterating on: " + level);
+                LOG.debug("getConnected: iterating on: " + level);
                 priority = getConnected(level, subnetworks, priorityMap, priority);
             }
         }
@@ -180,7 +180,7 @@ public class NodeTopologyServiceImpl extends TopologyServiceImpl implements Node
     public Map<Integer, Integer> getNodeidPriorityMap(ProtocolSupported protocol) {
         final Map<Integer, Integer> priorityMap = new HashMap<>();
         Set<SubNetwork> allLegalSubnets = findAllLegalSubNetwork().stream().filter(s -> s.getNodeIds().size() > 1).collect(Collectors.toSet());
-        LOG.info("getNodeidPriorityMap: subnetworks.size: {}",  allLegalSubnets.size());
+        LOG.debug("getNodeidPriorityMap: subnetworks.size: {}",  allLegalSubnets.size());
         int priority = 0;
         int loop = 0;
         while (!allLegalSubnets.isEmpty()) {
@@ -191,12 +191,12 @@ public class NodeTopologyServiceImpl extends TopologyServiceImpl implements Node
                 break;
             }
             allLegalSubnets.remove(start);
-            LOG.info("getNodeidPriorityMap: loop-{}: start: {}", loop,  start);
-            LOG.info("getNodeidPriorityMap: loop-{}: priority: {}", loop,  priority);
-            LOG.info("getNodeidPriorityMap: loop-{}: subnetworks.size: {}",  loop, allLegalSubnets.size());
+            LOG.debug("getNodeidPriorityMap: loop-{}: start: {}", loop,  start);
+            LOG.debug("getNodeidPriorityMap: loop-{}: priority: {}", loop,  priority);
+            LOG.debug("getNodeidPriorityMap: loop-{}: subnetworks.size: {}",  loop, allLegalSubnets.size());
             final int p = priority;
             start.getNodeIds().forEach(n-> priorityMap.put(n, p));
-            LOG.info("getNodeidPriorityMap: loop-{}: priorityMap: {}", loop, priorityMap);
+            LOG.debug("getNodeidPriorityMap: loop-{}: priorityMap: {}", loop, priorityMap);
             priority = getConnected(start,allLegalSubnets, priorityMap, ++priority);
         }
         return priorityMap;
