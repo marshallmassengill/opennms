@@ -174,27 +174,7 @@ public final class NodeDiscoveryOspf extends NodeCollector {
        }
 
         for (OspfLink link : links) {
-            for (OspfIf localospfport: localOspfPorts) {
-                if (localospfport.getOspfIfAddressLessIf() != 0 && link.getOspfRemAddressLessIndex() != 0) {
-                    link.setOspfIpAddr(localospfport.getOspfIfIpaddress());
-                    link.setOspfAddressLessIndex(localospfport.getOspfIfAddressLessIf());
-                    link.setOspfIfIndex(localospfport.getOspfIfAddressLessIf());
-                    link.setOspfIfAreaId(localospfport.getOspfIfAreaId());
-                    break;
-                }
-                if (localospfport.getOspfIfAddressLessIf()== 0 && link.getOspfRemAddressLessIndex() != 0)
-                    continue;
-                if (localospfport.getOspfIfAddressLessIf() != 0 && link.getOspfRemAddressLessIndex() == 0)
-                    continue;
-                if (InetAddressUtils.inSameNetwork(localospfport.getOspfIfIpaddress(),link.getOspfRemIpAddr(),localospfport.getOspfIfNetmask())) {
-                    link.setOspfIpAddr(localospfport.getOspfIfIpaddress());
-                    link.setOspfAddressLessIndex(localospfport.getOspfIfAddressLessIf());
-                    link.setOspfIfAreaId(localospfport.getOspfIfAreaId());
-                    link.setOspfIpMask(localospfport.getOspfIfNetmask());
-                    link.setOspfIfIndex(localospfport.getOspfIfIfindex());
-                    break;
-                }
-            }
+            setLocalPort(link, localOspfPorts);
             m_ospfTopologyService.store(getNodeId(),link);
         }
 
@@ -226,6 +206,36 @@ public final class NodeDiscoveryOspf extends NodeCollector {
             m_ospfTopologyService.store(getNodeId(),area);
         }
         m_ospfTopologyService.reconcile(getNodeId(),now);
+    }
+
+    static void setLocalPort(OspfLink link, List<OspfIf> localOspfPorts) {
+        for (OspfIf localospfport : localOspfPorts) {
+            if (localospfport.getOspfIfAddressLessIf() != 0 && link.getOspfRemAddressLessIndex() != 0) {
+                // ospfNbrAddressLessIndex is the local ifIndex of the unnumbered
+                // interface the neighbor is reached over (RFC 4750), so only the
+                // port with that ifIndex is a match.
+                if (localospfport.getOspfIfAddressLessIf().intValue() != link.getOspfRemAddressLessIndex().intValue()) {
+                    continue;
+                }
+                link.setOspfIpAddr(localospfport.getOspfIfIpaddress());
+                link.setOspfAddressLessIndex(localospfport.getOspfIfAddressLessIf());
+                link.setOspfIfIndex(localospfport.getOspfIfAddressLessIf());
+                link.setOspfIfAreaId(localospfport.getOspfIfAreaId());
+                return;
+            }
+            if (localospfport.getOspfIfAddressLessIf() == 0 && link.getOspfRemAddressLessIndex() != 0)
+                continue;
+            if (localospfport.getOspfIfAddressLessIf() != 0 && link.getOspfRemAddressLessIndex() == 0)
+                continue;
+            if (InetAddressUtils.inSameNetwork(localospfport.getOspfIfIpaddress(), link.getOspfRemIpAddr(), localospfport.getOspfIfNetmask())) {
+                link.setOspfIpAddr(localospfport.getOspfIfIpaddress());
+                link.setOspfAddressLessIndex(localospfport.getOspfIfAddressLessIf());
+                link.setOspfIfAreaId(localospfport.getOspfIfAreaId());
+                link.setOspfIpMask(localospfport.getOspfIfNetmask());
+                link.setOspfIfIndex(localospfport.getOspfIfIfindex());
+                return;
+            }
+        }
     }
 
 	@Override
