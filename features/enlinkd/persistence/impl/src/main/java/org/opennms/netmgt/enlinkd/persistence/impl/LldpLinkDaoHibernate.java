@@ -21,15 +21,16 @@
  */
 package org.opennms.netmgt.enlinkd.persistence.impl;
 
+import java.net.InetAddress;
 import java.util.Date;
 import java.util.List;
 
+import org.opennms.core.utils.InetAddressUtils;
 import org.opennms.netmgt.enlinkd.persistence.api.LldpLinkDao;
 import org.opennms.netmgt.dao.hibernate.AbstractDaoHibernate;
 import org.opennms.netmgt.enlinkd.model.LldpLink;
 import org.opennms.netmgt.model.OnmsNode;
 import org.opennms.netmgt.model.OnmsSnmpInterface;
-import org.opennms.netmgt.model.OnmsIpInterface;
 import org.springframework.util.Assert;
 
 /**
@@ -122,16 +123,19 @@ public class LldpLinkDaoHibernate extends AbstractDaoHibernate<LldpLink, Integer
         if (ifaces.size() == 1) {
             return ((OnmsSnmpInterface) ifaces.iterator().next()).getIfIndex();
         }
-        ifaces = findObjects(OnmsIpInterface.class, "SELECT ipIf FROM OnmsIpInterface AS ipIf WHERE ipIf.node.id = ?1 AND ipIf.ipAddress = ?2", nodeid, portId);
-        if (ifaces.size() == 1) {
-            OnmsIpInterface ipif = (OnmsIpInterface) ifaces.iterator().next();
-            if (ipif.getSnmpInterface() != null) {
-                ifaces = findObjects(OnmsSnmpInterface.class, "SELECT snmpIf FROM OnmsSnmpInterface AS snmpIf WHERE snmpIf.id = ?1",
-                        ipif.getSnmpInterface().getId());
-            }
-            if (ifaces.size() == 1) {
-                return ((OnmsSnmpInterface) ifaces.iterator().next()).getIfIndex();
-            }
+        final InetAddress ipAddr;
+        try {
+            ipAddr = InetAddressUtils.addr(portId);
+        } catch (IllegalArgumentException e) {
+            // portId is not an IP address, so no ip-interface match is possible
+            return -1;
+        }
+        if (ipAddr == null) {
+            return -1;
+        }
+        List<Integer> ifindexes = findObjects(Integer.class, "SELECT ipIf.snmpInterface.ifIndex FROM OnmsIpInterface AS ipIf WHERE ipIf.node.id = ?1 AND ipIf.ipAddress = ?2", nodeid, ipAddr);
+        if (ifindexes.size() == 1 && ifindexes.get(0) != null) {
+            return ifindexes.get(0);
         }
         return -1;
     }
